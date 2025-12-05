@@ -1,229 +1,86 @@
-import Script from "next/script";
+import { supabase } from "@/lib/supabaseClient";
 
-export default function Home() {
+type ProjectRow = {
+  id: string;
+  title: string | null;
+  owner: string | null;
+  created_at: string | null;
+  data: any;
+};
+
+export default async function HomePage() {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const projects = (data || []) as ProjectRow[];
+
   return (
-    <>
-      {/* Libreria WaveSurfer dal CDN */}
-      <Script
-        src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"
-        strategy="beforeInteractive"
-      />
-
-      {/* Il tuo JS di CodePen (public/app.js) */}
-      <Script src="/app.js" strategy="afterInteractive" />
-
-      {/* Il tuo HTML di CodePen */}
-      <div
-        dangerouslySetInnerHTML={{
-          __html: `
-<div class="app">
-  <aside class="sidebar">
-    <div class="logo">Approved</div>
-    <button id="newProjectBtn" class="primary-btn full">+ New project</button>
-
-    <div class="sidebar-section">
-      <h3>Projects</h3>
-      <ul id="projectList" class="project-list">
-        <li class="project-item empty">
-          No projects yet. Click "New project".
-        </li>
-      </ul>
-    </div>
-  </aside>
-
-  <main class="main">
-    <header class="topbar">
-      <div class="project-header-left">
-        <div class="project-title-row">
-          <div id="projectTitle" class="project-title">No project</div>
-          <button
-            id="projectMenuBtn"
-            class="icon-btn"
-            type="button"
-            title="Project options"
-            style="display: none"
-          >
-            ⋯
-          </button>
+    <main className="min-h-screen bg-black text-white">
+      <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white text-black text-sm font-semibold">
+            A
+          </span>
+          <span className="font-semibold tracking-tight">Approved</span>
         </div>
-        <div id="projectMeta" class="project-meta">
-          Click "New project" to get started
-        </div>
-      </div>
-      <div class="topbar-actions">
-        <button id="shareBtn" class="ghost-btn" disabled>Share link</button>
-        <button id="deliverBtn" class="primary-btn" disabled>
-          Generate delivery
-        </button>
-      </div>
-    </header>
+        <span className="text-xs text-white/50">
+          Logged in as guest · demo workspace
+        </span>
+      </header>
 
-    <section class="upload-strip">
-      <div id="globalDropzone" class="dropzone disabled">
-        <strong>Drop media here</strong>
-        <span>Create a project to start.</span>
-      </div>
+      <section className="px-6 py-10 max-w-5xl mx-auto">
+        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight mb-2">
+          I tuoi progetti Approved
+        </h1>
+        <p className="text-sm text-white/60 max-w-xl mb-8">
+          Questa pagina legge direttamente dalla tabella <code>projects</code> su
+          Supabase. Ogni riga della tabella diventa una card qui sotto.
+        </p>
 
-      <div class="naming-options">
-        <label class="rename-toggle">
-          <input type="checkbox" id="autoRenameToggle" />
-          <span>Auto rename files (composer preset)</span>
-        </label>
-        <div class="naming-levels">
-          <span class="level-label">Scheme:</span>
-          <label class="level-option">
-            <input type="radio" name="namingLevel" value="media" checked />
-            <span>Media</span>
-          </label>
-          <label class="level-option">
-            <input type="radio" name="namingLevel" value="cinema" />
-            <span>Cinema</span>
-          </label>
-        </div>
-      </div>
-    </section>
-
-    <section class="content">
-      <!-- LEFT COLUMN -->
-      <div class="left-column">
-        <!-- PROJECT REFERENCES -->
-        <div class="refs-card">
-          <div class="refs-header">
-            <div>
-              <h2>Project references</h2>
-              <div id="refsSubtitle" class="refs-subtitle">
-                Upload script, storyboard, temp tracks, brief...
-              </div>
-            </div>
-            <button id="refsToggleBtn" class="ghost-btn tiny">
-              Show
-            </button>
+        {error && (
+          <div className="mb-6 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            Errore nel caricare i progetti: {error.message}
           </div>
+        )}
 
-          <div id="refsBody" class="refs-body">
-            <div id="refsDropzone" class="refs-dropzone disabled">
-              <strong>Drop reference files here</strong>
-              <span>PDF, images, audio, video, zip…</span>
-            </div>
-            <div id="refsList" class="refs-list refs-list-empty">
-              No reference files for this project.
-            </div>
+        {projects.length === 0 ? (
+          <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-6 text-sm text-white/60">
+            Nessun progetto ancora. Aggiungi una riga a mano nella tabella{" "}
+            <code>projects</code> su Supabase per vedere qualcosa qui.
           </div>
-        </div>
-
-        <!-- CUE -->
-        <h2>Project cues</h2>
-        <div id="cueListSubtitle" class="cue-list-subtitle">
-          No project yet. Click "New project".
-        </div>
-        <div id="cueList" class="cue-list cue-list-empty">
-          No project. Click "New project" to get started.
-        </div>
-      </div>
-
-      <!-- RIGHT COLUMN -->
-      <div class="right-column">
-        <div class="player-card">
-          <div class="player-mode-toggle">
-            <button
-              id="modeReviewBtn"
-              class="ghost-btn tiny player-mode-btn active"
-            >
-              Review versions
-            </button>
-            <button
-              id="modeRefsBtn"
-              class="ghost-btn tiny player-mode-btn"
-            >
-              Project references
-            </button>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {projects.map((project) => (
+              <article
+                key={project.id}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-4 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-base font-semibold">
+                    {project.title || "Untitled project"}
+                  </h2>
+                  {project.owner && (
+                    <span className="text-xs rounded-full border border-white/15 px-2 py-0.5 text-white/70">
+                      {project.owner}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-white/50">
+                  Creato il{" "}
+                  {project.created_at
+                    ? new Date(project.created_at).toLocaleString()
+                    : "data sconosciuta"}
+                </p>
+                <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-black/40 p-2 text-[11px] text-white/70">
+                  {JSON.stringify(project.data ?? {}, null, 2)}
+                </pre>
+              </article>
+            ))}
           </div>
-
-          <div class="player-title-row">
-            <div id="playerTitle" class="player-title">
-              No version selected
-            </div>
-            <span id="playerBadge" class="player-badge" data-status="">
-              No media
-            </span>
-          </div>
-
-          <div id="playerMedia" class="player-preview">
-            <div class="player-placeholder">
-              Create a project and drop a file to see the player.
-            </div>
-          </div>
-
-          <div class="player-controls">
-            <button id="playPauseBtn" class="primary-btn small" disabled>
-              Play
-            </button>
-            <!-- VOLUME SLIDER AUDIO ONLY -->
-            <input
-              id="volumeSlider"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value="1"
-              class="volume-slider"
-            />
-            <span id="timeLabel" class="time">--:-- / --:--</span>
-          </div>
-
-          <!-- VERSION STATUS BUTTONS -->
-          <div class="status-controls">
-            <button id="statusInReviewBtn" class="ghost-btn tiny">
-              In review
-            </button>
-            <button id="statusApprovedBtn" class="ghost-btn tiny">
-              Approved
-            </button>
-            <button id="statusChangesBtn" class="ghost-btn tiny">
-              Changes requested
-            </button>
-          </div>
-        </div>
-
-        <div class="comments-card">
-          <div class="comments-header">
-            <h3>Comments</h3>
-            <span id="commentsSummary" class="tag small">No comments</span>
-          </div>
-          <ul id="commentsList" class="comments-list"></ul>
-
-          <div class="comment-input">
-            <input
-              id="commentInput"
-              type="text"
-              placeholder="Add a comment (auto timecode)…"
-            />
-            <button id="addCommentBtn" class="primary-btn small" disabled>
-              Send
-            </button>
-          </div>
-        </div>
-
-        <div class="share-card">
-          <div class="share-row">
-            <div>
-              <strong>Client link</strong>
-              <div class="share-meta">
-                They can listen, comment and approve without an account.
-              </div>
-            </div>
-            <button id="copyLinkBtn" class="ghost-btn small" disabled>
-              Copy demo link
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-</div>
-          `,
-        }}
-      />
-    </>
+        )}
+      </section>
+    </main>
   );
 }
