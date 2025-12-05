@@ -1,65 +1,229 @@
-import Image from "next/image";
+import Script from "next/script";
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <>
+      {/* Libreria WaveSurfer dal CDN */}
+      <Script
+        src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"
+        strategy="beforeInteractive"
+      />
+
+      {/* Il tuo JS di CodePen (public/app.js) */}
+      <Script src="/app.js" strategy="afterInteractive" />
+
+      {/* Il tuo HTML di CodePen */}
+      <div
+        dangerouslySetInnerHTML={{
+          __html: `
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">Approved</div>
+    <button id="newProjectBtn" class="primary-btn full">+ New project</button>
+
+    <div class="sidebar-section">
+      <h3>Projects</h3>
+      <ul id="projectList" class="project-list">
+        <li class="project-item empty">
+          No projects yet. Click "New project".
+        </li>
+      </ul>
     </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="project-header-left">
+        <div class="project-title-row">
+          <div id="projectTitle" class="project-title">No project</div>
+          <button
+            id="projectMenuBtn"
+            class="icon-btn"
+            type="button"
+            title="Project options"
+            style="display: none"
+          >
+            ⋯
+          </button>
+        </div>
+        <div id="projectMeta" class="project-meta">
+          Click "New project" to get started
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="shareBtn" class="ghost-btn" disabled>Share link</button>
+        <button id="deliverBtn" class="primary-btn" disabled>
+          Generate delivery
+        </button>
+      </div>
+    </header>
+
+    <section class="upload-strip">
+      <div id="globalDropzone" class="dropzone disabled">
+        <strong>Drop media here</strong>
+        <span>Create a project to start.</span>
+      </div>
+
+      <div class="naming-options">
+        <label class="rename-toggle">
+          <input type="checkbox" id="autoRenameToggle" />
+          <span>Auto rename files (composer preset)</span>
+        </label>
+        <div class="naming-levels">
+          <span class="level-label">Scheme:</span>
+          <label class="level-option">
+            <input type="radio" name="namingLevel" value="media" checked />
+            <span>Media</span>
+          </label>
+          <label class="level-option">
+            <input type="radio" name="namingLevel" value="cinema" />
+            <span>Cinema</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <!-- LEFT COLUMN -->
+      <div class="left-column">
+        <!-- PROJECT REFERENCES -->
+        <div class="refs-card">
+          <div class="refs-header">
+            <div>
+              <h2>Project references</h2>
+              <div id="refsSubtitle" class="refs-subtitle">
+                Upload script, storyboard, temp tracks, brief...
+              </div>
+            </div>
+            <button id="refsToggleBtn" class="ghost-btn tiny">
+              Show
+            </button>
+          </div>
+
+          <div id="refsBody" class="refs-body">
+            <div id="refsDropzone" class="refs-dropzone disabled">
+              <strong>Drop reference files here</strong>
+              <span>PDF, images, audio, video, zip…</span>
+            </div>
+            <div id="refsList" class="refs-list refs-list-empty">
+              No reference files for this project.
+            </div>
+          </div>
+        </div>
+
+        <!-- CUE -->
+        <h2>Project cues</h2>
+        <div id="cueListSubtitle" class="cue-list-subtitle">
+          No project yet. Click "New project".
+        </div>
+        <div id="cueList" class="cue-list cue-list-empty">
+          No project. Click "New project" to get started.
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="right-column">
+        <div class="player-card">
+          <div class="player-mode-toggle">
+            <button
+              id="modeReviewBtn"
+              class="ghost-btn tiny player-mode-btn active"
+            >
+              Review versions
+            </button>
+            <button
+              id="modeRefsBtn"
+              class="ghost-btn tiny player-mode-btn"
+            >
+              Project references
+            </button>
+          </div>
+
+          <div class="player-title-row">
+            <div id="playerTitle" class="player-title">
+              No version selected
+            </div>
+            <span id="playerBadge" class="player-badge" data-status="">
+              No media
+            </span>
+          </div>
+
+          <div id="playerMedia" class="player-preview">
+            <div class="player-placeholder">
+              Create a project and drop a file to see the player.
+            </div>
+          </div>
+
+          <div class="player-controls">
+            <button id="playPauseBtn" class="primary-btn small" disabled>
+              Play
+            </button>
+            <!-- VOLUME SLIDER AUDIO ONLY -->
+            <input
+              id="volumeSlider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value="1"
+              class="volume-slider"
+            />
+            <span id="timeLabel" class="time">--:-- / --:--</span>
+          </div>
+
+          <!-- VERSION STATUS BUTTONS -->
+          <div class="status-controls">
+            <button id="statusInReviewBtn" class="ghost-btn tiny">
+              In review
+            </button>
+            <button id="statusApprovedBtn" class="ghost-btn tiny">
+              Approved
+            </button>
+            <button id="statusChangesBtn" class="ghost-btn tiny">
+              Changes requested
+            </button>
+          </div>
+        </div>
+
+        <div class="comments-card">
+          <div class="comments-header">
+            <h3>Comments</h3>
+            <span id="commentsSummary" class="tag small">No comments</span>
+          </div>
+          <ul id="commentsList" class="comments-list"></ul>
+
+          <div class="comment-input">
+            <input
+              id="commentInput"
+              type="text"
+              placeholder="Add a comment (auto timecode)…"
+            />
+            <button id="addCommentBtn" class="primary-btn small" disabled>
+              Send
+            </button>
+          </div>
+        </div>
+
+        <div class="share-card">
+          <div class="share-row">
+            <div>
+              <strong>Client link</strong>
+              <div class="share-meta">
+                They can listen, comment and approve without an account.
+              </div>
+            </div>
+            <button id="copyLinkBtn" class="ghost-btn small" disabled>
+              Copy demo link
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+          `,
+        }}
+      />
+    </>
   );
 }
