@@ -48,3 +48,91 @@
  GET /flow 200 in 39ms (compile: 3ms, render: 36ms)
  GET /flow 200 in 81ms (compile: 21ms, render: 60ms)
  GET /flow 200 in 42ms (compile: 3ms, render: 39ms)
+ GET /flow 200 in 34ms (compile: 4ms, render: 30ms)
+ GET /flow 200 in 56ms (compile: 5ms, render: 51ms)
+ GET /flow 200 in 141ms (compile: 98ms, render: 44ms)
+ GET /flow 200 in 36ms (compile: 4ms, render: 32ms)
+ GET /flow 200 in 19ms (compile: 2ms, render: 17ms)
+ GET /flow 200 in 23ms (compile: 1900µs, render: 21ms)
+ GET /flow 200 in 21ms (compile: 1906µs, render: 19ms)
+ GET /flow 200 in 18ms (compile: 1758µs, render: 16ms)
+ GET /flow 200 in 24ms (compile: 2ms, render: 22ms)
+ GET /flow 200 in 20ms (compile: 2ms, render: 18ms)
+ GET /flow 200 in 20ms (compile: 1988µs, render: 18ms)
+ GET /flow 200 in 22ms (compile: 1727µs, render: 21ms)
+ GET /flow 200 in 22ms (compile: 2ms, render: 19ms)
+ GET /flow 200 in 27ms (compile: 2ms, render: 24ms)
+ GET /flow 200 in 25ms (compile: 4ms, render: 20ms)
+ GET /flow 200 in 19ms (compile: 1804µs, render: 17ms)
+ GET /flow 200 in 22ms (compile: 2ms, render: 19ms)
+ GET /flow 200 in 27ms (compile: 2ms, render: 25ms)
+ GET /flow 200 in 21ms (compile: 2ms, render: 19ms)
+ GET /flow 200 in 19ms (compile: 2ms, render: 17ms)
+ GET /flow 200 in 167ms (compile: 3ms, render: 164ms)
+ GET /flow 200 in 71ms (compile: 8ms, render: 63ms)
+ GET /flow 200 in 161ms (compile: 111ms, render: 50ms)
+ GET /flow 200 in 39ms (compile: 4ms, render: 35ms)
+ GET /flow 200 in 22ms (compile: 1801µs, render: 21ms)
+ GET /flow 200 in 21ms (compile: 2ms, render: 18ms)
+ GET /flow 200 in 28ms (compile: 2ms, render: 26ms)
+ GET /flow 200 in 30ms (compile: 6ms, render: 24ms)
+ GET /flow 200 in 23ms (compile: 3ms, render: 20ms)
+ GET /flow 200 in 23ms (compile: 2ms, render: 21ms)
+ GET /flow 200 in 30ms (compile: 4ms, render: 26ms)
+ GET /flow 200 in 25ms (compile: 3ms, render: 22ms)
+ GET /flow 200 in 20ms (compile: 1884µs, render: 19ms)
+ GET /flow 200 in 24ms (compile: 1911µs, render: 22ms)
+ GET /flow 200 in 21ms (compile: 2ms, render: 18ms)
+ GET /flow 200 in 20ms (compile: 1705µs, render: 18ms)
+ GET /flow 200 in 19ms (compile: 1662µs, render: 18ms)
+ GET /flow 200 in 23ms (compile: 1976µs, render: 21ms)
+ GET /flow 200 in 24ms (compile: 4ms, render: 20ms)
+ GET /flow 200 in 27ms (compile: 1882µs, render: 25ms)
+ GET /flow 200 in 21ms (compile: 2ms, render: 19ms)
+🚀 Starting migration via API...
+📝 Found 42 SQL statements
+⚠️  Statement 1: No API key found in request
+⚠️  Statement 2: No API key found in request
+⚠️  Statement 3: No API key found in request
+⚠️  Statement 4: No API key found in request
+⚠️  Statement 5: No API key found in request
+⚠️  Statement 6: No API key found in request
+⚠️  Statement 7: No API key found in request
+⚠️  Statement 8: No API key found in request
+⚠️  Statement 9: No API key found in request
+⚠️  Statement 10: No API key found in request
+⚠️  Statement 11: No API key found in request
+⚠️  Statement 12: No API key found in request
+⚠️  Statement 13: No API key found in request
+⚠️  Statement 14: No API key found in request
+⚠️  Statement 15: No API key found in request
+⚠️  Statement 16: No API key found in request
+⚠️  Statement 17: No API key found in request
+⚠️  Statement 18: No API key found in request
+⚠️  Statement 19: No API key found in request
+⚠️  Statement 20: No API key found in request
+⚠️  Statement 21: No API key found in request
+⚠️  Statement 22: No API key found in request
+⚠️  Statement 23: No API key found in request
+⚠️  Statement 24: No API key found in request
+⚠️  Statement 25: No API key found in request
+⚠️  Statement 26: No API key found in request
+⚠️  Statement 27: No API key found in request
+⚠️  Statement 28: No API key found in request
+⚠️  Statement 29: No API key found in request
+⚠️  Statement 30: No API key found in request
+⚠️  Statement 31: No API key found in request
+⚠️  Statement 32: No API key found in request
+⚠️  Statement 33: No API key found in request
+⚠️  Statement 34: No API key found in request
+⚠️  Statement 35: No API key found in request
+⚠️  Statement 36: No API key found in request
+⚠️  Statement 37: No API key found in request
+⚠️  Statement 38: No API key found in request
+⚠️  Statement 39: No API key found in request
+⚠️  Statement 40: No API key found in request
+⚠️  Statement 41: No API key found in request
+⚠️  Statement 42: No API key found in request
+
+✅ Migration completed: 0 executed, 0 skipped
+ POST /api/migrate 200 in 5.3s (compile: 681ms, render: 4.6s)

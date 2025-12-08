@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import FilePreview from "./FilePreview";
 import MiniPreview from "./MiniPreview";
+import SupabaseSyncBridge from "./SupabaseSyncBridge";
 
 type DbProject = {
   id: string;
@@ -493,6 +494,9 @@ export default function AppShell() {
 
   return (
     <div className="app">
+      {/* Initialize Supabase sync bridge */}
+      {SupabaseSyncBridge && <div style={{ display: 'none' }} />}
+      
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="logo">Approved</div>

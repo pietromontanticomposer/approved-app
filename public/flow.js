@@ -329,6 +329,13 @@ function createNewProject() {
   state.projects.push(project);
   state.activeProjectId = project.id;
 
+  // Save to Supabase
+  if (window.SupabaseSync?.saveProject) {
+    window.SupabaseSync.saveProject(project).catch(err => 
+      console.error("Failed to save project to Supabase:", err)
+    );
+  }
+
   renderAll();
 }
 
@@ -384,6 +391,18 @@ function createCueFromFile(file) {
 
   cue.status = computeCueStatus(cue);
   refreshAllNames();
+
+  // Save to Supabase
+  if (window.SupabaseSync?.saveCue) {
+    window.SupabaseSync.saveCue(project.id, cue).catch(err =>
+      console.error("Failed to save cue to Supabase:", err)
+    );
+  }
+  if (window.SupabaseSync?.saveVersion) {
+    window.SupabaseSync.saveVersion(cue.id, version).catch(err =>
+      console.error("Failed to save version to Supabase:", err)
+    );
+  }
   
   // Targeted update: skipRebuild=true only adds the new cue instead of full rebuild
   renderProjectHeader();
@@ -1655,19 +1674,28 @@ function handleFileDropOnVersion(project, cue, version, file) {
   const type = detectRawType(file.name);
   const url = URL.createObjectURL(file);
 
-  version.deliverables.push({
+  const deliverable = {
     id: uid(),
     name: file.name,
     size: file.size,
     type,
     url
-  });
+  };
+
+  version.deliverables.push(deliverable);
 
   project.activeCueId = cue.id;
   project.activeVersionId = version.id;
 
   cue.status = computeCueStatus(cue);
   refreshAllNames();
+
+  // Save deliverable to Supabase
+  if (window.SupabaseSync?.saveVersionFile) {
+    window.SupabaseSync.saveVersionFile(version.id, deliverable).catch(err =>
+      console.error("Failed to save deliverable to Supabase:", err)
+    );
+  }
   
   // Targeted update: only update the meta text for this version row (deliverables count)
   const versionRow = document.querySelector(`.version-row[data-version-id="${version.id}"]`);
@@ -2879,6 +2907,83 @@ console.log('flow.js loaded (full CodePen port)');
   if (window.__FLOW_CODEPEN_JS__) {
     try { window.__FLOW_CODEPEN_JS__(); } catch (e) { console.error(e); }
   }
+
+  // Load projects from Supabase on startup
+  async function initializeFromSupabase() {
+    try {
+      if (!window.SupabaseSync?.loadProjects) {
+        console.warn('SupabaseSync not available yet');
+        return;
+      }
+
+      console.log('🚀 Loading projects from Supabase...');
+      const projects = await window.SupabaseSync.loadProjects();
+      
+      if (projects && projects.length > 0) {
+        // Transform Supabase projects to match our state format
+        state.projects = projects.map(dbProject => ({
+          id: dbProject.id,
+          name: dbProject.name,
+          description: dbProject.description,
+          cues: (dbProject.cues || []).map(dbCue => ({
+            id: dbCue.id,
+            index: dbCue.index_in_project,
+            originalName: dbCue.original_name,
+            name: dbCue.name,
+            displayName: dbCue.display_name,
+            status: dbCue.status,
+            versions: (dbCue.versions || []).map(dbVersion => ({
+              id: dbVersion.id,
+              index: dbVersion.index_in_cue,
+              status: dbVersion.status,
+              media: dbVersion.media_type ? {
+                type: dbVersion.media_type,
+                url: dbVersion.media_url,
+                storagePath: dbVersion.media_storage_path,
+                originalName: dbVersion.media_original_name,
+                displayName: dbVersion.media_display_name,
+                duration: dbVersion.media_duration,
+                thumbnailUrl: dbVersion.media_thumbnail_url,
+                thumbnailPath: dbVersion.media_thumbnail_path,
+                peaks: null
+              } : null,
+              comments: [],
+              deliverables: [],
+              isOpen: true
+            })),
+            isOpen: true
+          })),
+          activeCueId: null,
+          activeVersionId: null,
+          references: [],
+          activeReferenceId: null
+        }));
+
+        if (state.projects.length > 0) {
+          state.activeProjectId = state.projects[0].id;
+        }
+
+        console.log('✅ Loaded', state.projects.length, 'projects from Supabase');
+        renderAll();
+      } else {
+        console.log('📭 No projects in Supabase');
+      }
+    } catch (err) {
+      console.error('❌ Error loading from Supabase:', err);
+    }
+  }
+
+  // Wait for SupabaseSync to be available, then load
+  let retries = 0;
+  const initInterval = setInterval(() => {
+    if (window.SupabaseSync) {
+      clearInterval(initInterval);
+      initializeFromSupabase();
+    } else if (retries++ > 50) {
+      clearInterval(initInterval);
+      console.warn('SupabaseSync not available after 5 seconds, starting without DB');
+    }
+  }, 100);
 
   // Initialize dropzones after DOM ready
   try { setupDropzones(); } catch (e) { console.error('setupDropzones failed', e); }
