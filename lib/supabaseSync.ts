@@ -113,7 +113,7 @@ export async function saveCue(projectId: string, cue: any) {
       {
         id: cue.id,
         project_id: projectId,
-        index_in_project: cue.indexInProject || 0,
+        index_in_project: cue.index || cue.indexInProject || 0,
         original_name: cue.originalName || null,
         name: cue.name || null,
         display_name: cue.displayName || null,
@@ -154,7 +154,7 @@ export async function saveVersion(cueId: string, version: any) {
       {
         id: version.id,
         cue_id: cueId,
-        index_in_cue: version.indexInCue || 0,
+        index_in_cue: version.index || version.indexInCue || 0,
         status: version.status || "in-review",
         media_type: version.media?.type || null,
         media_storage_path: version.media?.storagePath || null,

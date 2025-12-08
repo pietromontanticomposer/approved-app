@@ -494,8 +494,8 @@ export default function AppShell() {
 
   return (
     <div className="app">
-      {/* Initialize Supabase sync bridge */}
-      {SupabaseSyncBridge && <div style={{ display: 'none' }} />}
+      {/* Initialize Supabase sync bridge - must be first */}
+      <SupabaseSyncBridge />
       
       {/* SIDEBAR */}
       <aside className="sidebar">

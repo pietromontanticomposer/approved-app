@@ -319,6 +319,7 @@ function createNewProject() {
   const project = {
     id: uid(),
     name: name.trim() || defaultName,
+    description: null,
     cues: [],
     activeCueId: null,
     activeVersionId: null,
@@ -331,9 +332,12 @@ function createNewProject() {
 
   // Save to Supabase
   if (window.SupabaseSync?.saveProject) {
+    console.log("💾 Saving project to Supabase...", project.id);
     window.SupabaseSync.saveProject(project).catch(err => 
       console.error("Failed to save project to Supabase:", err)
     );
+  } else {
+    console.warn("⚠️  SupabaseSync.saveProject not available");
   }
 
   renderAll();
@@ -394,11 +398,13 @@ function createCueFromFile(file) {
 
   // Save to Supabase
   if (window.SupabaseSync?.saveCue) {
+    console.log("💾 Saving cue to Supabase...", cue.id);
     window.SupabaseSync.saveCue(project.id, cue).catch(err =>
       console.error("Failed to save cue to Supabase:", err)
     );
   }
   if (window.SupabaseSync?.saveVersion) {
+    console.log("💾 Saving version to Supabase...", version.id);
     window.SupabaseSync.saveVersion(cue.id, version).catch(err =>
       console.error("Failed to save version to Supabase:", err)
     );
@@ -1692,9 +1698,12 @@ function handleFileDropOnVersion(project, cue, version, file) {
 
   // Save deliverable to Supabase
   if (window.SupabaseSync?.saveVersionFile) {
+    console.log("💾 Saving deliverable to Supabase...", deliverable.id);
     window.SupabaseSync.saveVersionFile(version.id, deliverable).catch(err =>
       console.error("Failed to save deliverable to Supabase:", err)
     );
+  } else {
+    console.warn("⚠️  SupabaseSync.saveVersionFile not available");
   }
   
   // Targeted update: only update the meta text for this version row (deliverables count)
@@ -2974,16 +2983,24 @@ console.log('flow.js loaded (full CodePen port)');
   }
 
   // Wait for SupabaseSync to be available, then load
+  function initWhenReady() {
+    if (window.SupabaseSync && !window.__supabase_sync_loaded) {
+      window.__supabase_sync_loaded = true;
+      initializeFromSupabase();
+    }
+  }
+
+  // Try polling first
   let retries = 0;
   const initInterval = setInterval(() => {
-    if (window.SupabaseSync) {
+    initWhenReady();
+    if (window.__supabase_sync_loaded || retries++ > 50) {
       clearInterval(initInterval);
-      initializeFromSupabase();
-    } else if (retries++ > 50) {
-      clearInterval(initInterval);
-      console.warn('SupabaseSync not available after 5 seconds, starting without DB');
     }
   }, 100);
+
+  // Also listen for explicit ready event
+  window.addEventListener('supabase-sync-ready', initWhenReady);
 
   // Initialize dropzones after DOM ready
   try { setupDropzones(); } catch (e) { console.error('setupDropzones failed', e); }

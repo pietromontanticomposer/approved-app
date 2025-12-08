@@ -136,3 +136,7 @@
 
 ✅ Migration completed: 0 executed, 0 skipped
  POST /api/migrate 200 in 5.3s (compile: 681ms, render: 4.6s)
+ GET /flow 200 in 110ms (compile: 5ms, render: 105ms)
+ GET /flow 200 in 59ms (compile: 6ms, render: 52ms)
+ GET /flow 200 in 48ms (compile: 4ms, render: 44ms)
+ GET /flow 200 in 249ms (compile: 103ms, render: 146ms)
