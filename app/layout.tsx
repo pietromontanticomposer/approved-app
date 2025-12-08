@@ -1,8 +1,10 @@
+// app/layout.tsx
+import type { Metadata } from "next";
 import "./globals.css";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Approved",
-  description: "App",
+  description: "Approved – project review workspace",
 };
 
 export default function RootLayout({

@@ -119,6 +119,56 @@ function isFileDragEvent(e) {
   return Array.from(dt.types).includes("Files");
 }
 
+// =======================
+// UPLOAD HELPERS (client-side wrappers)
+// =======================
+async function uploadFileToServer(file, projectId) {
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    if (projectId) fd.append("projectId", projectId);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: fd
+    });
+
+    if (!res.ok) throw new Error("Upload failed");
+    const data = await res.json();
+    return data.url;
+  } catch (err) {
+    console.warn("[uploadFileToServer] upload failed", err);
+    throw err;
+  }
+}
+
+async function uploadDataUrlThumbnail(dataUrl, projectId, filename) {
+  try {
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const file = new File([blob], filename, { type: blob.type || "image/png" });
+    return await uploadFileToServer(file, projectId);
+  } catch (err) {
+    console.warn("[uploadDataUrlThumbnail] failed", err);
+    throw err;
+  }
+}
+
+async function saveProjectToServer(project) {
+  try {
+    const res = await fetch('/api/projects/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project })
+    });
+    if (!res.ok) throw new Error('Save project failed');
+    return await res.json();
+  } catch (err) {
+    console.warn('[saveProjectToServer] failed', err);
+    throw err;
+  }
+}
+
 function triggerDownload(url, filename) {
   if (!url) return;
   const a = document.createElement("a");
@@ -161,7 +211,31 @@ function setVersionStatus(project, cue, version, status) {
   if (!VERSION_STATUSES[status]) return;
   version.status = status;
   cue.status = computeCueStatus(cue);
-  renderAll();
+
+  // Update DOM in-place to avoid re-rendering the whole list (prevents
+  // mini waveform flicker). Update cue status badge and version row classes.
+  try {
+    const cueBlock = document.querySelector(`.cue-block[data-cue-id="${cue.id}"]`);
+    if (cueBlock) {
+      const cueStatusEl = cueBlock.querySelector('.cue-status');
+      if (cueStatusEl) {
+        cueStatusEl.className = `cue-status ${cue.status}`;
+        cueStatusEl.textContent = VERSION_STATUSES[cue.status] || 'In review';
+      }
+    }
+
+    // Update any version rows for this version
+    document.querySelectorAll(`.version-row[data-version-id="${version.id}"]`).forEach(row => {
+      // remove known status-* classes then add the new one
+      row.classList.remove('status-in-review', 'status-approved', 'status-changes-requested');
+      row.classList.add(`status-${status}`);
+      row.dataset.status = status;
+    });
+  } catch (e) {
+    // fallback to full render if anything unexpected occurs
+    console.warn('[setVersionStatus] partial update failed, falling back to full render', e);
+    renderAll();
+  }
 }
 
 // =======================
@@ -312,28 +386,87 @@ function createNewProject() {
   const name = prompt("Project name", defaultName);
   if (name === null) return;
 
-  const project = {
-    id: uid(),
-    name: name.trim() || defaultName,
-    cues: [],
-    activeCueId: null,
-    activeVersionId: null,
-    references: [],
-    activeReferenceId: null
+  const projectPayload = {
+    title: name.trim() || defaultName,
+    description: null
   };
 
-  state.projects.push(project);
-  state.activeProjectId = project.id;
+  // Try to persist to backend; fall back to local state on error
+  (async () => {
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(projectPayload)
+      });
 
-  renderAll();
+      if (!res.ok) throw new Error('API create project failed');
+
+      const data = await res.json();
+      const project = data.project;
+
+      // Ensure cues, references fields exist for compatibility
+      project.cues = project.cues || [];
+      project.references = project.references || [];
+      project.activeCueId = project.activeCueId || null;
+      project.activeVersionId = project.activeVersionId || null;
+
+      state.projects.unshift(project);
+      state.activeProjectId = project.id;
+      renderAll();
+    } catch (err) {
+      console.warn('[createNewProject] backend unavailable, using local state', err);
+
+      const project = {
+        id: uid(),
+        name: name.trim() || defaultName,
+        cues: [],
+        activeCueId: null,
+        activeVersionId: null,
+        references: [],
+        activeReferenceId: null
+      };
+
+      state.projects.unshift(project);
+      state.activeProjectId = project.id;
+      renderAll();
+    }
+  })();
 }
 
 function renameProject(project) {
   const name = prompt("Rename project", project.name);
   if (name === null) return;
   if (!name.trim()) return;
-  project.name = name.trim();
-  renderAll();
+
+  const newName = name.trim();
+
+  (async () => {
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, title: newName })
+      });
+
+      if (!res.ok) throw new Error('API rename failed');
+
+      // update local copy with returned project if provided
+      const data = await res.json();
+      if (data && data.project) {
+        const p = data.project;
+        const local = getProjectById(p.id);
+        if (local) local.name = p.title;
+      } else {
+        project.name = newName;
+      }
+      renderAll();
+    } catch (err) {
+      console.warn('[renameProject] backend unavailable, renaming locally', err);
+      project.name = newName;
+      renderAll();
+    }
+  })();
 }
 
 function deleteProject(id) {
@@ -342,15 +475,36 @@ function deleteProject(id) {
   const ok = confirm(`Delete project "${p.name}"?`);
   if (!ok) return;
 
-  state.projects = state.projects.filter(x => x.id !== id);
-  state.activeProjectId =
-    state.projects.length ? state.projects[state.projects.length - 1].id : null;
+  (async () => {
+    try {
+      const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
 
-  currentPlayerVersionId = null;
-  currentPlayerMediaType = null;
-  state.playerMode = "review";
+      if (!res.ok) throw new Error('API delete failed');
 
-  renderAll();
+      state.projects = state.projects.filter(x => x.id !== id);
+      state.activeProjectId =
+        state.projects.length ? state.projects[state.projects.length - 1].id : null;
+
+      currentPlayerVersionId = null;
+      currentPlayerMediaType = null;
+      state.playerMode = "review";
+
+      renderAll();
+    } catch (err) {
+      console.warn('[deleteProject] backend unavailable, deleting locally', err);
+      state.projects = state.projects.filter(x => x.id !== id);
+      state.activeProjectId =
+        state.projects.length ? state.projects[state.projects.length - 1].id : null;
+
+      currentPlayerVersionId = null;
+      currentPlayerMediaType = null;
+      state.playerMode = "review";
+
+      renderAll();
+    }
+  })();
 }
 
 // =======================
@@ -795,6 +949,33 @@ function loadVideoPlayer(project, cue, version) {
 
   if (version.media.thumbnailUrl) {
     thumb.style.backgroundImage = `url(${version.media.thumbnailUrl})`;
+  }
+  else {
+    // Asynchronously generate a thumbnail for the player if not already present.
+    generateVideoThumbnailFromUrl(version).then(th => {
+      if (!th) return;
+      try {
+        // show immediate data-URL
+        version.media.thumbnailUrl = th;
+        thumb.style.backgroundImage = `url(${th})`;
+      } catch (e) {
+        console.warn('[loadVideoPlayer] failed to apply generated thumbnail', e);
+      }
+
+      // upload the generated thumbnail and persist
+      (async () => {
+        try {
+          const uploaded = await uploadDataUrlThumbnail(th, project.id, `${version.id}-thumb.png`);
+          if (uploaded) {
+            version.media.thumbnailUrl = uploaded;
+            thumb.style.backgroundImage = `url(${uploaded})`;
+            try { await saveProjectToServer(project); } catch (e) {}
+          }
+        } catch (err) {
+          console.warn('[loadVideoPlayer] thumbnail upload failed', err);
+        }
+      })();
+    });
   }
 
   const playBtn = document.createElement("button");
@@ -1540,6 +1721,86 @@ function handleFileDropOnCue(project, cue, file) {
   cue.status = computeCueStatus(cue);
   refreshAllNames();
   renderAll();
+
+  // If the dropped file is a video, generate a thumbnail immediately from the
+  // local object URL and apply it to the preview so the thumbnail appears
+  // right after upload finishes (backend persistence can follow later).
+  try {
+    if (version.media && version.media.type === "video") {
+      generateVideoThumbnailFromUrl(version).then(th => {
+        if (!th) return;
+
+        // Use immediate data-URL for UI responsiveness
+        version.media.thumbnailUrl = th;
+
+        const prev = document.getElementById(`preview-${version.id}`);
+        if (prev) {
+          prev.innerHTML = "";
+          prev.classList.add("video");
+          const img = document.createElement("img");
+          img.src = th;
+          img.className = "version-thumb";
+          prev.appendChild(img);
+        }
+
+        try {
+          if (currentPlayerVersionId === version.id) {
+            const playerThumb = document.querySelector(".video-thumb");
+            if (playerThumb) playerThumb.style.backgroundImage = `url(${th})`;
+          }
+        } catch (e) {}
+
+        // Upload generated thumbnail and persist project state
+        (async () => {
+          try {
+            const uploaded = await uploadDataUrlThumbnail(th, project.id, `${version.id}-thumb.png`);
+            if (uploaded) {
+              version.media.thumbnailUrl = uploaded;
+              try { await saveProjectToServer(project); } catch (e) {}
+
+              // Update preview and player to use persistent URL
+              const el = document.getElementById(`preview-${version.id}`);
+              if (el) {
+                el.innerHTML = "";
+                el.classList.add("video");
+                const img2 = document.createElement("img");
+                img2.src = uploaded;
+                img2.className = "version-thumb";
+                el.appendChild(img2);
+              }
+
+              try {
+                if (currentPlayerVersionId === version.id) {
+                  const playerThumb = document.querySelector(".video-thumb");
+                  if (playerThumb) playerThumb.style.backgroundImage = `url(${uploaded})`;
+                }
+              } catch (e) {}
+            }
+          } catch (err) {
+            console.warn('[handleFileDropOnCue] thumbnail upload failed', err);
+          }
+        })();
+      });
+    }
+  } catch (e) {
+    console.warn('[handleFileDropOnCue] thumbnail generation failed', e);
+  }
+
+  // Upload the raw file to storage in background so the media URL becomes persistent.
+  (async () => {
+    try {
+      if (version.media && (version.media.type === 'audio' || version.media.type === 'video')) {
+        const uploadedUrl = await uploadFileToServer(file, project.id);
+        version.media.url = uploadedUrl;
+        // Save project JSON so the persisted URL is stored.
+        try { await saveProjectToServer(project); } catch (e) {}
+        // Re-render previews/player to use the uploaded URL.
+        renderVersionPreviews();
+      }
+    } catch (err) {
+      console.warn('[handleFileDropOnCue] background upload failed', err);
+    }
+  })();
 }
 
 function handleFileDropOnVersion(project, cue, version, file) {
@@ -1561,6 +1822,20 @@ function handleFileDropOnVersion(project, cue, version, file) {
   refreshAllNames();
   renderCueList();
   renderVersionPreviews();
+
+  // Upload the deliverable file to persist it and replace the temporary URL.
+  (async () => {
+    try {
+      const uploadedUrl = await uploadFileToServer(file, project.id);
+      // find the deliverable and update its url
+      const d = version.deliverables.find(x => x.name === file.name && x.size === file.size);
+      if (d) d.url = uploadedUrl;
+      try { await saveProjectToServer(project); } catch (e) {}
+      renderVersionPreviews();
+    } catch (err) {
+      console.warn('[handleFileDropOnVersion] deliverable upload failed', err);
+    }
+  })();
 }
 
 // =======================
@@ -1774,7 +2049,7 @@ function renderReferences() {
             const img = document.createElement("img");
             img.src = th;
             img.alt = ver.name;
-            el.appendChild(img);
+            vPrev.appendChild(img);
           });
         }
       } else {
@@ -2445,50 +2720,54 @@ window.addEventListener("drop", e => {
   }
 });
 
-dropzoneEl.addEventListener("dragover", e => {
-  if (!isFileDragEvent(e)) return;
-  if (!getActiveProject()) return;
-  e.preventDefault();
-  dropzoneEl.classList.add("drag-over");
-});
+if (dropzoneEl) {
+  dropzoneEl.addEventListener("dragover", e => {
+    if (!isFileDragEvent(e)) return;
+    if (!getActiveProject()) return;
+    e.preventDefault();
+    dropzoneEl.classList.add("drag-over");
+  });
 
-dropzoneEl.addEventListener("dragleave", e => {
-  if (!dropzoneEl.contains(e.relatedTarget)) {
-    dropzoneEl.classList.remove("drag-over");
-  }
-});
-
-dropzoneEl.addEventListener("drop", e => {
-  if (!isFileDragEvent(e)) return;
-  e.preventDefault();
-  dropzoneEl.classList.remove("drag-over");
-
-  const project = getActiveProject();
-  if (!project) return;
-
-  const files = e.dataTransfer.files;
-  if (!files || !files.length) return;
-
-  createCueFromFile(files[0]);
-});
-
-dropzoneEl.addEventListener("click", () => {
-  const project = getActiveProject();
-  if (!project) return;
-
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "audio/*,video/*,application/zip";
-  input.multiple = false;
-
-  input.addEventListener("change", () => {
-    if (input.files && input.files.length) {
-      createCueFromFile(input.files[0]);
+  dropzoneEl.addEventListener("dragleave", e => {
+    if (!dropzoneEl.contains(e.relatedTarget)) {
+      dropzoneEl.classList.remove("drag-over");
     }
   });
 
-  input.click();
-});
+  dropzoneEl.addEventListener("drop", e => {
+    if (!isFileDragEvent(e)) return;
+    e.preventDefault();
+    dropzoneEl.classList.remove("drag-over");
+
+    const project = getActiveProject();
+    if (!project) return;
+
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
+
+    createCueFromFile(files[0]);
+  });
+
+  dropzoneEl.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "audio/*,video/*,application/zip";
+    input.multiple = false;
+
+    input.addEventListener("change", () => {
+      if (input.files && input.files.length) {
+        createCueFromFile(input.files[0]);
+      }
+    });
+
+    input.click();
+  });
+} else {
+  console.warn("[FlowPreview] globalDropzone element not found, skipping dropzone wiring");
+}
 
 // =======================
 // AUTO RENAME
@@ -2560,4 +2839,32 @@ function renderAll() {
   renderPlayer();
 }
 
-renderAll();
+// Try to load persisted projects from backend on startup.
+async function loadProjectsFromServer() {
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) throw new Error('Failed to fetch projects');
+    const data = await res.json();
+    const list = (data.projects || []).map(p => ({
+      id: p.id,
+      name: p.title || p.name || 'Project',
+      cues: p.cues || [],
+      activeCueId: p.activeCueId || null,
+      activeVersionId: p.activeVersionId || null,
+      references: p.references || [],
+      activeReferenceId: p.activeReferenceId || null
+    }));
+
+    if (list.length) state.projects = list;
+    if (!state.activeProjectId && state.projects.length) {
+      state.activeProjectId = state.projects[0].id;
+    }
+  } catch (err) {
+    console.warn('[loadProjectsFromServer] could not load projects', err);
+  }
+}
+
+(async function init() {
+  await loadProjectsFromServer();
+  renderAll();
+})();

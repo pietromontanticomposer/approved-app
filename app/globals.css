@@ -1184,3 +1184,32 @@ body {
   background: #111827;
   border-radius: 999px;
 }
+
+/* WAVE PATCHES / NEXT.JS FIX */
+
+.version-preview canvas,
+.version-preview wave {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+}
+
+/* FORCE MINI WAVE IN NEXT.JS */
+.version-preview {
+  position: relative !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.version-preview > wave,
+.version-preview wave,
+.version-preview canvas {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 1 !important;
+  background: transparent !important;
+}
