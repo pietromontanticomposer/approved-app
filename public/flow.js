@@ -382,7 +382,7 @@ function deleteProject(id) {
 // =======================
 // CUE / VERSION CRUD
 // =======================
-function createCueFromFile(file) {
+async function createCueFromFile(file) {
   const project = getActiveProject();
   if (!project) return;
 
@@ -399,55 +399,77 @@ function createCueFromFile(file) {
 
   project.cues.push(cue);
 
-  const version = createVersionForCue(project, cue, file);
+  // Upload file first
+  console.log("📤 Uploading file to Supabase Storage...", file.name);
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("projectId", project.id);
+  formData.append("cueId", cue.id);
 
-  project.activeCueId = cue.id;
-  project.activeVersionId = version.id;
+  try {
+    const uploadRes = await fetch("/api/upload", {
+      method: "POST",
+      body: formData
+    });
+    const uploadData = await uploadRes.json();
 
-  cue.status = computeCueStatus(cue);
-  refreshAllNames();
+    if (uploadData.error) {
+      console.error("Upload failed:", uploadData.error);
+      alert("Failed to upload file: " + uploadData.error);
+      return;
+    }
 
-  // Save to Supabase via API
-  console.log("💾 Saving cue via API...", cue.id);
-  fetch("/api/cues", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project_id: project.id, cue })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        console.error("Failed to save cue:", data.error);
-      } else {
-        console.log("✅ Cue saved:", data.cue?.id);
-      }
-    })
-    .catch(err => console.error("Failed to save cue:", err));
+    console.log("✅ File uploaded:", uploadData.url);
 
-  console.log("💾 Saving version via API...", version.id);
-  fetch("/api/versions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cue_id: cue.id, version })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        console.error("Failed to save version:", data.error);
-      } else {
-        console.log("✅ Version saved:", data.version?.id);
-      }
-    })
-    .catch(err => console.error("Failed to save version:", err));
-  
-  // Targeted update: skipRebuild=true only adds the new cue instead of full rebuild
-  renderProjectHeader();
-  renderCueList(true);
-  renderVersionPreviews();
-  renderPlayer();
+    // Now create version with the uploaded URL
+    const version = createVersionForCue(project, cue, file, uploadData.url, uploadData.path);
+
+    project.activeCueId = cue.id;
+    project.activeVersionId = version.id;
+
+    cue.status = computeCueStatus(cue);
+    refreshAllNames();
+
+    // Save cue to database
+    console.log("💾 Saving cue via API...", cue.id);
+    const cueRes = await fetch("/api/cues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: project.id, cue })
+    });
+    const cueData = await cueRes.json();
+    if (cueData.error) {
+      console.error("Failed to save cue:", cueData.error);
+    } else {
+      console.log("✅ Cue saved:", cueData.cue?.id);
+    }
+
+    // Save version to database
+    console.log("💾 Saving version via API...", version.id);
+    const versionRes = await fetch("/api/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cue_id: cue.id, version })
+    });
+    const versionData = await versionRes.json();
+    if (versionData.error) {
+      console.error("Failed to save version:", versionData.error);
+    } else {
+      console.log("✅ Version saved:", versionData.version?.id);
+    }
+    
+    // Targeted update: skipRebuild=true only adds the new cue instead of full rebuild
+    renderProjectHeader();
+    renderCueList(true);
+    renderVersionPreviews();
+    renderPlayer();
+  } catch (err) {
+    console.error("Error creating cue from file:", err);
+    alert("Failed to create cue: " + err.message);
+  }
 }
 
-function createVersionForCue(project, cue, file) {
+function createVersionForCue(project, cue, file, uploadedUrl, storagePath) {
   const version = {
     id: uid(),
     index: cue.versions.length,
@@ -458,12 +480,13 @@ function createVersionForCue(project, cue, file) {
   };
 
   const type = detectRawType(file.name);
-  const url = URL.createObjectURL(file);
+  const url = uploadedUrl || URL.createObjectURL(file);
 
   if (type === "audio" || type === "video") {
     version.media = {
       type,
       url,
+      storagePath: storagePath || null,
       originalName: file.name,
       displayName: "",
       duration: null,

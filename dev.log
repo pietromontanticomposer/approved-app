@@ -259,3 +259,23 @@
  POST /api/versions 500 in 395ms (compile: 20ms, render: 375ms)
  GET /flow 200 in 49ms (compile: 4ms, render: 46ms)
  GET /api/projects 200 in 181ms (compile: 2ms, render: 178ms)
+ GET /flow 200 in 48ms (compile: 3ms, render: 46ms)
+ GET /api/projects 200 in 697ms (compile: 66ms, render: 631ms)
+ GET /flow 200 in 42ms (compile: 3ms, render: 40ms)
+ GET /api/projects 200 in 158ms (compile: 2ms, render: 155ms)
+[POST /api/cues] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "peja5hzw82l"'
+}
+ POST /api/cues 500 in 459ms (compile: 4ms, render: 455ms)
+[POST /api/versions] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "peja5hzw82l"'
+}
+ POST /api/versions 500 in 536ms (compile: 22ms, render: 514ms)
+ GET /flow 200 in 58ms (compile: 4ms, render: 54ms)
+ GET /api/projects 200 in 313ms (compile: 3ms, render: 310ms)
