@@ -221,3 +221,41 @@
  GET /flow 200 in 20ms (compile: 1633µs, render: 18ms)
  GET /flow 200 in 19ms (compile: 1709µs, render: 17ms)
  GET /flow 200 in 21ms (compile: 2ms, render: 19ms)
+ GET /flow 200 in 83ms (compile: 5ms, render: 78ms)
+ GET /api/projects 200 in 551ms (compile: 66ms, render: 485ms)
+ POST /api/projects 201 in 158ms (compile: 3ms, render: 155ms)
+[POST /api/versions] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "evxrk8kf4y7"'
+}
+ POST /api/versions 500 in 1209ms (compile: 277ms, render: 932ms)
+[POST /api/cues] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "evxrk8kf4y7"'
+}
+ POST /api/cues 500 in 1350ms (compile: 340ms, render: 1010ms)
+ GET /flow 200 in 98ms (compile: 4ms, render: 94ms)
+ GET /api/projects 200 in 189ms (compile: 1808µs, render: 188ms)
+ POST /api/projects 201 in 485ms (compile: 2ms, render: 483ms)
+ GET /flow 200 in 49ms (compile: 5ms, render: 44ms)
+ GET /api/projects 200 in 195ms (compile: 2ms, render: 193ms)
+[POST /api/cues] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "fqvdm17ukrg"'
+}
+ POST /api/cues 500 in 335ms (compile: 16ms, render: 320ms)
+[POST /api/versions] Supabase error {
+  code: '22P02',
+  details: null,
+  hint: null,
+  message: 'invalid input syntax for type uuid: "fqvdm17ukrg"'
+}
+ POST /api/versions 500 in 395ms (compile: 20ms, render: 375ms)
+ GET /flow 200 in 49ms (compile: 4ms, render: 46ms)
+ GET /api/projects 200 in 181ms (compile: 2ms, render: 178ms)

@@ -3004,6 +3004,15 @@ console.log('flow.js loaded (full CodePen port)');
 
         if (state.projects.length > 0) {
           state.activeProjectId = state.projects[0].id;
+          
+          // Set first cue and version as active if they exist
+          const firstProject = state.projects[0];
+          if (firstProject.cues && firstProject.cues.length > 0) {
+            firstProject.activeCueId = firstProject.cues[0].id;
+            if (firstProject.cues[0].versions && firstProject.cues[0].versions.length > 0) {
+              firstProject.activeVersionId = firstProject.cues[0].versions[0].id;
+            }
+          }
         }
 
         console.log('✅ Loaded', state.projects.length, 'projects from Supabase');

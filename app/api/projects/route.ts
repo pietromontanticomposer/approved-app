@@ -17,7 +17,33 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, name, description, created_at")
+      .select(`
+        id, 
+        name, 
+        description, 
+        created_at,
+        cues (
+          id,
+          project_id,
+          index_in_project,
+          original_name,
+          name,
+          display_name,
+          status,
+          versions (
+            id,
+            cue_id,
+            index_in_cue,
+            status,
+            media_type,
+            media_url,
+            media_original_name,
+            media_display_name,
+            media_duration,
+            media_thumbnail_url
+          )
+        )
+      `)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -32,7 +58,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { projects: (data ?? []) as DbProject[] },
+      { projects: data ?? [] },
       { status: 200 }
     );
   } catch (err: any) {
