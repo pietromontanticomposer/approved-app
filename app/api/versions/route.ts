@@ -1,5 +1,6 @@
 // app/api/versions/route.ts
 import { NextResponse } from "next/server";
+import { v4 as uuidv4 } from "uuid";
 import { supabase } from "@/lib/supabaseClient";
 
 export async function POST(req: Request) {
@@ -15,10 +16,12 @@ export async function POST(req: Request) {
       );
     }
 
+    const version_id = uuidv4();
+
     const { data, error } = await supabase
       .from("versions")
       .insert({
-        id: version.id,
+        id: version_id,
         cue_id,
         index_in_cue: version.index || 0,
         status: version.status || "in-review",

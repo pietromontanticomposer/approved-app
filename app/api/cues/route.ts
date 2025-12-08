@@ -1,5 +1,6 @@
 // app/api/cues/route.ts
 import { NextResponse } from "next/server";
+import { v4 as uuidv4 } from "uuid";
 import { supabase } from "@/lib/supabaseClient";
 
 export async function POST(req: Request) {
@@ -15,10 +16,12 @@ export async function POST(req: Request) {
       );
     }
 
+    const cue_id = uuidv4();
+    
     const { data, error } = await supabase
       .from("cues")
       .insert({
-        id: cue.id,
+        id: cue_id,
         project_id,
         index_in_project: cue.index || 0,
         original_name: cue.originalName || null,

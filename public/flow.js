@@ -352,6 +352,14 @@ function createNewProject() {
     .catch(err => console.error("Failed to save project:", err));
 
   renderAll();
+  
+  // Force show the dashboard by simulating project click
+  setTimeout(() => {
+    const projectListItem = document.querySelector(`[data-project-id="${project.id}"]`);
+    if (projectListItem) {
+      projectListItem.click();
+    }
+  }, 100);
 }
 
 function renameProject(project) {
@@ -411,6 +419,14 @@ async function createCueFromFile(file) {
       method: "POST",
       body: formData
     });
+    
+    if (!uploadRes.ok) {
+      const text = await uploadRes.text();
+      console.error("[DEBUG] Upload failed with status", uploadRes.status, text);
+      alert("Failed to upload file: " + uploadRes.status);
+      return;
+    }
+    
     const uploadData = await uploadRes.json();
 
     if (uploadData.error) {
@@ -440,8 +456,12 @@ async function createCueFromFile(file) {
     const cueData = await cueRes.json();
     if (cueData.error) {
       console.error("Failed to save cue:", cueData.error);
+      return;
     } else {
-      console.log("✅ Cue saved:", cueData.cue?.id);
+      console.log("✅ Cue saved:", cueData.cueId);
+      // Update cue with server-generated ID
+      cue.id = cueData.cueId;
+      project.activeCueId = cue.id;
     }
 
     // Save version to database
@@ -454,13 +474,17 @@ async function createCueFromFile(file) {
     const versionData = await versionRes.json();
     if (versionData.error) {
       console.error("Failed to save version:", versionData.error);
+      return;
     } else {
       console.log("✅ Version saved:", versionData.version?.id);
+      // Update version with server-generated ID
+      version.id = versionData.version?.id;
+      project.activeVersionId = version.id;
     }
     
-    // Targeted update: skipRebuild=true only adds the new cue instead of full rebuild
+    // Full rebuild needed because IDs changed on server
     renderProjectHeader();
-    renderCueList(true);
+    renderCueList(false);  // Force full rebuild, not skip
     renderVersionPreviews();
     renderPlayer();
   } catch (err) {
