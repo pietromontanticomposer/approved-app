@@ -144,3 +144,31 @@
  GET /flow 200 in 62ms (compile: 8ms, render: 55ms)
  GET /flow 200 in 65ms (compile: 6ms, render: 59ms)
  GET /flow 200 in 66ms (compile: 6ms, render: 60ms)
+ GET /flow 200 in 52ms (compile: 6ms, render: 46ms)
+ GET /flow 200 in 56ms (compile: 3ms, render: 53ms)
+   Reload env: .env.local
+ GET /flow 200 in 201ms (compile: 85ms, render: 116ms)
+ GET /flow 200 in 205ms (compile: 10ms, render: 195ms)
+ GET /flow 200 in 59ms (compile: 7ms, render: 53ms)
+[GET /api/projects] Supabase error {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column projects.title does not exist'
+}
+ GET /api/projects 500 in 1495ms (compile: 782ms, render: 714ms)
+[GET /api/projects] Supabase error {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column projects.title does not exist'
+}
+ GET /api/projects 500 in 193ms (compile: 3ms, render: 190ms)
+[GET /api/projects] Supabase error {
+  code: '42703',
+  details: null,
+  hint: null,
+  message: 'column projects.title does not exist'
+}
+ GET /api/projects 500 in 228ms (compile: 2ms, render: 226ms)
+ GET /flow 200 in 64ms (compile: 6ms, render: 58ms)

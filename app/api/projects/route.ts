@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 type DbProject = {
   id: string;
-  title: string;
+  name: string;
   description: string | null;
   created_at: string;
 };
@@ -17,7 +17,7 @@ export async function GET() {
   try {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, title, description, created_at")
+      .select("id, name, description, created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -81,16 +81,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const rawTitle = typeof body.title === "string" ? body.title : "";
+    const rawName = typeof body.name === "string" ? body.name : "";
     const rawDescription =
       typeof body.description === "string" ? body.description : "";
 
-    const title = rawTitle.trim();
+    const name = rawName.trim();
     const description = rawDescription.trim();
 
-    if (!title) {
+    if (!name) {
       return NextResponse.json(
-        { error: "Title is required" },
+        { error: "Name is required" },
         { status: 400 }
       );
     }
@@ -98,10 +98,10 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from("projects")
       .insert({
-        title,
+        name,
         description: description || null,
       })
-      .select("id, title, description, created_at")
+      .select("id, name, description, created_at")
       .single();
 
     if (error) {
@@ -164,7 +164,7 @@ export async function PATCH(req: Request) {
     }
 
     const id = typeof body.id === "string" ? body.id : "";
-    const rawTitle = typeof body.title === "string" ? body.title : "";
+    const rawName = typeof body.name === "string" ? body.name : "";
     const rawDescription =
       typeof body.description === "string" ? body.description : "";
 
@@ -175,9 +175,9 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const update: { title?: string; description?: string | null } = {};
+    const update: { name?: string; description?: string | null } = {};
 
-    if (rawTitle.trim()) update.title = rawTitle.trim();
+    if (rawName.trim()) update.name = rawName.trim();
     if (rawDescription.trim()) update.description = rawDescription.trim();
 
     if (!Object.keys(update).length) {
@@ -191,7 +191,7 @@ export async function PATCH(req: Request) {
       .from("projects")
       .update(update)
       .eq("id", id)
-      .select("id, title, description, created_at")
+      .select("id, name, description, created_at")
       .single();
 
     if (error) {
