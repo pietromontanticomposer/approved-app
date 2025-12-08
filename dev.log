@@ -140,3 +140,7 @@
  GET /flow 200 in 59ms (compile: 6ms, render: 52ms)
  GET /flow 200 in 48ms (compile: 4ms, render: 44ms)
  GET /flow 200 in 249ms (compile: 103ms, render: 146ms)
+ GET /flow 200 in 112ms (compile: 17ms, render: 96ms)
+ GET /flow 200 in 62ms (compile: 8ms, render: 55ms)
+ GET /flow 200 in 65ms (compile: 6ms, render: 59ms)
+ GET /flow 200 in 66ms (compile: 6ms, render: 60ms)
