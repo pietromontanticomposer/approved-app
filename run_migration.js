@@ -1,12 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
+import dotenv from "dotenv";
+
+// Load .env.local
+dotenv.config({ path: ".env.local" });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   console.error("❌ Missing Supabase credentials");
+  console.error("NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "✓" : "✗");
+  console.error("SUPABASE_SERVICE_ROLE_KEY:", supabaseServiceRoleKey ? "✓" : "✗");
   process.exit(1);
 }
 
@@ -14,8 +20,16 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 async function runMigration() {
   try {
-    console.log("🚀 Starting migration...");
-    const migrationPath = path.join(process.cwd(), "migrations", "001_init.sql");
+    // Get migration file from command line argument
+    const migrationFile = process.argv[2] || "migrations/001_init.sql";
+    console.log(`🚀 Starting migration: ${migrationFile}`);
+    
+    const migrationPath = path.join(process.cwd(), migrationFile);
+    if (!fs.existsSync(migrationPath)) {
+      console.error(`❌ Migration file not found: ${migrationPath}`);
+      process.exit(1);
+    }
+    
     const sql = fs.readFileSync(migrationPath, "utf-8");
 
     // Execute the entire SQL file

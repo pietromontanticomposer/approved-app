@@ -25,6 +25,25 @@ create table if not exists projects (
   updated_at timestamptz default now()
 );
 
+-- If legacy schema used "title", rename it to "name" so API queries work
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'projects'
+      AND column_name = 'title'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'projects'
+      AND column_name = 'name'
+  ) THEN
+    ALTER TABLE projects RENAME COLUMN title TO name;
+  END IF;
+END$$;
+
 -- ======================
 -- Cues
 -- ======================
@@ -59,6 +78,35 @@ create table if not exists versions (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Add missing columns to versions if they don't exist (for existing tables)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_type') THEN
+    ALTER TABLE versions ADD COLUMN media_type text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_storage_path') THEN
+    ALTER TABLE versions ADD COLUMN media_storage_path text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_url') THEN
+    ALTER TABLE versions ADD COLUMN media_url text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_original_name') THEN
+    ALTER TABLE versions ADD COLUMN media_original_name text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_display_name') THEN
+    ALTER TABLE versions ADD COLUMN media_display_name text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_duration') THEN
+    ALTER TABLE versions ADD COLUMN media_duration double precision;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_thumbnail_path') THEN
+    ALTER TABLE versions ADD COLUMN media_thumbnail_path text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='versions' AND column_name='media_thumbnail_url') THEN
+    ALTER TABLE versions ADD COLUMN media_thumbnail_url text;
+  END IF;
+END$$;
 
 -- ======================
 -- Version deliverable files

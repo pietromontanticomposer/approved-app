@@ -28,7 +28,7 @@ export default function SupabaseSyncBridge() {
         try {
           const { data, error } = await supabase
             .from("projects")
-            .select(`id, name, description, created_at, updated_at, cues(id, project_id, index_in_project, original_name, name, display_name, status, versions(id, cue_id, index_in_cue, status, media_type, media_storage_path, media_url, media_original_name, media_display_name, media_duration, media_thumbnail_path, media_thumbnail_url))`)
+            .select(`id, name, description, created_at, updated_at, cues(id, project_id, index_in_project, original_name, name, display_name, status, versions(id, cue_id, index_in_cue, status, media_type, media_storage_path, media_url, media_original_name, media_display_name, media_duration, media_thumbnail_path, media_thumbnail_url, media_waveform_data))`)
             .order("created_at", { ascending: true });
           if (error) throw error;
           console.log("✅ Projects loaded:", data?.length || 0);

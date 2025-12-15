@@ -1,9 +1,12 @@
 import fs from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
+import postgres from "postgres";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const connectionString =
+  process.env.SUPABASE_DB_URL ||
+  process.env.DATABASE_URL ||
+  process.env.SUPABASE_CONNECTION_STRING;
 
 // Only allow POST requests in development
 export async function POST(request: Request) {
@@ -16,13 +19,6 @@ export async function POST(request: Request) {
 
   try {
     console.log("🚀 Starting migration via API...");
-
-    // Extract connection string from Supabase URL
-    // URL format: https://xxxxx.supabase.co
-    const projectId = supabaseUrl.split("//")[1].split(".")[0];
-
-    // Postgres connection string for Supabase
-    const connectionString = `postgresql://postgres.${projectId}:[YOUR_POSTGRES_PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres`;
 
     // Read the migration file
     const migrationPath = path.join(
@@ -40,27 +36,60 @@ export async function POST(request: Request) {
 
     console.log(`📝 Found ${statements.length} SQL statements`);
 
-    // Since we can't easily connect to Postgres from Next.js runtime,
-    // provide instructions to user
-    const instructions = `
-    ⚠️  To run the migration, execute the SQL in Supabase SQL Editor:
-    
-    1. Go to https://app.supabase.com → select your project
-    2. Click "SQL Editor" → "New Query"
-    3. Paste the following SQL and click RUN:
-    
-    ${sqlContent}
-    `;
+    // If no connection string is provided, fall back to manual instructions
+    if (!connectionString) {
+      const instructions = `
+      ⚠️  To run the migration, execute the SQL in Supabase SQL Editor:
+      
+      1. Go to https://app.supabase.com → select your project
+      2. Click "SQL Editor" → "New Query"
+      3. Paste the following SQL and click RUN:
+      
+      ${sqlContent}
+      `;
 
-    console.log(instructions);
+      console.log("⚠️  No SUPABASE_DB_URL provided; returning instructions only");
 
-    return NextResponse.json({
-      success: false,
-      error:
-        "Cannot execute SQL from Next.js runtime. Follow instructions below.",
-      instructions: instructions,
-      statementCount: statements.length,
-    });
+      return NextResponse.json({
+        success: false,
+        error: "SUPABASE_DB_URL not set. Run manually using the SQL below.",
+        instructions,
+        statementCount: statements.length,
+      });
+    }
+
+    const sql = postgres(connectionString, { max: 1 });
+    const results: { index: number; ok: boolean; error?: string }[] = [];
+
+    try {
+      for (let i = 0; i < statements.length; i++) {
+        const statement = statements[i];
+        console.log(`📝 Executing statement ${i + 1}/${statements.length}...`);
+        try {
+          await sql.unsafe(statement);
+          results.push({ index: i + 1, ok: true });
+        } catch (err: any) {
+          const msg = err?.message || String(err);
+          console.warn(`⚠️  Statement ${i + 1} warning/error:`, msg);
+          results.push({ index: i + 1, ok: false, error: msg });
+        }
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+
+    const executed = results.filter((r) => r.ok).length;
+    const failed = results.filter((r) => !r.ok);
+
+    return NextResponse.json(
+      {
+        success: failed.length === 0,
+        executed,
+        failed,
+        statementCount: statements.length,
+      },
+      { status: failed.length ? 207 : 200 }
+    );
   } catch (error) {
     console.error("❌ Migration error:", error);
     return NextResponse.json(

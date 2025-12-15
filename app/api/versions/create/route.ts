@@ -67,6 +67,18 @@ export async function POST(req: Request) {
       .single();
     if (createVersionError) throw createVersionError;
 
+    // Extract and save waveform peaks asynchronously (don't wait)
+    if (versionInsert.media_url && versionInsert.media_type === "audio") {
+      fetch(`${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/waveform/extract-peaks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          versionId: createdVersion.id,
+          audioUrl: versionInsert.media_url,
+        }),
+      }).catch(err => console.warn("Background peak extraction failed:", err));
+    }
+
     // Insert associated files if any
     let filesInserted = [];
     if (Array.isArray(versionFiles) && versionFiles.length > 0) {

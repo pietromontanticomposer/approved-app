@@ -1,0 +1,449 @@
+
+> approved-app@0.1.0 dev
+> next dev
+
+   ▲ Next.js 16.0.7 (Turbopack)
+   - Local:         http://localhost:3000
+   - Network:       http://172.20.10.3:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+ ✓ Ready in 1020ms
+ POST /api/projects/share 201 in 1568ms (compile: 732ms, render: 836ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 667ms (compile: 152ms, render: 515ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 524ms (compile: 6ms, render: 517ms)
+ POST /api/invites 401 in 145ms (compile: 136ms, render: 9ms)
+Error creating invite: ReferenceError: actorId is not defined
+    at POST (app/api/invites/route.ts:128:21)
+  126 |       p_role: role,
+  127 |       p_is_link_invite: is_link_invite || false,
+> 128 |       p_invited_by: actorId,
+      |                     ^
+  129 |       p_expires_in_days: 7,
+  130 |     });
+  131 |
+ POST /api/invites 500 in 328ms (compile: 114ms, render: 214ms)
+ POST /api/invites 400 in 425ms (compile: 101ms, render: 324ms)
+ POST /api/projects/share 201 in 1049ms (compile: 132ms, render: 917ms)
+ GET / 200 in 2.9s (compile: 2.4s, proxy.ts: 158ms, render: 326ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 447ms (compile: 9ms, render: 438ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 691ms (compile: 182ms, render: 509ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 293ms (compile: 129ms, render: 164ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 679ms (compile: 139ms, render: 540ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 294ms (compile: 146ms, render: 149ms)
+ POST /api/invites 200 in 293ms (compile: 6ms, render: 286ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 200 in 1177ms (compile: 203ms, render: 974ms)
+ GET / 200 in 99ms (compile: 7ms, proxy.ts: 7ms, render: 85ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 541ms (compile: 7ms, render: 533ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 126ms (compile: 5ms, render: 121ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 361ms (compile: 3ms, render: 358ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 510ms (compile: 7ms, render: 503ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 152ms (compile: 3ms, render: 150ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 1133ms (compile: 36ms, render: 1097ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 541ms (compile: 2ms, render: 539ms)
+ POST /api/projects/share 201 in 598ms (compile: 4ms, render: 594ms)
+ POST /api/projects/share 201 in 635ms (compile: 3ms, render: 632ms)
+ POST /api/invites 200 in 437ms (compile: 105ms, render: 332ms)
+ POST /api/invites 200 in 816ms (compile: 4ms, render: 812ms)
+ POST /api/invites 200 in 594ms (compile: 5ms, render: 589ms)
+ POST /api/projects/share 201 in 632ms (compile: 3ms, render: 629ms)
+ POST /api/share/redeem 400 in 171ms (compile: 166ms, render: 5ms)
+ POST /api/invites 200 in 338ms (compile: 3ms, render: 335ms)
+ POST /api/projects/share 201 in 449ms (compile: 3ms, render: 446ms)
+ POST /api/share/redeem 500 in 345ms (compile: 3ms, render: 343ms)
+ POST /api/invites 200 in 321ms (compile: 4ms, render: 317ms)
+ POST /api/projects/share 201 in 423ms (compile: 3ms, render: 420ms)
+ POST /api/share/redeem 200 in 804ms (compile: 138ms, render: 667ms)
+ GET / 200 in 321ms (compile: 8ms, proxy.ts: 19ms, render: 293ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 561ms (compile: 10ms, render: 551ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 137ms (compile: 4ms, render: 134ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 306ms (compile: 3ms, render: 302ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 311ms (compile: 9ms, render: 302ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 133ms (compile: 3ms, render: 130ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 1307ms (compile: 14ms, render: 1293ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 890ms (compile: 3ms, render: 887ms)
+ POST /api/projects/share 201 in 1426ms (compile: 2ms, render: 1424ms)
+ GET / 200 in 153ms (compile: 12ms, proxy.ts: 6ms, render: 135ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 1144ms (compile: 3ms, render: 1141ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 143ms (compile: 2ms, render: 141ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 232ms (compile: 9ms, render: 223ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 303ms (compile: 3ms, render: 300ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 142ms (compile: 2ms, render: 139ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 2.0s (compile: 7ms, render: 1994ms)
+ POST /api/projects/share 201 in 672ms (compile: 5ms, render: 667ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 2.1s (compile: 4ms, render: 2.1s)
+ ✓ Compiled in 32ms
+ POST /api/invites 200 in 546ms (compile: 104ms, render: 442ms)
+ GET /invite/27b6aae5-6646-4632-896c-bc3414936edf 200 in 1387ms (compile: 1300ms, render: 87ms)
+ POST /api/invites 200 in 323ms (compile: 4ms, render: 319ms)
+ GET /invite/a27e76fc-3c01-4dda-8958-7213e734a01f 200 in 81ms (compile: 6ms, render: 75ms)
+ GET / 404 in 735ms (compile: 431ms, proxy.ts: 81ms, render: 223ms)
+ GET / 200 in 173ms (compile: 113ms, proxy.ts: 4ms, render: 55ms)
+ GET / 200 in 48ms (compile: 3ms, proxy.ts: 4ms, render: 41ms)
+ GET / 200 in 41ms (compile: 16ms, proxy.ts: 5ms, render: 20ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 4ms, render: 19ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 20ms)
+ GET / 200 in 28ms (compile: 3ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 31ms (compile: 3ms, proxy.ts: 3ms, render: 25ms)
+ GET / 200 in 37ms (compile: 3ms, proxy.ts: 4ms, render: 29ms)
+ GET / 200 in 34ms (compile: 5ms, proxy.ts: 5ms, render: 24ms)
+ GET / 200 in 31ms (compile: 3ms, proxy.ts: 4ms, render: 24ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 37ms (compile: 3ms, proxy.ts: 3ms, render: 31ms)
+ GET / 200 in 37ms (compile: 3ms, proxy.ts: 4ms, render: 29ms)
+ GET / 200 in 46ms (compile: 4ms, proxy.ts: 4ms, render: 38ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 21ms (compile: 2ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 2ms, render: 16ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 24ms (compile: 2ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 28ms (compile: 3ms, proxy.ts: 2ms, render: 23ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 2ms, render: 16ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 2ms, render: 17ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 5ms, render: 18ms)
+ GET / 200 in 30ms (compile: 3ms, proxy.ts: 3ms, render: 25ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 2ms, render: 18ms)
+ GET / 200 in 28ms (compile: 2ms, proxy.ts: 4ms, render: 22ms)
+ GET / 200 in 33ms (compile: 5ms, proxy.ts: 4ms, render: 24ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 26ms (compile: 5ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 29ms (compile: 4ms, proxy.ts: 3ms, render: 23ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 2ms, render: 16ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 2ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 2ms, render: 17ms)
+ GET / 200 in 21ms (compile: 2ms, proxy.ts: 2ms, render: 16ms)
+ GET / 200 in 29ms (compile: 3ms, proxy.ts: 2ms, render: 24ms)
+ GET / 200 in 23ms (compile: 4ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 21ms (compile: 2ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 32ms (compile: 3ms, proxy.ts: 2ms, render: 27ms)
+ GET / 200 in 36ms (compile: 4ms, proxy.ts: 4ms, render: 28ms)
+ GET / 200 in 24ms (compile: 3ms, proxy.ts: 4ms, render: 18ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 4ms, render: 18ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 20ms)
+ GET / 200 in 27ms (compile: 3ms, proxy.ts: 2ms, render: 21ms)
+ GET / 200 in 38ms (compile: 4ms, proxy.ts: 3ms, render: 31ms)
+ GET / 200 in 38ms (compile: 4ms, proxy.ts: 3ms, render: 30ms)
+ GET / 200 in 93ms (compile: 7ms, proxy.ts: 14ms, render: 72ms)
+ GET / 200 in 95ms (compile: 9ms, proxy.ts: 10ms, render: 76ms)
+ GET / 200 in 191ms (compile: 13ms, proxy.ts: 14ms, render: 165ms)
+ GET / 200 in 238ms (compile: 26ms, proxy.ts: 19ms, render: 193ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 1159ms (compile: 118ms, render: 1041ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 255ms (compile: 34ms, render: 220ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 415ms (compile: 30ms, render: 385ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 421ms (compile: 26ms, render: 395ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 215ms (compile: 26ms, render: 190ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 2.1s (compile: 48ms, render: 2.0s)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 707ms (compile: 2ms, render: 705ms)
+ POST /api/invites 200 in 399ms (compile: 29ms, render: 370ms)
+ POST /api/invites 200 in 400ms (compile: 24ms, render: 375ms)
+ POST /api/invites 200 in 315ms (compile: 2ms, render: 312ms)
+ GET /api/invites/details?token=ef8e380c-ca59-4823-86f7-2d2f1bfb4cf9 200 in 875ms (compile: 109ms, render: 767ms)
+ POST /api/invites 200 in 416ms (compile: 3ms, render: 414ms)
+ GET /invite/edbba957-84e1-454b-81ab-629911aa6fc7 200 in 337ms (compile: 142ms, render: 195ms)
+ GET /api/invites/details?token=edbba957-84e1-454b-81ab-629911aa6fc7 200 in 549ms (compile: 3ms, render: 546ms)
+ GET /login 200 in 447ms (compile: 417ms, proxy.ts: 5ms, render: 26ms)
+ GET /login 200 in 75ms (compile: 3ms, proxy.ts: 3ms, render: 69ms)
+ GET / 200 in 67ms (compile: 4ms, proxy.ts: 3ms, render: 60ms)
+ GET /invite/edbba957-84e1-454b-81ab-629911aa6fc7 200 in 78ms (compile: 5ms, render: 73ms)
+ GET /api/invites/details?token=edbba957-84e1-454b-81ab-629911aa6fc7 200 in 527ms (compile: 2ms, render: 525ms)
+ GET / 404 in 437ms (compile: 256ms, proxy.ts: 4ms, render: 178ms)
+ GET / 404 in 237ms (compile: 25ms, proxy.ts: 64ms, render: 147ms)
+ GET / 200 in 120ms (compile: 71ms, proxy.ts: 9ms, render: 40ms)
+ GET / 200 in 52ms (compile: 11ms, proxy.ts: 5ms, render: 36ms)
+ GET / 200 in 50ms (compile: 4ms, proxy.ts: 4ms, render: 43ms)
+ GET / 200 in 55ms (compile: 7ms, proxy.ts: 5ms, render: 43ms)
+ GET / 200 in 36ms (compile: 5ms, proxy.ts: 4ms, render: 27ms)
+ GET / 200 in 28ms (compile: 3ms, proxy.ts: 3ms, render: 22ms)
+ GET / 200 in 30ms (compile: 4ms, proxy.ts: 3ms, render: 23ms)
+ GET / 200 in 34ms (compile: 4ms, proxy.ts: 3ms, render: 26ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 20ms)
+ GET / 200 in 29ms (compile: 3ms, proxy.ts: 4ms, render: 22ms)
+ GET / 200 in 44ms (compile: 5ms, proxy.ts: 4ms, render: 35ms)
+ GET / 200 in 33ms (compile: 3ms, proxy.ts: 4ms, render: 26ms)
+ GET / 200 in 30ms (compile: 4ms, proxy.ts: 5ms, render: 21ms)
+ GET / 200 in 33ms (compile: 4ms, proxy.ts: 3ms, render: 25ms)
+ GET / 200 in 28ms (compile: 3ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 24ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 27ms (compile: 3ms, proxy.ts: 8ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 25ms (compile: 7ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 4ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 26ms (compile: 2ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 21ms (compile: 2ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 3ms, render: 15ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 32ms (compile: 5ms, proxy.ts: 9ms, render: 19ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 20ms)
+ GET / 200 in 31ms (compile: 3ms, proxy.ts: 3ms, render: 26ms)
+ GET / 200 in 28ms (compile: 3ms, proxy.ts: 3ms, render: 22ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 26ms (compile: 2ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 3ms, render: 19ms)
+ GET / 200 in 27ms (compile: 3ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 3ms, render: 19ms)
+ GET / 200 in 27ms (compile: 8ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 24ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 31ms (compile: 3ms, proxy.ts: 4ms, render: 24ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 24ms (compile: 3ms, proxy.ts: 3ms, render: 19ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 27ms (compile: 3ms, proxy.ts: 7ms, render: 16ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 21ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 2ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 44ms (compile: 3ms, proxy.ts: 4ms, render: 37ms)
+ GET / 200 in 37ms (compile: 6ms, proxy.ts: 4ms, render: 27ms)
+ GET / 200 in 42ms (compile: 5ms, proxy.ts: 5ms, render: 33ms)
+ GET / 200 in 66ms (compile: 4ms, proxy.ts: 45ms, render: 17ms)
+ GET / 200 in 21ms (compile: 3ms, proxy.ts: 3ms, render: 16ms)
+ GET / 200 in 22ms (compile: 3ms, proxy.ts: 3ms, render: 17ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 26ms (compile: 3ms, proxy.ts: 3ms, render: 20ms)
+ GET / 200 in 23ms (compile: 3ms, proxy.ts: 3ms, render: 18ms)
+ GET / 200 in 25ms (compile: 3ms, proxy.ts: 3ms, render: 19ms)
+ GET / 200 in 148ms (compile: 6ms, proxy.ts: 6ms, render: 136ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 682ms (compile: 170ms, render: 512ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 194ms (compile: 36ms, render: 158ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 295ms (compile: 48ms, render: 247ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 375ms (compile: 43ms, render: 332ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 172ms (compile: 33ms, render: 140ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 780ms (compile: 38ms, render: 742ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 941ms (compile: 11ms, render: 931ms)
+ POST /api/invites 200 in 342ms (compile: 32ms, render: 311ms)
+ GET /invite/0d1429c8-6431-40cc-a4ea-82650e11eba7 200 in 145ms (compile: 31ms, render: 113ms)
+ GET /api/invites/details?token=0d1429c8-6431-40cc-a4ea-82650e11eba7 200 in 526ms (compile: 29ms, render: 497ms)
+ GET /login 200 in 63ms (compile: 24ms, proxy.ts: 5ms, render: 34ms)
+ GET /login 200 in 123ms (compile: 4ms, proxy.ts: 5ms, render: 114ms)
+ GET / 200 in 70ms (compile: 4ms, proxy.ts: 4ms, render: 61ms)
+ GET /invite/0d1429c8-6431-40cc-a4ea-82650e11eba7 200 in 124ms (compile: 7ms, render: 117ms)
+ GET /api/invites/details?token=0d1429c8-6431-40cc-a4ea-82650e11eba7 200 in 562ms (compile: 2ms, render: 560ms)
+ POST /api/invites/accept 200 in 285ms (compile: 119ms, render: 166ms)
+ GET / 200 in 321ms (compile: 4ms, proxy.ts: 4ms, render: 312ms)
+[GET /api/projects] Request started
+[GET /api/projects] Fetching projects from Supabase...
+ GET /api/projects 200 in 509ms (compile: 6ms, render: 502ms)
+[GET /api/cues] result {
+  projectId: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+  count: 2,
+  error: null,
+  sample: {
+    id: '572fcffe-ee22-48b1-b525-77f13faf232f',
+    project_id: 'e7b071cb-2a95-488c-afac-70fc44af8104',
+    index_in_project: 1,
+    original_name: null,
+    name: 'Clarinet.avi',
+    display_name: null,
+    status: 'in-review',
+    created_at: '2025-12-12T19:02:45.615903+00:00',
+    updated_at: '2025-12-12T19:02:45.615903+00:00'
+  }
+}
+ GET /api/cues?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 148ms (compile: 3ms, render: 145ms)
+[GET /api/versions] result {
+  cueId: '572fcffe-ee22-48b1-b525-77f13faf232f',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=572fcffe-ee22-48b1-b525-77f13faf232f 200 in 279ms (compile: 5ms, render: 275ms)
+[GET /api/versions] result {
+  cueId: 'd5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4',
+  count: 1,
+  error: null
+}
+ GET /api/versions?cueId=d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4 200 in 373ms (compile: 9ms, render: 363ms)
+ GET /api/references?projectId=e7b071cb-2a95-488c-afac-70fc44af8104 200 in 140ms (compile: 3ms, render: 137ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 1175ms (compile: 13ms, render: 1163ms)
+ GET /api/media/stream?path=media%2Fprojects%2Fe7b071cb-2a95-488c-afac-70fc44af8104%2Fcues%2F572fcffe-ee22-48b1-b525-77f13faf232f%2Fversions%2Fd1rzaag80tc%2F1765566165914-Clarinet.avi.mp4 206 in 737ms (compile: 3ms, render: 734ms)
+ POST /api/projects/share 201 in 955ms (compile: 38ms, render: 917ms)
+[?25h

@@ -1,7 +1,3 @@
-// Full Flow UI client script (ported from CodePen)
-// This file runs in the browser; it wires the UI, drag & drop,
-// thumbnail generation, mini-waves, and project state.
-
 // =======================
 // STATE
 // =======================
@@ -15,6 +11,7 @@ const state = {
 
 let mainWave = null;
 let activeVideoEl = null;
+let activeAudioEl = null;
 const miniWaves = {};
 
 // Player cache to avoid flicker
@@ -23,63 +20,124 @@ let currentPlayerMediaType = null;
 
 // UI state for reference panel
 let referencesCollapsed = false;
+let hasInitializedFromSupabase = false; // Prevent double init when fallback kicks in
+
+// Upload progress tracking
+let uploadProgressBar = null;
+let activeUploads = 0;
 
 // =======================
 // DOM
 // =======================
 const newProjectBtn = document.getElementById("newProjectBtn");
+if (!newProjectBtn) console.error('[FlowPreview] newProjectBtn not found in DOM');
 const projectListEl = document.getElementById("projectList");
+if (!projectListEl) console.error('[FlowPreview] projectListEl not found in DOM');
 const projectTitleEl = document.getElementById("projectTitle");
+if (!projectTitleEl) console.error('[FlowPreview] projectTitleEl not found in DOM');
 const projectMetaEl = document.getElementById("projectMeta");
+if (!projectMetaEl) console.error('[FlowPreview] projectMetaEl not found in DOM');
 const projectMenuBtn = document.getElementById("projectMenuBtn");
+if (!projectMenuBtn) console.error('[FlowPreview] projectMenuBtn not found in DOM');
 
 const uploadStripEl = document.querySelector(".upload-strip");
 const contentEl = document.querySelector(".content");
 const rightColEl = document.querySelector(".right-column");
 
 const dropzoneEl = document.getElementById("globalDropzone");
+if (!dropzoneEl) console.error('[FlowPreview] dropzoneEl not found in DOM');
 
 const cueListEl = document.getElementById("cueList");
+if (!cueListEl) console.error('[FlowPreview] cueListEl not found in DOM');
 const cueListSubtitleEl = document.getElementById("cueListSubtitle");
+if (!cueListSubtitleEl) console.error('[FlowPreview] cueListSubtitleEl not found in DOM');
 
 const autoRenameToggle = document.getElementById("autoRenameToggle");
+if (!autoRenameToggle) console.error('[FlowPreview] autoRenameToggle not found in DOM');
 const namingLevelRadios = document.querySelectorAll(
   "input[name='namingLevel']"
 );
 const namingLevelsEl = document.querySelector(".naming-levels");
 
 const commentsListEl = document.getElementById("commentsList");
+if (!commentsListEl) console.error('[FlowPreview] commentsListEl not found in DOM');
 const commentsSummaryEl = document.getElementById("commentsSummary");
+if (!commentsSummaryEl) console.error('[FlowPreview] commentsSummaryEl not found in DOM');
 const commentInputEl = document.getElementById("commentInput");
+if (!commentInputEl) console.error('[FlowPreview] commentInputEl not found in DOM');
 const addCommentBtn = document.getElementById("addCommentBtn");
+if (!addCommentBtn) console.error('[FlowPreview] addCommentBtn not found in DOM');
 
 const playerTitleEl = document.getElementById("playerTitle");
+if (!playerTitleEl) console.error('[FlowPreview] playerTitleEl not found in DOM');
 const playerBadgeEl = document.getElementById("playerBadge");
+if (!playerBadgeEl) console.error('[FlowPreview] playerBadgeEl not found in DOM');
 const playerMediaEl = document.getElementById("playerMedia");
+if (!playerMediaEl) console.error('[FlowPreview] playerMediaEl not found in DOM');
 const playPauseBtn = document.getElementById("playPauseBtn");
+if (!playPauseBtn) console.error('[FlowPreview] playPauseBtn not found in DOM');
 const timeLabelEl = document.getElementById("timeLabel");
+if (!timeLabelEl) console.error('[FlowPreview] timeLabelEl not found in DOM');
 const volumeSlider = document.getElementById("volumeSlider");
+if (!volumeSlider) console.error('[FlowPreview] volumeSlider not found in DOM');
 const statusInReviewBtn = document.getElementById("statusInReviewBtn");
+if (!statusInReviewBtn) console.error('[FlowPreview] statusInReviewBtn not found in DOM');
 const statusApprovedBtn = document.getElementById("statusApprovedBtn");
+if (!statusApprovedBtn) console.error('[FlowPreview] statusApprovedBtn not found in DOM');
 const statusChangesBtn = document.getElementById("statusChangesBtn");
+if (!statusChangesBtn) console.error('[FlowPreview] statusChangesBtn not found in DOM');
 
 const shareBtn = document.getElementById("shareBtn");
+if (!shareBtn) console.error('[FlowPreview] shareBtn not found in DOM');
 const deliverBtn = document.getElementById("deliverBtn");
+if (!deliverBtn) console.error('[FlowPreview] deliverBtn not found in DOM');
 const copyLinkBtn = document.getElementById("copyLinkBtn");
+if (!copyLinkBtn) console.error('[FlowPreview] copyLinkBtn not found in DOM');
 
 // Player mode buttons
 const modeReviewBtn = document.getElementById("modeReviewBtn");
+if (!modeReviewBtn) console.error('[FlowPreview] modeReviewBtn not found in DOM');
 const modeRefsBtn = document.getElementById("modeRefsBtn");
+if (!modeRefsBtn) console.error('[FlowPreview] modeRefsBtn not found in DOM');
 
 // Project References DOM
 const refsBodyEl = document.getElementById("refsBody");
+if (!refsBodyEl) console.error('[FlowPreview] refsBodyEl not found in DOM');
 const refsDropzoneEl = document.getElementById("refsDropzone");
+if (!refsDropzoneEl) console.error('[FlowPreview] refsDropzoneEl not found in DOM');
 const refsListEl = document.getElementById("refsList");
+if (!refsListEl) console.error('[FlowPreview] refsListEl not found in DOM');
 const refsSubtitleEl = document.getElementById("refsSubtitle");
+if (!refsSubtitleEl) console.error('[FlowPreview] refsSubtitleEl not found in DOM');
 const refsToggleBtn = document.getElementById("refsToggleBtn");
+if (!refsToggleBtn) console.error('[FlowPreview] refsToggleBtn not found in DOM');
 
 if (volumeSlider) {
   volumeSlider.style.display = "none";
+}
+
+// Activate a given version (from a preview click) and open it in the main player
+function activateVersionPreview(version) {
+  if (!version) return;
+  // find project and cue containing this version
+  for (const project of state.projects) {
+    for (const cue of project.cues || []) {
+      if ((cue.versions || []).some(v => v.id === version.id)) {
+        project.activeCueId = cue.id;
+        project.activeVersionId = version.id;
+        // ensure UI reflects selection
+        renderAll();
+        // scroll player into view if needed
+        try {
+          const playerRoot = document.getElementById('player-root');
+          if (playerRoot) playerRoot.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (err) {
+          // ignore
+        }
+        return;
+      }
+    }
+  }
 }
 
 // =======================
@@ -114,6 +172,43 @@ function detectRawType(fileName) {
   if (n.match(/\.(pdf)$/)) return "pdf";
   if (n.match(/\.(png|jpg|jpeg|webp|gif)$/)) return "image";
   return "other";
+}
+
+// Return a proxied URL on our domain when media comes from Supabase/storage
+function getProxiedUrl(raw) {
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname || "";
+    // If it's already our domain, return as-is
+    if (host === window.location.hostname) return raw;
+    // If it's a Supabase storage URL (public or signed), proxy through our API
+    if (host.includes("supabase.co") || raw.includes("/storage/v1/object/")) {
+      // Try to extract the internal storage path so the server can re-sign it.
+      try {
+        const parts = u.pathname.split("/").filter(Boolean);
+        const objIdx = parts.findIndex(p => p === "object");
+        if (objIdx >= 0) {
+          const after = parts.slice(objIdx + 1); // [public|sign, bucket, ...path]
+          if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
+            const bucket = after[1];
+            const pathParts = after.slice(2);
+            const storagePath = `${bucket}/${pathParts.join("/")}`;
+            // Provide path to server so it can create signed url server-side
+            return `/api/media/stream?path=${encodeURIComponent(storagePath)}`;
+          }
+        }
+      } catch (e) {
+        // fall back to proxy by full url
+      }
+      return `/api/media/stream?url=${encodeURIComponent(raw)}`;
+    }
+    // Otherwise return original
+    return raw;
+  } catch (e) {
+    // Likely a storage path like "projects/..." → proxy by path
+    return `/api/media/stream?path=${encodeURIComponent(raw)}`;
+  }
 }
 
 function isFileDragEvent(e) {
@@ -161,11 +256,31 @@ function computeCueStatus(cue) {
   return "in-review";
 }
 
-function setVersionStatus(project, cue, version, status) {
+async function setVersionStatus(project, cue, version, status) {
   if (!VERSION_STATUSES[status]) return;
-  version.status = status;
-  cue.status = computeCueStatus(cue);
-  renderAll();
+  
+  try {
+    const res = await fetch('/api/versions/update', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cue_id: cue.id,
+        version_id: version.id,
+        status: status
+      })
+    });
+    if (!res.ok) {
+      console.error('[FlowPreview] Failed to update version status', await res.text());
+      alert('Errore nell\'aggiornare lo stato della versione');
+      return;
+    }
+    version.status = status;
+    cue.status = computeCueStatus(cue);
+    renderAll();
+  } catch (err) {
+    console.error('[FlowPreview] Exception updating version status', err);
+    alert('Errore nell\'aggiornare lo stato della versione');
+  }
 }
 
 // =======================
@@ -310,71 +425,98 @@ function updateNamesInDOM() {
 // =======================
 // PROJECT CRUD
 // =======================
-function createNewProject() {
+async function createNewProject() {
   console.log("[FlowPreview] createNewProject");
   const defaultName = "New project";
   const name = prompt("Project name", defaultName);
   if (name === null) return;
 
-  const project = {
-    id: uid(),
-    name: name.trim() || defaultName,
-    description: null,
-    cues: [],
-    activeCueId: null,
-    activeVersionId: null,
-    references: [],
-    activeReferenceId: null
-  };
-
-  state.projects.push(project);
-  state.activeProjectId = project.id;
-
-  // Save to Supabase via API
-  console.log("💾 Saving project via API...", project.id);
-  fetch("/api/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      id: project.id,
-      name: project.name, 
-      description: project.description 
-    })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        console.error("Failed to save project:", data.error);
-      } else {
-        console.log("✅ Project saved:", data.project?.id);
-      }
-    })
-    .catch(err => console.error("Failed to save project:", err));
-
-  renderAll();
-  
-  // Force show the dashboard by simulating project click
-  setTimeout(() => {
-    const projectListItem = document.querySelector(`[data-project-id="${project.id}"]`);
-    if (projectListItem) {
-      projectListItem.click();
+  const finalName = name.trim() || defaultName;
+  try {
+    const res = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: finalName, description: '', team_id: 'auto' })
+    });
+    if (!res.ok) {
+      console.error('[FlowPreview] Failed to create project', await res.text());
+      alert('Errore nella creazione del progetto');
+      return;
     }
-  }, 100);
+    const data = await response.json();
+    // Support both response shapes:
+    // - { projects: [...] }
+    // - { my_projects: [...], shared_with_me: [...] }
+    let projects = [];
+    if (data.projects && Array.isArray(data.projects)) {
+      projects = data.projects;
+    } else if ((data.my_projects || data.shared_with_me) && (Array.isArray(data.my_projects) || Array.isArray(data.shared_with_me))) {
+      const my = Array.isArray(data.my_projects) ? data.my_projects : [];
+      const shared = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
+      // Merge keeping order: my projects first, then shared
+      projects = [...my, ...shared];
+    }
+
+    console.log("[Flow] Loaded projects:", projects.length);
+
+    // Populate state with projects from DB
+    state.projects = projects.map(p => ({
+      id: p.id,
+      name: p.name || "Untitled",
+      team_id: p.team_id, // Add team_id for sharing
+      cues: [], // Load on demand if needed
+      activeCueId: null,
+      activeVersionId: null,
+      references: p.references || []
+    }));
+    console.error('[FlowPreview] Exception creating project', err);
+    alert('Errore nella creazione del progetto');
+  }
 }
 
-function renameProject(project) {
+async function renameProject(project) {
   const name = prompt("Rename project", project.name);
   if (name === null) return;
   if (!name.trim()) return;
-  project.name = name.trim();
-  renderAll();
+  
+  const newName = name.trim();
+  try {
+    const res = await fetch('/api/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: project.id, name: newName })
+    });
+    if (!res.ok) {
+      console.error('[FlowPreview] Failed to rename project', await res.text());
+      alert('Errore nel rinominare il progetto');
+      return;
+    }
+    project.name = newName;
+    renderAll();
+  } catch (err) {
+    console.error('[FlowPreview] Exception renaming project', err);
+    alert('Errore nel rinominare il progetto');
+  }
 }
 
-function deleteProject(id) {
+async function deleteProject(id) {
   const p = getProjectById(id);
   if (!p) return;
   const ok = confirm(`Delete project "${p.name}"?`);
   if (!ok) return;
+
+  try {
+    const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      console.error('[FlowPreview] Failed to delete project', await res.text());
+      alert('Errore nella cancellazione del progetto');
+      return;
+    }
+  } catch (err) {
+    console.error('[FlowPreview] Exception deleting project', err);
+    alert('Errore nella cancellazione del progetto');
+    return;
+  }
 
   state.projects = state.projects.filter(x => x.id !== id);
   state.activeProjectId =
@@ -407,110 +549,237 @@ async function createCueFromFile(file) {
 
   project.cues.push(cue);
 
-  // Upload file first
-  console.log("📤 Uploading file to Supabase Storage...", file.name);
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("projectId", project.id);
-  formData.append("cueId", cue.id);
-
+  // Save cue to database
   try {
-    const uploadRes = await fetch("/api/upload", {
-      method: "POST",
-      body: formData
+    const res = await fetch('/api/cues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: project.id,
+        cue: {
+          id: cue.id,
+          name: cue.name,
+          index: cue.index,
+          status: cue.status
+        }
+      })
     });
     
-    if (!uploadRes.ok) {
-      const text = await uploadRes.text();
-      console.error("[DEBUG] Upload failed with status", uploadRes.status, text);
-      alert("Failed to upload file: " + uploadRes.status);
-      return;
-    }
-    
-    const uploadData = await uploadRes.json();
-
-    if (uploadData.error) {
-      console.error("Upload failed:", uploadData.error);
-      alert("Failed to upload file: " + uploadData.error);
-      return;
-    }
-
-    console.log("✅ File uploaded:", uploadData.url);
-
-    // Now create version with the uploaded URL
-    const version = createVersionForCue(project, cue, file, uploadData.url, uploadData.path);
-
-    project.activeCueId = cue.id;
-    project.activeVersionId = version.id;
-
-    cue.status = computeCueStatus(cue);
-    refreshAllNames();
-
-    // Save cue to database
-    console.log("💾 Saving cue via API...", cue.id);
-    const cueRes = await fetch("/api/cues", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_id: project.id, cue })
-    });
-    const cueData = await cueRes.json();
-    if (cueData.error) {
-      console.error("Failed to save cue:", cueData.error);
-      return;
+    if (!res.ok) {
+      console.error('[Flow] Failed to save cue to database', await res.text());
     } else {
-      console.log("✅ Cue saved:", cueData.cueId);
-      // Update cue with server-generated ID
-      cue.id = cueData.cueId;
-      project.activeCueId = cue.id;
+      const payload = await res.json().catch(() => null);
+      const serverCueId = payload && (payload.cueId || (payload.cue && payload.cue.id));
+      if (serverCueId) {
+        // Replace the temporary client id with server-generated UUID so future calls use the correct id
+        console.log('[Flow] Cue saved to database (server id):', serverCueId, 'clientTempId:', cue.id);
+        // Update cue object and project references
+        const oldId = cue.id;
+        cue.id = serverCueId;
+        const ci = project.cues.findIndex(c => c.id === oldId);
+        if (ci >= 0) project.cues[ci].id = serverCueId;
+      } else {
+        console.log('[Flow] Cue saved to database (no server id returned), client id kept:', cue.id);
+      }
     }
-
-    // Save version to database
-    console.log("💾 Saving version via API...", version.id);
-    const versionRes = await fetch("/api/versions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cue_id: cue.id, version })
-    });
-    const versionData = await versionRes.json();
-    if (versionData.error) {
-      console.error("Failed to save version:", versionData.error);
-      return;
-    } else {
-      console.log("✅ Version saved:", versionData.version?.id);
-      // Update version with server-generated ID
-      version.id = versionData.version?.id;
-      project.activeVersionId = version.id;
-    }
-    
-    // Full rebuild needed because IDs changed on server
-    renderProjectHeader();
-    renderCueList(false);  // Force full rebuild, not skip
-    renderVersionPreviews();
-    renderPlayer();
   } catch (err) {
-    console.error("Error creating cue from file:", err);
-    alert("Failed to create cue: " + err.message);
+    console.error('[Flow] Exception saving cue:', err);
+  }
+
+  const version = createVersionForCue(project, cue, file);
+
+  project.activeCueId = cue.id;
+  project.activeVersionId = version.id;
+
+  cue.status = computeCueStatus(cue);
+  refreshAllNames();
+  renderAll();
+}
+
+// =======================
+// UPLOAD TO SUPABASE
+// =======================
+function ensureProgressBar() {
+  if (uploadProgressBar) return;
+  
+  uploadProgressBar = document.createElement("div");
+  uploadProgressBar.id = "upload-progress-bar";
+  uploadProgressBar.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+    width: 0%;
+    transition: width 0.3s ease;
+    z-index: 9999;
+    display: none;
+  `;
+  document.body.appendChild(uploadProgressBar);
+}
+
+function updateProgressBar(percent) {
+  ensureProgressBar();
+  uploadProgressBar.style.display = "block";
+  uploadProgressBar.style.width = percent + "%";
+}
+
+function hideProgressBar() {
+  if (uploadProgressBar) {
+    uploadProgressBar.style.display = "none";
+    uploadProgressBar.style.width = "0%";
   }
 }
 
-function createVersionForCue(project, cue, file, uploadedUrl, storagePath) {
+async function uploadFileToSupabase(file, projectId, cueId, versionId) {
+  activeUploads++;
+  updateProgressBar(0);
+  
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("projectId", projectId);
+    formData.append("cueId", cueId);
+    formData.append("versionId", versionId);
+    
+    const xhr = new XMLHttpRequest();
+    
+    // Track upload progress accurately
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        // Real progress from 0 to 95% during upload
+        const percent = Math.round((e.loaded / e.total) * 95);
+        updateProgressBar(percent);
+        console.log(`[Upload] Progress: ${percent}%`);
+      }
+    });
+    
+    xhr.addEventListener("load", () => {
+      console.log("[Upload] HTTP transfer complete, processing response");
+      
+      if (xhr.status === 200 || xhr.status === 201) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          console.log("[Upload] Server response received:", result);
+          
+          // Show 100% when server confirms
+          updateProgressBar(100);
+          
+          // Update version with the signed URL from server
+          const project = getProjectById(projectId);
+          if (project) {
+            const cue = project.cues.find(c => c.id === cueId);
+            if (cue) {
+              const version = cue.versions.find(v => v.id === versionId);
+              if (version && version.media) {
+                version.media.url = result.mediaUrl || version.media.url;
+                version.isUploading = false;
+                version.uploadProgress = 100;
+                console.log("[Upload] Version updated with URL:", version.media.url);
+                
+                // Save version to database after upload completes
+                saveVersionToDatabase(project.id, cue.id, version, result.path);
+                
+                renderVersionPreviews();
+                renderPlayer();
+              }
+            }
+          }
+          
+          activeUploads--;
+          if (activeUploads === 0) {
+            setTimeout(hideProgressBar, 800);
+          }
+        } catch (parseErr) {
+          console.error("[Upload] Failed to parse response:", parseErr);
+          activeUploads--;
+          if (activeUploads === 0) hideProgressBar();
+        }
+      } else {
+        console.error("[Upload] Server error:", xhr.status, xhr.statusText);
+        activeUploads--;
+        if (activeUploads === 0) hideProgressBar();
+      }
+    });
+    
+    xhr.addEventListener("error", () => {
+      console.error("[Upload] Network error during upload");
+      activeUploads--;
+      if (activeUploads === 0) hideProgressBar();
+    });
+    
+    xhr.addEventListener("abort", () => {
+      console.warn("[Upload] Upload aborted");
+      activeUploads--;
+      if (activeUploads === 0) hideProgressBar();
+    });
+    
+    xhr.open("POST", "/api/upload");
+    console.log("[Upload] Starting upload:", file.name, `(${Math.round(file.size / 1024)} KB)`);
+    xhr.send(formData);
+    
+  } catch (err) {
+    console.error("[Upload] Exception:", err);
+    activeUploads--;
+    if (activeUploads === 0) hideProgressBar();
+  }
+}
+
+async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
+  try {
+    const versionData = {
+      id: version.id,
+      index: version.index,
+      status: version.status,
+      media_type: version.media && version.media.type ? version.media.type : null,
+      media_storage_path: storagePath || null,
+      media_url: version.media && version.media.url ? version.media.url : null,
+      media_original_name: version.media && version.media.originalName ? version.media.originalName : null,
+      media_display_name: version.media && (version.media.displayName || version.media.originalName) ? (version.media.displayName || version.media.originalName) : null,
+      media_duration: version.media && version.media.duration ? version.media.duration : null,
+      media_thumbnail_path: null,
+      media_thumbnail_url: version.media && version.media.thumbnailUrl ? version.media.thumbnailUrl : null
+    };
+
+    const res = await fetch('/api/versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cue_id: cueId,
+        version: versionData
+      })
+    });
+
+    if (!res.ok) {
+      console.error('[Flow] Failed to save version to database', await res.text());
+    } else {
+      console.log('[Flow] Version saved to database:', version.id);
+    }
+  } catch (err) {
+    console.error('[Flow] Exception saving version:', err);
+  }
+}
+
+function createVersionForCue(project, cue, file) {
   const version = {
     id: uid(),
     index: cue.versions.length,
     media: null,
     comments: [],
     deliverables: [],
-    status: "in-review"
+    status: "in-review",
+    uploadProgress: 0,
+    isUploading: true
   };
 
   const type = detectRawType(file.name);
-  const url = uploadedUrl || URL.createObjectURL(file);
+  const url = URL.createObjectURL(file);
 
   if (type === "audio" || type === "video") {
     version.media = {
       type,
       url,
-      storagePath: storagePath || null,
       originalName: file.name,
       displayName: "",
       duration: null,
@@ -529,6 +798,10 @@ function createVersionForCue(project, cue, file, uploadedUrl, storagePath) {
 
   cue.versions.push(version);
   cue.status = computeCueStatus(cue);
+  
+  // Start async upload to Supabase
+  uploadFileToSupabase(file, project.id, cue.id, version.id);
+  
   return version;
 }
 
@@ -617,12 +890,7 @@ function createMiniWave(version, container) {
   if (!version.media || version.media.type !== "audio" || !version.media.url)
     return;
 
-  // If a mini wave for this version already exists and the container
-  // already contains rendered content, keep it to avoid flicker.
-  if (miniWaves[version.id] && container && container.children.length) {
-    return;
-  }
-
+  container.innerHTML = "";
   container.style.position = "relative";
   container.style.overflow = "hidden";
 
@@ -648,7 +916,7 @@ function createMiniWave(version, container) {
 
   miniWaves[version.id] = ws;
 
-  ws.load(version.media.url);
+  ws.load(getProxiedUrl(version.media.url));
 
   ws.on("ready", () => {
     if (!version.media.duration) {
@@ -706,7 +974,7 @@ function createRefMiniWave(refVersion, container) {
 
   miniWaves[refVersion.id] = ws;
 
-  ws.load(refVersion.url);
+  ws.load(getProxiedUrl(refVersion.url));
 
   ws.on("ready", () => {
     if (!refVersion.duration) {
@@ -729,21 +997,36 @@ function createRefMiniWave(refVersion, container) {
 // =======================
 function generateVideoThumbnailRaw(url) {
   return new Promise(resolve => {
-    if (!url) return resolve(null);
+    if (!url) {
+      console.log("[generateVideoThumbnailRaw] No URL provided");
+      return resolve(null);
+    }
+
+    const startTs = Date.now();
+    console.log("[generateVideoThumbnailRaw] Starting with URL:", url);
 
     const video = document.createElement("video");
-    video.src = url;
+    // Prefer anonymous CORS for canvas extraction; Supabase buckets should allow CORS for this to work.
+    video.crossOrigin = "anonymous";
+    video.src = getProxiedUrl(url);
     video.muted = true;
-    video.preload = "auto";
+    // Preload only metadata to avoid downloading full video when generating a frame
+    video.preload = "metadata";
     video.playsInline = true;
     video.style.position = "absolute";
     video.style.left = "-9999px";
+    video.style.width = "320px";
+    video.style.height = "180px";
     document.body.appendChild(video);
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
 
+    let resolved = false;
+    let timeoutId;
+
     function cleanup() {
+      clearTimeout(timeoutId);
       try {
         video.pause();
       } catch {}
@@ -754,45 +1037,74 @@ function generateVideoThumbnailRaw(url) {
       video.remove();
     }
 
+    function resolve_once(result) {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        resolve(result);
+      }
+    }
+
     video.addEventListener("loadedmetadata", () => {
+      console.log("[generateVideoThumbnailRaw] loadedmetadata event fired, duration:", video.duration);
       try {
         const t = Math.min(video.duration * 0.2, video.duration - 0.1);
         video.currentTime = isFinite(t) && t > 0 ? t : 0;
-      } catch {
-        cleanup();
-        resolve(null);
+      } catch (e) {
+        console.error("[generateVideoThumbnailRaw] Error setting currentTime:", e);
+        resolve_once(null);
       }
     });
 
     video.addEventListener("seeked", () => {
-      const w = video.videoWidth || 320;
-      const h = video.videoHeight || 180;
-      canvas.width = 320;
-      canvas.height = Math.round((320 * h) / w);
+      console.log("[generateVideoThumbnailRaw] seeked event fired");
+      try {
+        const w = video.videoWidth || 320;
+        const h = video.videoHeight || 180;
+        canvas.width = 320;
+        canvas.height = Math.round((320 * h) / w);
 
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const dataURL = canvas.toDataURL("image/png");
-      cleanup();
-      resolve(dataURL);
+        const dataURL = canvas.toDataURL("image/png");
+        console.log("[generateVideoThumbnailRaw] Generated thumbnail in", Date.now() - startTs, "ms");
+        resolve_once(dataURL);
+      } catch (e) {
+        console.error("[generateVideoThumbnailRaw] Error drawing canvas:", e);
+        resolve_once(null);
+      }
     });
 
-    video.addEventListener("error", () => {
-      cleanup();
-      resolve(null);
+    video.addEventListener("error", (e) => {
+      const errMsg = e.target?.error?.message || "Unknown error";
+      console.warn("[generateVideoThumbnailRaw] Video CORS/load error:", errMsg);
+      console.log("[generateVideoThumbnailRaw] Failed in", Date.now() - startTs, "ms");
+      resolve_once(null);
     });
 
-    setTimeout(() => {
-      cleanup();
-      resolve(null);
-    }, 3000);
+    video.addEventListener("canplay", () => {
+      console.log("[generateVideoThumbnailRaw] canplay event fired");
+      // Try to seek if we haven't fired seeked yet
+      if (!resolved) {
+        try {
+          const t = Math.min(video.duration * 0.2, video.duration - 0.1);
+          video.currentTime = isFinite(t) && t > 0 ? t : 0;
+        } catch {}
+      }
+    });
+
+    // Set a timeout - if metadata isn't loaded in 4s, give up
+    timeoutId = setTimeout(() => {
+      console.log("[generateVideoThumbnailRaw] Timeout - video did not load metadata after", Date.now() - startTs, "ms");
+      resolve_once(null);
+    }, 4000);
   });
 }
 
 // Existing version video thumbs
 function generateVideoThumbnailFromUrl(version) {
   const url = version.media?.url;
-  return generateVideoThumbnailRaw(url);
+  return generateVideoThumbnailRaw(getProxiedUrl(url));
 }
 
 // =======================
@@ -804,6 +1116,15 @@ function destroyMainWave() {
       mainWave.destroy();
     } catch {}
     mainWave = null;
+  }
+  if (activeAudioEl) {
+    try {
+      activeAudioEl.pause();
+      activeAudioEl.removeAttribute('src');
+      activeAudioEl.load();
+      activeAudioEl.remove();
+    } catch (e) {}
+    activeAudioEl = null;
   }
 }
 
@@ -828,18 +1149,24 @@ function getCurrentMediaTime() {
 }
 
 function loadAudioPlayer(project, cue, version) {
+  const tStart = Date.now();
   destroyMainWave();
   stopVideo();
-
+  
   playerMediaEl.innerHTML = '<div id="waveform"></div>';
-
+  
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
   playPauseBtn.disabled = true;
   timeLabelEl.textContent = "00:00 / 00:00";
 
+  // Use WebAudio backend to fetch and decode audio (better handling of CORS
+  // and avoids MediaElement crossOrigin pitfalls). WaveSurfer will fetch the
+  // proxied URL which already returns proper CORS headers.
   mainWave = WaveSurfer.create({
     container: "#waveform",
+    backend: 'WebAudio',
+    mediaControls: false,
     height: 80,
     waveColor: "rgba(148,163,184,0.8)",
     progressColor: "#38bdf8",
@@ -850,16 +1177,24 @@ function loadAudioPlayer(project, cue, version) {
     normalize: true
   });
 
-  mainWave.load(version.media.url);
+  try {
+    mainWave.load(getProxiedUrl(version.media.url));
+  } catch (e) {
+    console.warn('loadAudioPlayer: WaveSurfer load failed', e);
+  }
+
+  mainWave.on && mainWave.on("ready", () => {
+    try {
+      console.log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
+    } catch (e) {}
+  });
+
+  setCommentsEnabled(true);
 
   mainWave.on("ready", () => {
-    if (!version.media.duration) {
-      version.media.duration = mainWave.getDuration();
-    }
-    const dur = version.media.duration
-      ? formatTime(version.media.duration)
-      : "--:--";
-    timeLabelEl.textContent = `00:00 / ${dur}`;
+    const dur = mainWave.getDuration();
+    version.media.duration = dur;
+    timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
 
     if (volumeSlider) {
@@ -887,8 +1222,6 @@ function loadAudioPlayer(project, cue, version) {
     mainWave.playPause();
     playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
   };
-
-  setCommentsEnabled(true);
 }
 
 function loadVideoPlayer(project, cue, version) {
@@ -914,7 +1247,7 @@ function loadVideoPlayer(project, cue, version) {
   thumb.className = "video-thumb";
 
   if (version.media.thumbnailUrl) {
-    thumb.style.backgroundImage = `url(${version.media.thumbnailUrl})`;
+    thumb.style.backgroundImage = `url(${getProxiedUrl(version.media.thumbnailUrl)})`;
   }
 
   const playBtn = document.createElement("button");
@@ -932,7 +1265,7 @@ function loadVideoPlayer(project, cue, version) {
 
     const video = document.createElement("video");
     video.className = "video-player";
-    video.src = version.media.url;
+    video.src = getProxiedUrl(version.media.url);
     video.controls = true;
     video.playsInline = true;
     inner.appendChild(video);
@@ -1020,7 +1353,7 @@ function renderReferencePlayer(project) {
       normalize: true
     });
 
-    mainWave.load(active.url);
+    mainWave.load(getProxiedUrl(active.url));
 
     mainWave.on("ready", () => {
       const dur = mainWave.getDuration();
@@ -1093,7 +1426,7 @@ function renderReferencePlayer(project) {
 
       const video = document.createElement("video");
       video.className = "video-player";
-      video.src = active.url;
+      video.src = getProxiedUrl(active.url);
       video.controls = true;
       video.playsInline = true;
       inner.appendChild(video);
@@ -1211,6 +1544,139 @@ function renderComments() {
   setCommentsEnabled(true);
 }
 
+// =======================
+// LOAD PROJECT DATA FROM API
+// =======================
+async function loadProjectCues(projectId) {
+  try {
+    const project = getProjectById(projectId);
+    if (!project) return;
+
+    console.log("[Flow] Loading cues for project:", projectId);
+
+    const response = await fetch(`/api/cues?projectId=${projectId}`);
+    if (!response.ok) {
+      console.error("[Flow] Failed to load cues:", response.statusText);
+      return;
+    }
+
+    const data = await response.json();
+    const cuesFromDb = data.cues || [];
+
+    console.log("[Flow] Loaded cues:", cuesFromDb.length);
+
+    // Load versions for each cue
+    const cuesWithVersions = await Promise.all(
+      cuesFromDb.map(async (dbCue) => {
+        const versionResponse = await fetch(`/api/versions?cueId=${dbCue.id}`);
+        const versionData = versionResponse.ok ? await versionResponse.json() : { versions: [] };
+        const versions = versionData.versions || [];
+
+        console.log(`[Flow] Loaded ${versions.length} versions for cue ${dbCue.id}`);
+
+        return {
+          id: dbCue.id,
+          index: dbCue.index_in_project || 0,
+          originalName: dbCue.name || "Untitled",
+          name: dbCue.name || "Untitled",
+          displayName: "",
+          status: dbCue.status || "in-review",
+          versions: versions.map(v => ({
+            id: v.id,
+            index: v.index_in_cue || 0,
+            media: v.media_type ? {
+              type: v.media_type,
+              url: v.media_url,
+              originalName: v.media_filename || "Media",
+              displayName: v.media_filename || "Media",
+              duration: v.duration,
+              thumbnailUrl: v.thumbnail_url,
+              peaks: null
+            } : null,
+            comments: [],
+            deliverables: [],
+            status: v.status || "in-review"
+          })),
+          isOpen: true
+        };
+      })
+    );
+
+    // Update project with loaded cues
+    project.cues = cuesWithVersions;
+
+    console.log('[Flow] cuesWithVersions sample:', cuesWithVersions.slice(0,5).map(c => ({ id: c.id, versions: c.versions.length, isOpen: c.isOpen })));
+
+    // Set first cue/version as active if any exist
+    if (cuesWithVersions.length > 0) {
+      const firstCue = cuesWithVersions[0];
+      project.activeCueId = firstCue.id;
+      if (firstCue.versions.length > 0) {
+        project.activeVersionId = firstCue.versions[0].id;
+      }
+    }
+
+    console.log("[Flow] Project cues loaded successfully");
+    refreshAllNames();
+    await loadProjectReferences(projectId); // load references alongside cues
+    renderAll();
+  } catch (err) {
+    console.error("[Flow] Error loading project cues:", err);
+  }
+}
+
+// Load references (roots + versions) for a project
+async function loadProjectReferences(projectId) {
+  try {
+    const project = getProjectById(projectId);
+    if (!project) return;
+
+    const res = await fetch(`/api/references?projectId=${projectId}`);
+    if (!res.ok) {
+      console.error("[Flow] Failed to load references", res.statusText);
+      project.references = [];
+      renderReferences();
+      return;
+    }
+
+    const data = await res.json();
+    const roots = data.references || [];
+
+    // Sanitize references and versions to avoid undefined entries
+    project.references = (roots || [])
+      .filter(r => r && typeof r === 'object')
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        activeVersionIndex: typeof r.active_version_index === "number" ? r.active_version_index : 0,
+        versions: (r.versions || [])
+          .filter(v => v && typeof v === 'object')
+          .map((v) => ({
+            id: v.id,
+            name: v.name,
+            type: v.type || 'other',
+            url: v.url,
+            size: v.size,
+            duration: v.duration,
+            thumbnailUrl: v.thumbnail_url || v.thumbnail_path || null,
+          }))
+          .filter(v => !!v)
+      }))
+      // Drop empty reference groups with no versions to prevent rendering errors
+      .filter(r => Array.isArray(r.versions) && r.versions.length > 0);
+
+    console.log('[Flow] References sanitized:', project.references.length);
+
+    if (!project.activeReferenceId && project.references.length) {
+      project.activeReferenceId = project.references[0].id;
+    }
+
+    renderReferences();
+  } catch (err) {
+    console.error("[Flow] Error loading references", err);
+  }
+}
+
 function addCommentFromInput() {
   const ctx = getActiveContext();
   if (!ctx) return;
@@ -1265,8 +1731,9 @@ addCommentBtn.addEventListener("click", addCommentFromInput);
 // =======================
 // CUE LIST + VERSION PREVIEW
 // =======================
-function renderCueList(skipRebuildIfPresent) {
+function renderCueList() {
   const project = getActiveProject();
+  console.log("renderCueList: project", project && project.id, "cuesCount", project && project.cues && project.cues.length);
   if (!project) {
     cueListEl.innerHTML = 'No project. Click "New project".';
     cueListSubtitleEl.textContent = "No project yet.";
@@ -1282,362 +1749,380 @@ function renderCueList(skipRebuildIfPresent) {
     return;
   }
 
-  // If skipRebuildIfPresent is true and the list already has content, just update stats
-  if (skipRebuildIfPresent && cueListEl.children.length > 0) {
-    cueListSubtitleEl.textContent = `${project.cues.length} cues`;
-    // Update only the last cue block if it's newly added (to avoid full rebuild flicker)
-    const lastCue = project.cues[project.cues.length - 1];
-    const lastDetails = cueListEl.querySelector(`details[data-cue-id="${lastCue.id}"]`);
-    
-    if (!lastDetails) {
-      // Last cue doesn't exist, so it was just added. Add only that one.
-      const cue = lastCue;
-      const details = createCueDetailsElement(project, cue);
-      cueListEl.appendChild(details);
-    }
-    return;
-  }
-
-  // Full rebuild (original behavior)
-  // Cleanup old mini-waves since we're recreating the DOM
-  project.cues.forEach(cue => {
-    cue.versions.forEach(version => {
-      if (miniWaves[version.id]) {
-        try {
-          miniWaves[version.id].destroy();
-        } catch (e) {}
-        delete miniWaves[version.id];
-      }
-    });
-  });
-
   cueListEl.innerHTML = "";
   cueListSubtitleEl.textContent = `${project.cues.length} cues`;
 
   project.cues.forEach(cue => {
-    const details = createCueDetailsElement(project, cue);
-    cueListEl.appendChild(details);
-  });
-}
+    const details = document.createElement("details");
+    details.className = "cue-block";
+    details.dataset.cueId = cue.id;
+    details.open = cue.isOpen !== false;
 
-// Helper to create a single version row element with all its handlers
-function createVersionRow(project, cue, version) {
-  const row = document.createElement("div");
-  row.className = "version-row";
-  row.dataset.cueId = cue.id;
-  row.dataset.versionId = version.id;
+    const summary = document.createElement("summary");
 
-  const statusKeyV = version.status || "in-review";
-  row.dataset.status = statusKeyV;
-  row.classList.add(`status-${statusKeyV}`);
+    const header = document.createElement("div");
+    header.className = "cue-header";
 
-  if (
-    project.activeCueId === cue.id &&
-    project.activeVersionId === version.id
-  ) {
-    row.classList.add("active");
-  }
+    const left = document.createElement("div");
+    const nameEl = document.createElement("div");
+    nameEl.className = "cue-name";
+    nameEl.textContent = cue.displayName || cue.name;
 
-  const lab = document.createElement("div");
-  lab.className = "version-label";
-  lab.textContent = computeVersionLabel(version.index);
+    const metaEl = document.createElement("div");
+    metaEl.className = "cue-meta";
+    metaEl.textContent = `${cue.versions.length} versions`;
 
-  const prev = document.createElement("div");
-  prev.className = "version-preview";
-  prev.id = `preview-${version.id}`;
+    left.appendChild(nameEl);
+    left.appendChild(metaEl);
 
-  const main = document.createElement("div");
-  main.className = "version-main";
+    const right = document.createElement("div");
+    right.className = "cue-header-right";
 
-  const title = document.createElement("div");
-  title.className = "version-title";
-  title.textContent =
-    version.media?.displayName ||
-    version.media?.originalName ||
-    "Media";
+    const status = document.createElement("span");
+    const statusKey = cue.status || "in-review";
+    status.className = `cue-status ${statusKey}`;
+    status.textContent = VERSION_STATUSES[statusKey] || "In review";
 
-  const meta = document.createElement("div");
-  meta.className = "version-meta";
-  const d = version.media?.duration
-    ? formatTime(version.media.duration)
-    : "--:--";
-  meta.textContent = version.media
-    ? (version.media.type === "audio"
-        ? `Audio · ${d}`
-        : `Video · ${d}`) +
-      (version.deliverables.length
-        ? ` · ${version.deliverables.length} tech files`
-        : "")
-    : version.deliverables.length
-    ? `${version.deliverables.length} tech files`
-    : "Only deliverables";
+    const dd = document.createElement("div");
+    dd.className = "download-dropdown cue-dropdown";
 
-  main.appendChild(title);
-  main.appendChild(meta);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-btn tiny download-toggle";
+    btn.textContent = "⋯";
 
-  const actions = document.createElement("div");
-  actions.className = "version-actions";
+    const menu = document.createElement("div");
+    menu.className = "download-menu";
+    menu.innerHTML = `
+      <button data-action="rename">Rename</button>
+      <button data-action="delete">Delete</button>
+    `;
 
-  const top = document.createElement("div");
-  top.className = "version-actions-top";
+    dd.appendChild(btn);
+    dd.appendChild(menu);
 
-  const dd2 = document.createElement("div");
-  dd2.className = "download-dropdown";
+    right.appendChild(status);
+    right.appendChild(dd);
 
-  const ddBtn = document.createElement("button");
-  ddBtn.type = "button";
-  ddBtn.className = "ghost-btn tiny download-toggle";
-  ddBtn.textContent = "Download ▾";
+    header.appendChild(left);
+    header.appendChild(right);
 
-  const ddMenu = document.createElement("div");
-  ddMenu.className = "download-menu";
+    summary.appendChild(header);
+    details.appendChild(summary);
 
-  if (version.media) {
-    const bMain = document.createElement("button");
-    bMain.dataset.action = "download-main";
-    bMain.textContent = "Download main media";
-    ddMenu.appendChild(bMain);
-  }
-
-  if (version.deliverables.length) {
-    version.deliverables.forEach(dv => {
-      const b = document.createElement("button");
-      b.dataset.action = "download-deliverable";
-      b.dataset.deliverableId = dv.id;
-      b.textContent = `Download ${dv.name}`;
-      ddMenu.appendChild(b);
+    // Ensure summary click toggles details even if other handlers exist
+    summary.style.cursor = "pointer";
+    summary.addEventListener("click", (e) => {
+      // If click originated on a download-toggle or button inside header, don't toggle here
+      if (e.target.closest && e.target.closest('.download-toggle')) return;
+      // Let the browser perform the native toggle; sync our cue state on next tick
+      setTimeout(() => {
+        try {
+          cue.isOpen = !!details.open;
+        } catch (err) {
+          console.error("renderCueList: failed to sync cue.isOpen", err, cue && cue.id);
+        }
+      }, 0);
     });
-  }
 
-  if (!version.media && !version.deliverables.length) {
-    const empty = document.createElement("button");
-    empty.disabled = true;
-    empty.textContent = "Nothing to download";
-    ddMenu.appendChild(empty);
-  }
-
-  dd2.appendChild(ddBtn);
-  dd2.appendChild(ddMenu);
-
-  top.appendChild(dd2);
-  actions.appendChild(top);
-
-  row.appendChild(lab);
-  row.appendChild(prev);
-  row.appendChild(main);
-  row.appendChild(actions);
-
-  row.addEventListener("click", e => {
-    if (e.target.closest(".download-toggle")) return;
-    state.playerMode = "review";
-    project.activeCueId = cue.id;
-    project.activeVersionId = version.id;
-    updatePlayerModeButtons();
-    renderPlayer();
-  });
-
-  row.addEventListener("dragover", e => {
-    if (!isFileDragEvent(e)) return;
-    e.preventDefault();
-    row.classList.add("drag-over");
-  });
-
-  row.addEventListener("dragleave", e => {
-    if (!row.contains(e.relatedTarget)) {
-      row.classList.remove("drag-over");
-    }
-  });
-
-  row.addEventListener("drop", e => {
-    if (!isFileDragEvent(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    row.classList.remove("drag-over");
-
-    const projectNow = getActiveProject();
-    if (!projectNow) return;
-
-    const files = e.dataTransfer.files;
-    if (!files || !files.length) return;
-
-    handleFileDropOnVersion(projectNow, cue, version, files[0]);
-  });
-
-  ddBtn.addEventListener("click", e => {
-    e.stopPropagation();
-    const open = dd2.classList.contains("open");
-    document
-      .querySelectorAll(".download-dropdown.open")
-      .forEach(x => x.classList.remove("open"));
-    if (!open) dd2.classList.add("open");
-  });
-
-  ddMenu.querySelectorAll("button").forEach(b => {
-    b.addEventListener("click", e => {
-      e.stopPropagation();
-      dd2.classList.remove("open");
-      const action = b.dataset.action;
-      if (action === "download-main") {
-        if (version.media && version.media.url) {
-          const name =
-            version.media.displayName ||
-            version.media.originalName ||
-            "media";
-          triggerDownload(version.media.url, name);
-        }
-      }
-      if (action === "download-deliverable") {
-        const id = b.dataset.deliverableId;
-        const dv = version.deliverables.find(d => d.id === id);
-        if (dv && dv.url) {
-          triggerDownload(dv.url, dv.name || "file");
-        }
+    // Also listen for native toggle events to keep state in sync
+    details.addEventListener('toggle', () => {
+      try {
+        cue.isOpen = !!details.open;
+        console.log('renderCueList: details.toggle', { cueId: cue.id, detailsOpen: details.open });
+      } catch (err) {
+        console.error('renderCueList: toggle handler failed', err, cue && cue.id);
       }
     });
-  });
 
-  return row;
-}
+    const versionsContainer = document.createElement("div");
 
-// Helper to create a single cue details element with all its handlers
-function createCueDetailsElement(project, cue) {
-  const details = document.createElement("details");
-  details.className = "cue-block";
-  details.dataset.cueId = cue.id;
-  details.open = cue.isOpen !== false;
+    cue.versions.forEach(version => {
+      const row = document.createElement("div");
+      row.className = "version-row";
+      row.dataset.cueId = cue.id;
+      row.dataset.versionId = version.id;
 
-  const summary = document.createElement("summary");
+      const statusKeyV = version.status || "in-review";
+      row.dataset.status = statusKeyV;
+      row.classList.add(`status-${statusKeyV}`);
 
-  const header = document.createElement("div");
-  header.className = "cue-header";
-
-  const left = document.createElement("div");
-  const nameEl = document.createElement("div");
-  nameEl.className = "cue-name";
-  nameEl.textContent = cue.displayName || cue.name;
-
-  const metaEl = document.createElement("div");
-  metaEl.className = "cue-meta";
-  metaEl.textContent = `${cue.versions.length} versions`;
-
-  left.appendChild(nameEl);
-  left.appendChild(metaEl);
-
-  const right = document.createElement("div");
-  right.className = "cue-header-right";
-
-  const status = document.createElement("span");
-  const statusKey = cue.status || "in-review";
-  status.className = `cue-status ${statusKey}`;
-  status.textContent = VERSION_STATUSES[statusKey] || "In review";
-
-  const dd = document.createElement("div");
-  dd.className = "download-dropdown cue-dropdown";
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "icon-btn tiny download-toggle";
-  btn.textContent = "⋯";
-
-  const menu = document.createElement("div");
-  menu.className = "download-menu";
-  menu.innerHTML = `
-    <button data-action="rename">Rename</button>
-    <button data-action="delete">Delete</button>
-  `;
-
-  dd.appendChild(btn);
-  dd.appendChild(menu);
-
-  right.appendChild(status);
-  right.appendChild(dd);
-
-  header.appendChild(left);
-  header.appendChild(right);
-
-  summary.appendChild(header);
-  details.appendChild(summary);
-
-  const versionsContainer = document.createElement("div");
-  versionsContainer.className = "versions-container";
-
-  cue.versions.forEach(version => {
-    const row = createVersionRow(project, cue, version);
-    versionsContainer.appendChild(row);
-  });
-
-  details.appendChild(versionsContainer);
-
-  details.addEventListener("dragover", e => {
-    if (!isFileDragEvent(e)) return;
-    e.preventDefault();
-    details.classList.add("drag-over");
-  });
-
-  details.addEventListener("dragleave", e => {
-    if (!details.contains(e.relatedTarget)) {
-      details.classList.remove("drag-over");
-    }
-  });
-
-  details.addEventListener("drop", e => {
-    if (!isFileDragEvent(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    details.classList.remove("drag-over");
-
-    const projectNow = getActiveProject();
-    if (!projectNow) return;
-
-    const files = e.dataTransfer.files;
-    if (!files || !files.length) return;
-
-    handleFileDropOnCue(projectNow, cue, files[0]);
-  });
-
-  const cueBtn = details.querySelector("button.download-toggle");
-  const cueMenu = details.querySelector(".download-menu");
-  cueBtn.addEventListener("click", e => {
-    e.stopPropagation();
-    const open = cueBtn.parentElement.classList.contains("open");
-    document
-      .querySelectorAll(".download-dropdown.open")
-      .forEach(x => x.classList.remove("open"));
-    if (!open) cueBtn.parentElement.classList.add("open");
-  });
-
-  cueMenu.querySelectorAll("button").forEach(b => {
-    b.addEventListener("click", e => {
-      e.stopPropagation();
-      cueBtn.parentElement.classList.remove("open");
-      const action = b.dataset.action;
-      if (action === "rename") {
-        const name = prompt("Rename cue", cue.name);
-        if (name && name.trim()) {
-          cue.name = name.trim();
-          refreshAllNames();
-          renderAll();
-        }
+      if (
+        project.activeCueId === cue.id &&
+        project.activeVersionId === version.id
+      ) {
+        row.classList.add("active");
       }
-      if (action === "delete") {
-        const ok = confirm(
-          `Delete cue "${cue.displayName || cue.name}"?`
-        );
-        if (!ok) return;
+
+      const lab = document.createElement("div");
+      lab.className = "version-label";
+      lab.textContent = computeVersionLabel(version.index);
+
+      const prev = document.createElement("div");
+      prev.className = "version-preview";
+      prev.id = `preview-${version.id}`;
+
+      const main = document.createElement("div");
+      main.className = "version-main";
+
+      const title = document.createElement("div");
+      title.className = "version-title";
+      title.textContent =
+        version.media?.displayName ||
+        version.media?.originalName ||
+        "Media";
+
+      const meta = document.createElement("div");
+      meta.className = "version-meta";
+      const d = version.media?.duration
+        ? formatTime(version.media.duration)
+        : "--:--";
+      meta.textContent = version.media
+        ? (version.media.type === "audio"
+            ? `Audio · ${d}`
+            : `Video · ${d}`) +
+          (version.deliverables.length
+            ? ` · ${version.deliverables.length} tech files`
+            : "")
+        : version.deliverables.length
+        ? `${version.deliverables.length} tech files`
+        : "Only deliverables";
+
+      main.appendChild(title);
+      main.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "version-actions";
+
+      const top = document.createElement("div");
+      top.className = "version-actions-top";
+
+      const dd2 = document.createElement("div");
+      dd2.className = "download-dropdown";
+
+      const ddBtn = document.createElement("button");
+      ddBtn.type = "button";
+      ddBtn.className = "ghost-btn tiny download-toggle";
+      ddBtn.textContent = "Download ▾";
+
+      const ddMenu = document.createElement("div");
+      ddMenu.className = "download-menu";
+
+      if (version.media) {
+        const bMain = document.createElement("button");
+        bMain.dataset.action = "download-main";
+        bMain.textContent = "Download main media";
+        ddMenu.appendChild(bMain);
+      }
+
+      if (version.deliverables.length) {
+        version.deliverables.forEach(dv => {
+          const b = document.createElement("button");
+          b.dataset.action = "download-deliverable";
+          b.dataset.deliverableId = dv.id;
+          b.textContent = `Download ${dv.name}`;
+          ddMenu.appendChild(b);
+        });
+      }
+
+      if (!version.media && !version.deliverables.length) {
+        const empty = document.createElement("button");
+        empty.disabled = true;
+        empty.textContent = "Nothing to download";
+        ddMenu.appendChild(empty);
+      }
+
+      dd2.appendChild(ddBtn);
+      dd2.appendChild(ddMenu);
+
+      top.appendChild(dd2);
+      actions.appendChild(top);
+
+      row.appendChild(lab);
+      row.appendChild(prev);
+      row.appendChild(main);
+      row.appendChild(actions);
+
+      row.addEventListener("click", e => {
+        if (e.target.closest(".download-toggle")) return;
+        state.playerMode = "review";
+        project.activeCueId = cue.id;
+        project.activeVersionId = version.id;
+        updatePlayerModeButtons();
+        renderPlayer();
+      });
+
+      row.addEventListener("dragover", e => {
+        if (!isFileDragEvent(e)) return;
+        e.preventDefault();
+        row.classList.add("drag-over");
+      });
+
+      row.addEventListener("dragleave", e => {
+        if (!row.contains(e.relatedTarget)) {
+          row.classList.remove("drag-over");
+        }
+      });
+
+      row.addEventListener("drop", e => {
+        if (!isFileDragEvent(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove("drag-over");
+
         const projectNow = getActiveProject();
         if (!projectNow) return;
-        projectNow.cues = projectNow.cues.filter(c => c.id !== cue.id);
-        if (projectNow.activeCueId === cue.id) {
-          projectNow.activeCueId = projectNow.cues[0]?.id || null;
-          projectNow.activeVersionId =
-            projectNow.cues[0]?.versions[0]?.id || null;
-        }
-        renderAll();
+
+        const files = e.dataTransfer.files;
+        if (!files || !files.length) return;
+
+        handleFileDropOnVersion(projectNow, cue, version, files[0]);
+      });
+
+      ddBtn.addEventListener("click", e => {
+        e.stopPropagation();
+        const open = dd2.classList.contains("open");
+        document
+          .querySelectorAll(".download-dropdown.open")
+          .forEach(x => x.classList.remove("open"));
+        if (!open) dd2.classList.add("open");
+      });
+
+      ddMenu.querySelectorAll("button").forEach(b => {
+        b.addEventListener("click", e => {
+          e.stopPropagation();
+          dd2.classList.remove("open");
+          const action = b.dataset.action;
+          if (action === "download-main") {
+            if (version.media && version.media.url) {
+              const name =
+                version.media.displayName ||
+                version.media.originalName ||
+                "media";
+              triggerDownload(getProxiedUrl(version.media.url), name);
+            }
+          }
+          if (action === "download-deliverable") {
+            const id = b.dataset.deliverableId;
+            const dv = version.deliverables.find(d => d.id === id);
+            if (dv && dv.url) {
+              triggerDownload(getProxiedUrl(dv.url), dv.name || "file");
+            }
+          }
+        });
+      });
+
+      versionsContainer.appendChild(row);
+    });
+
+    details.appendChild(versionsContainer);
+    cueListEl.appendChild(details);
+
+    // Debug: log cue/DOM open state after insertion
+    try {
+      console.log("renderCueList:", { cueId: cue.id, cueIsOpen: cue.isOpen, detailsOpen: details.open, versions: (cue.versions||[]).length, projectActiveCue: project.activeCueId });
+    } catch (err) {
+      console.log("renderCueList: debug log failed", err);
+    }
+
+    details.addEventListener("dragover", e => {
+      if (!isFileDragEvent(e)) return;
+      e.preventDefault();
+      details.classList.add("drag-over");
+    });
+
+    details.addEventListener("dragleave", e => {
+      if (!details.contains(e.relatedTarget)) {
+        details.classList.remove("drag-over");
       }
     });
-  });
 
-  return details;
+    details.addEventListener("drop", e => {
+      if (!isFileDragEvent(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      details.classList.remove("drag-over");
+
+      const projectNow = getActiveProject();
+      if (!projectNow) return;
+
+      const files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+
+      handleFileDropOnCue(projectNow, cue, files[0]);
+    });
+
+    const cueBtn = details.querySelector("button.download-toggle");
+    const cueMenu = details.querySelector(".download-menu");
+    cueBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      const open = cueBtn.parentElement.classList.contains("open");
+      document
+        .querySelectorAll(".download-dropdown.open")
+        .forEach(x => x.classList.remove("open"));
+      if (!open) cueBtn.parentElement.classList.add("open");
+    });
+
+      cueMenu.querySelectorAll("button").forEach(b => {
+        b.addEventListener("click", async e => {
+        e.stopPropagation();
+        cueBtn.parentElement.classList.remove("open");
+        const action = b.dataset.action;
+        if (action === "rename") {
+          const name = prompt("Rename cue", cue.name);
+          if (name && name.trim()) {
+            const newName = name.trim();
+            try {
+              const res = await fetch('/api/cues', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: cue.id, name: newName })
+              });
+              if (!res.ok) {
+                console.error('[FlowPreview] Failed to rename cue', await res.text());
+                alert('Errore nel rinominare la cue');
+                return;
+              }
+              cue.name = newName;
+              refreshAllNames();
+              renderAll();
+            } catch (err) {
+              console.error('[FlowPreview] Exception renaming cue', err);
+              alert('Errore nel rinominare la cue');
+            }
+          }
+        }
+        if (action === "delete") {
+          const ok = confirm(
+            `Delete cue "${cue.displayName || cue.name}"?`
+          );
+          if (!ok) return;
+          
+          try {
+            const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+              console.error('[FlowPreview] Failed to delete cue', await res.text());
+              alert('Errore nella cancellazione della cue');
+              return;
+            }
+            
+            const projectNow = getActiveProject();
+            if (!projectNow) return;
+            projectNow.cues = projectNow.cues.filter(c => c.id !== cue.id);
+            if (projectNow.activeCueId === cue.id) {
+              projectNow.activeCueId = projectNow.cues[0]?.id || null;
+              projectNow.activeVersionId =
+                projectNow.cues[0]?.versions[0]?.id || null;
+            }
+            renderAll();
+          } catch (err) {
+            console.error('[FlowPreview] Exception deleting cue', err);
+            alert('Errore nella cancellazione della cue');
+          }
+        }
+      });
+    });
+  });
 }
 
 function renderVersionPreviews() {
@@ -1649,43 +2134,101 @@ function renderVersionPreviews() {
       const prev = document.getElementById(`preview-${version.id}`);
       if (!prev) return;
 
+      prev.classList.remove("video");
+      prev.innerHTML = "";
+
       if (!version.media) return;
 
       if (version.media.type === "audio") {
-        prev.classList.remove("video");
         createMiniWave(version, prev);
       }
 
       if (version.media.type === "video") {
         prev.classList.add("video");
 
+        // Preferred: show a lightweight <video> element with poster (thumbnail) so
+        // the browser displays the thumbnail without loading full video data.
+        const makeVideoEl = (videoUrl, posterUrl) => {
+          const v = document.createElement("video");
+          v.className = "version-thumb-video";
+          v.muted = true;
+          v.playsInline = true;
+          v.preload = "metadata";
+          if (posterUrl) v.poster = getProxiedUrl(posterUrl);
+          if (videoUrl) {
+            // set src but avoid forcing download of large files; browsers will
+            // usually fetch only metadata until play is requested.
+            v.src = getProxiedUrl(videoUrl);
+          }
+
+          // overlay play icon for affordance
+          const wrap = document.createElement("div");
+          wrap.className = "version-thumb-wrap";
+          wrap.appendChild(v);
+
+          const playOverlay = document.createElement("div");
+          playOverlay.className = "version-thumb-play";
+          playOverlay.textContent = "▶";
+          wrap.appendChild(playOverlay);
+
+          // clicking the preview should open the player on that version
+          wrap.addEventListener("click", (e) => {
+            e.stopPropagation();
+            activateVersionPreview(version);
+          });
+
+          return wrap;
+        };
+
+        // If we have a thumbnail URL, use it as poster on a video element.
         if (version.media.thumbnailUrl) {
-          const img = document.createElement("img");
-          img.src = version.media.thumbnailUrl;
-          img.className = "version-thumb";
-          prev.innerHTML = '';
-          prev.appendChild(img);
-        } else {
+          try {
+            const el = makeVideoEl(version.media.url || null, version.media.thumbnailUrl);
+            prev.appendChild(el);
+          } catch (err) {
+            console.error("renderVersionPreviews: failed to render poster video", err, version.id);
+            // fallback to img
+            const img = document.createElement("img");
+            img.src = getProxiedUrl(version.media.thumbnailUrl);
+            img.className = "version-thumb";
+            img.onerror = () => { img.style.display = 'none'; };
+            prev.appendChild(img);
+          }
+        } else if (version.media.url) {
+          // No thumbnail: attempt to generate one asynchronously, show placeholder meanwhile
+          prev.style.background = "radial-gradient(circle, #374151, #111827 70%)";
+          const spinner = document.createElement("span");
+          spinner.textContent = "↻";
+          spinner.style.fontSize = "12px";
+          spinner.style.opacity = "0.5";
+          prev.appendChild(spinner);
+
           generateVideoThumbnailFromUrl(version).then(th => {
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
-
             el.innerHTML = "";
             el.classList.add("video");
 
             if (!th) {
-              el.style.background =
-                "radial-gradient(circle at 10% 20%, #111827, #020617 70%)";
+              // If thumbnail generation failed, render a lightweight video element with no poster
+              const fallback = makeVideoEl(version.media.url, null);
+              el.appendChild(fallback);
               return;
             }
 
             version.media.thumbnailUrl = th;
-
-            const img = document.createElement("img");
-            img.src = th;
-            img.className = "version-thumb";
-            el.appendChild(img);
+            const wrapped = makeVideoEl(version.media.url || null, th);
+            el.appendChild(wrapped);
+          }).catch(err => {
+            console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
           });
+        } else {
+          // No media url nor thumbnail: show fallback icon
+          const fallback = document.createElement("span");
+          fallback.textContent = "▶";
+          fallback.style.fontSize = "18px";
+          fallback.style.opacity = "0.5";
+          prev.appendChild(fallback);
         }
       }
     });
@@ -1697,116 +2240,32 @@ function renderVersionPreviews() {
 // =======================
 function handleFileDropOnCue(project, cue, file) {
   const version = createVersionForCue(project, cue, file);
-  
-  // Check BEFORE modifying state
-  const wasNoCueActive = !project.activeCueId;
-  const wasCueActive = project.activeCueId === cue.id;
-  
-  // Set active version/cue
-  if (wasNoCueActive || wasCueActive) {
-    project.activeCueId = cue.id;
-    project.activeVersionId = version.id;
-  }
-  
+  project.activeCueId = cue.id;
+  project.activeVersionId = version.id;
   cue.status = computeCueStatus(cue);
   refreshAllNames();
-  
-  // Only do full render if cue is active
-  if (wasNoCueActive || wasCueActive) {
-    renderAll();
-  } else {
-    // Cue wasn't active and isn't now - just add to DOM without updating player
-    const cueDetails = document.querySelector(`details[data-cue-id="${cue.id}"]`);
-    if (cueDetails) {
-      const metaEl = cueDetails.querySelector(".cue-meta");
-      if (metaEl) {
-        metaEl.textContent = `${cue.versions.length} versions`;
-      }
-      
-      const versionsContainer = cueDetails.querySelector(".versions-container");
-      if (versionsContainer) {
-        const newVersionRow = createVersionRow(project, cue, version);
-        versionsContainer.appendChild(newVersionRow);
-        
-        const previewEl = newVersionRow.querySelector(".version-preview");
-        if (previewEl && version.media) {
-          if (version.media.type === "audio") {
-            createMiniWave(version, previewEl);
-          } else if (version.media.type === "video") {
-            previewEl.classList.add("video");
-            generateVideoThumbnailFromUrl(version).then(th => {
-              if (!th) {
-                previewEl.style.background = "radial-gradient(circle at 10% 20%, #111827, #020617 70%)";
-                return;
-              }
-              version.media.thumbnailUrl = th;
-              const img = document.createElement("img");
-              img.src = th;
-              img.className = "version-thumb";
-              previewEl.innerHTML = '';
-              previewEl.appendChild(img);
-            });
-          }
-        }
-      }
-    }
-  }
+  renderAll();
 }
 
 function handleFileDropOnVersion(project, cue, version, file) {
   const type = detectRawType(file.name);
   const url = URL.createObjectURL(file);
 
-  const deliverable = {
+  version.deliverables.push({
     id: uid(),
     name: file.name,
     size: file.size,
     type,
     url
-  };
-
-  version.deliverables.push(deliverable);
+  });
 
   project.activeCueId = cue.id;
   project.activeVersionId = version.id;
 
   cue.status = computeCueStatus(cue);
   refreshAllNames();
-
-  // Save deliverable to Supabase
-  if (window.SupabaseSync?.saveVersionFile) {
-    console.log("💾 Saving deliverable to Supabase...", deliverable.id);
-    window.SupabaseSync.saveVersionFile(version.id, deliverable).catch(err =>
-      console.error("Failed to save deliverable to Supabase:", err)
-    );
-  } else {
-    console.warn("⚠️  SupabaseSync.saveVersionFile not available");
-  }
-  
-  // Targeted update: only update the meta text for this version row (deliverables count)
-  const versionRow = document.querySelector(`.version-row[data-version-id="${version.id}"]`);
-  if (versionRow) {
-    const metaEl = versionRow.querySelector(".version-meta");
-    if (metaEl) {
-      const d = version.media?.duration
-        ? formatTime(version.media.duration)
-        : "--:--";
-      metaEl.textContent = version.media
-        ? (version.media.type === "audio"
-            ? `Audio · ${d}`
-            : `Video · ${d}`) +
-          (version.deliverables.length
-            ? ` · ${version.deliverables.length} tech files`
-            : "")
-        : version.deliverables.length
-        ? `${version.deliverables.length} tech files`
-        : "Only deliverables";
-    }
-  }
-  
-  // Update previews and player
+  renderCueList();
   renderVersionPreviews();
-  renderPlayer();
 }
 
 // =======================
@@ -1885,29 +2344,29 @@ function renderReferences() {
       createRefMiniWave(active, preview);
     } else if (active.type === "image") {
       const img = document.createElement("img");
-      img.src = active.url;
+      img.src = getProxiedUrl(active.url);
       img.alt = active.name;
       preview.appendChild(img);
     } else if (active.type === "video") {
       if (active.thumbnailUrl) {
         const img = document.createElement("img");
-        img.src = active.thumbnailUrl;
+        img.src = getProxiedUrl(active.thumbnailUrl);
         img.alt = active.name;
         preview.appendChild(img);
       } else {
-        generateVideoThumbnailRaw(active.url).then(th => {
+        generateVideoThumbnailRaw(getProxiedUrl(active.url)).then(th => {
           const el = document.getElementById(
             `ref-preview-${refRoot.id}`
           );
           if (!el) return;
           el.innerHTML = "";
           if (!th) {
-            el.textContent = getReferenceLabel(active.type);
+            el.textContent = "Preview non disponibile";
             return;
           }
           active.thumbnailUrl = th;
           const img = document.createElement("img");
-          img.src = th;
+          img.src = getProxiedUrl(th);
           img.alt = active.name;
           el.appendChild(img);
         });
@@ -1996,29 +2455,29 @@ function renderReferences() {
         createRefMiniWave(ver, vPrev);
       } else if (ver.type === "image") {
         const img = document.createElement("img");
-        img.src = ver.url;
+        img.src = getProxiedUrl(ver.url);
         img.alt = ver.name;
         vPrev.appendChild(img);
       } else if (ver.type === "video") {
         if (ver.thumbnailUrl) {
           const img = document.createElement("img");
-          img.src = ver.thumbnailUrl;
+          img.src = getProxiedUrl(ver.thumbnailUrl);
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
-          generateVideoThumbnailRaw(ver.url).then(th => {
+          generateVideoThumbnailRaw(getProxiedUrl(ver.url)).then(th => {
             const el = document.getElementById(
               `ref-version-preview-${ver.id}`
             );
             if (!el) return;
             el.innerHTML = "";
             if (!th) {
-              el.textContent = getReferenceLabel(ver.type);
+              el.textContent = "Preview non disponibile";
               return;
             }
             ver.thumbnailUrl = th;
             const img = document.createElement("img");
-            img.src = th;
+            img.src = getProxiedUrl(th);
             img.alt = ver.name;
             el.appendChild(img);
           });
@@ -2193,7 +2652,7 @@ function renderReferences() {
           }
 
           if (action === "download-version") {
-            triggerDownload(ver.url, ver.name || "reference");
+            triggerDownload(getProxiedUrl(ver.url), ver.name || "reference");
           }
         });
       });
@@ -2610,7 +3069,8 @@ function renderProjectList() {
     li.addEventListener("click", e => {
       if (e.target.closest(".download-dropdown")) return;
       state.activeProjectId = project.id;
-      renderAll();
+      // Reload cues from DB
+      loadProjectCues(project.id);
     });
 
     btn.addEventListener("click", e => {
@@ -2760,43 +3220,31 @@ namingLevelRadios.forEach(r => {
 // =======================
 // GLOBAL EVENTS
 // =======================
-function attachNewProjectBtnIfPresent() {
-  try {
-    const btn = document.getElementById('newProjectBtn');
-    if (btn && !btn.__flow_attached) {
-      btn.addEventListener('click', createNewProject);
-      btn.__flow_attached = true;
-      console.log('[FlowPreview] attached newProjectBtn');
-      return true;
-    }
-  } catch (e) {
-    console.warn('[FlowPreview] attach check error', e);
-  }
-  return false;
-}
 
-if (!attachNewProjectBtnIfPresent()) {
-  console.warn('[FlowPreview] newProjectBtn not found in DOM — using delegated listener');
+// Tab switching for sidebar
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabContents = document.querySelectorAll(".tab-content");
 
-  document.addEventListener('click', function delegatedNewProject(e) {
-    try {
-      const target = e.target;
-      const btn = target && (target.id === 'newProjectBtn' ? target : (target.closest && target.closest('#newProjectBtn')));
-      if (btn) {
-        console.log('[FlowPreview] delegated newProject click');
-        createNewProject();
-      }
-    } catch (err) {
-      console.error('[FlowPreview] delegatedNewProject error', err);
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    // Remove active class from all buttons and contents
+    tabButtons.forEach(b => b.classList.remove("active"));
+    tabContents.forEach(c => c.classList.remove("active"));
+
+    // Add active class to clicked button and corresponding content
+    btn.classList.add("active");
+    const tabName = btn.dataset.tab;
+    const tabContent = document.getElementById(`${tabName}-tab`);
+    if (tabContent) {
+      tabContent.classList.add("active");
     }
   });
+});
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attachNewProjectBtnIfPresent);
-  } else {
-    // In case DOMContentLoaded already fired, try attaching immediately
-    attachNewProjectBtnIfPresent();
-  }
+if (newProjectBtn) {
+  newProjectBtn.addEventListener("click", createNewProject);
+} else {
+  console.error("[FlowPreview] newProjectBtn not found in DOM");
 }
 
 if (statusInReviewBtn && statusApprovedBtn && statusChangesBtn) {
@@ -2819,11 +3267,282 @@ if (statusInReviewBtn && statusApprovedBtn && statusChangesBtn) {
   });
 }
 
+// Copy demo link -> create invite if authenticated, otherwise prompt/register or copy temporary link
+if (copyLinkBtn) {
+  copyLinkBtn.addEventListener('click', async () => {
+    const project = window.getActiveProject ? window.getActiveProject() : null;
+    if (!project) {
+      alert('No project selected');
+      return;
+    }
+
+    // Try to detect supabase client + current user
+    const sup = window.supabaseClient || window.supabaseClient || null;
+    let user = null;
+    try {
+      if (sup && sup.auth) {
+        try {
+          if (typeof sup.auth.getUser === 'function') {
+            const { data } = await sup.auth.getUser();
+            user = data?.user || null;
+          }
+          // Try to fetch session to get an access token for server-verified requests
+          if (typeof sup.auth.getSession === 'function') {
+            const { data: sessionData } = await sup.auth.getSession();
+            user = user || sessionData?.session?.user || null;
+            // attach access token for later use
+            if (sessionData?.session?.access_token) user._access_token = sessionData.session.access_token;
+          }
+        } catch (e) {
+          console.warn('[FlowPreview] sup.auth getUser/getSession failed', e);
+        }
+      }
+    } catch (err) {
+      console.warn('[FlowPreview] Could not get user session', err);
+    }
+
+    // If user authenticated -> prefer server-side API to create a Drive-like share (uses service role)
+    if (user) {
+      try {
+        copyLinkBtn.disabled = true;
+
+        // Try server-side endpoint first (reliable, uses service role)
+        try {
+          // Migliora: sempre includi x-actor-id e Authorization se disponibili
+          const headers = { 'Content-Type': 'application/json' };
+          if (user && user.id) headers['x-actor-id'] = user.id;
+          if (user && user._access_token) headers['authorization'] = 'Bearer ' + user._access_token;
+
+          const resp = await fetch('/api/projects/share', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ project_id: project.id, role: 'viewer', expires_at: null, max_uses: 5 })
+          });
+
+          if (resp.ok) {
+            const body = await resp.json();
+            if (body && body.link) {
+              await navigator.clipboard.writeText(body.link);
+              alert('Link copiato negli appunti: ' + body.link);
+              return;
+            }
+          } else {
+            const text = await resp.text();
+            console.warn('[FlowPreview] /api/projects/share returned', resp.status, text);
+            if (resp.status === 403) {
+              // Try to create an invite link instead (users who are not owners may be allowed to create invites)
+              try {
+                const invResp = await fetch('/api/invites', {
+                  method: 'POST',
+                  headers: { ...headers, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ project_id: project.id, team_id: project.team_id, role: 'viewer', is_link_invite: true })
+                });
+
+                const invBody = await invResp.json().catch(() => ({}));
+                if (invResp.ok && invBody.invite_url) {
+                  await navigator.clipboard.writeText(invBody.invite_url);
+                  alert('Link invito copiato negli appunti: ' + invBody.invite_url);
+                  return;
+                }
+
+                console.warn('[FlowPreview] /api/invites failed or not allowed', invResp.status, invBody);
+                alert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+              } catch (ie) {
+                console.warn('[FlowPreview] create invite fallback failed', ie);
+                alert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('[FlowPreview] Server /api/projects/share failed, will try RPC fallbacks', err);
+        }
+
+        // If server API failed, try RPCs as fallback (older flow)
+        if (sup && typeof sup.rpc === 'function') {
+          // Prefer new create_project_share RPC (Drive-like). If it fails, fall back to create_invite.
+          let shareToken = null;
+          try {
+            const { data: shareData, error: shareError } = await sup.rpc('create_project_share', {
+              p_project_id: project.id || null,
+              p_role: 'viewer',
+              p_expires_in_days: 7,
+              p_created_by: user.id
+            });
+            if (shareError) throw shareError;
+            if (shareData && shareData.token) shareToken = shareData.token;
+          } catch (err) {
+            console.warn('[FlowPreview] create_project_share not available or failed, falling back to create_invite', err);
+          }
+
+          let inviteUrl = null;
+          const base = window.location.origin;
+          if (shareToken) {
+            inviteUrl = `${base}/share/${shareToken}`;
+          } else {
+            // Fallback to existing create_invite RPC
+            const { data: rpcData, error: rpcError } = await sup.rpc('create_invite', {
+              p_team_id: project.team_id,
+              p_project_id: project.id || null,
+              p_email: null,
+              p_role: 'viewer',
+              p_is_link_invite: true,
+              p_invited_by: user.id,
+              p_expires_in_days: 7
+            });
+
+            if (rpcError) {
+              console.error('[FlowPreview] create_invite RPC error', rpcError);
+              throw rpcError;
+            }
+
+            const created = rpcData || null;
+            if (!created || created.success === false) {
+              console.warn('[FlowPreview] create_invite returned no invite', created);
+              throw new Error(created?.error || 'No invite created');
+            }
+
+            const inviteId = created.invite_id || (Array.isArray(created) ? created[0]?.invite_id : null);
+            if (!inviteId) {
+              console.warn('[FlowPreview] invite_id missing in RPC result', created);
+              throw new Error('invite_id missing');
+            }
+
+            inviteUrl = `${base}/invite/${inviteId}`;
+          }
+
+          await navigator.clipboard.writeText(inviteUrl);
+          alert('Link copiato negli appunti: ' + inviteUrl);
+          return;
+        }
+      } catch (err) {
+        console.error('[FlowPreview] Failed to create/copy invite via server/RPC', err);
+        // Fallback: copy a temporary project link so user can still share something
+        try {
+          const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
+          await navigator.clipboard.writeText(temp);
+          alert('Impossibile generare link definitivo. Link temporaneo copiato negli appunti: ' + temp);
+        } catch (clipErr) {
+          console.error('[FlowPreview] Fallback clipboard write failed', clipErr);
+          alert('Errore creando il link di condivisione');
+        }
+      } finally {
+        copyLinkBtn.disabled = false;
+      }
+
+      return;
+    }
+
+    // Not authenticated: ask the user whether to register or copy a temporary project link
+    const shouldRegister = confirm("Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare.");
+    if (shouldRegister) {
+      window.location.href = '/register';
+      return;
+    }
+
+    // Copy a simple temporary link (project id) so user can paste it elsewhere — note: this may not grant access without invite
+    try {
+      const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
+      await navigator.clipboard.writeText(temp);
+      alert('Link temporaneo copiato negli appunti');
+    } catch (err) {
+      console.error('[FlowPreview] Clipboard write failed', err);
+      alert('Impossibile copiare il link.');
+    }
+  });
+}
+
 document.addEventListener("click", e => {
   document.querySelectorAll(".download-dropdown.open").forEach(dd => {
     if (!dd.contains(e.target)) dd.classList.remove("open");
   });
 });
+
+// =======================
+// INITIALIZE FROM SUPABASE
+// =======================
+async function initializeFromSupabase() {
+  if (hasInitializedFromSupabase) {
+    console.log("[Flow] initializeFromSupabase already ran - skipping");
+    return;
+  }
+  hasInitializedFromSupabase = true;
+  console.log("[Flow] initializeFromSupabase() called");
+  
+  try {
+    // Fetch projects from API (include auth headers when available)
+    let fetchHeaders = { 'Content-Type': 'application/json' };
+    try {
+      if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
+        const fh = window.flowAuth.getAuthHeaders();
+        if (fh && typeof fh === 'object') fetchHeaders = { ...fetchHeaders, ...fh };
+      } else if (window.supabaseClient && window.supabaseClient.auth) {
+        try {
+          const sessionRes = await window.supabaseClient.auth.getSession();
+          const session = sessionRes?.data?.session;
+          if (session && session.user && session.user.id) {
+            fetchHeaders['x-actor-id'] = session.user.id;
+          }
+          if (session && session.access_token) {
+            fetchHeaders['Authorization'] = 'Bearer ' + session.access_token;
+          }
+        } catch (e) {
+          // ignore session read errors and fall back to anonymous fetch
+        }
+      }
+
+    // Fetch projects
+    const response = await fetch("/api/projects", { headers: fetchHeaders });
+    if (!response.ok) {
+      console.error("[Flow] Failed to fetch projects:", response.statusText);
+      renderAll(); // Fallback to empty UI
+      return;
+    }
+
+    const data = await response.json();
+    const projects = data.projects || [];
+
+    console.log("[Flow] Loaded projects:", projects.length);
+
+    // Populate state with projects from DB
+    state.projects = projects.map(p => ({
+      id: p.id,
+      name: p.name || "Untitled",
+      team_id: p.team_id, // Add team_id for sharing
+      cues: [], // Load on demand if needed
+      activeCueId: null,
+      activeVersionId: null,
+      references: [],
+      activeReferenceId: null
+    }));
+
+    // If a specific project was requested (open_project), prefer it
+    try {
+      const openProject = localStorage.getItem('open_project');
+      if (openProject) {
+        const found = state.projects.find(p => p.id === openProject);
+        if (found) {
+          state.activeProjectId = found.id;
+          // Clean up the flag so subsequent loads don't reopen it
+          localStorage.removeItem('open_project');
+          await loadProjectCues(found.id);
+        }
+      }
+    } catch (e) {
+      console.warn('[Flow] Error reading open_project from localStorage', e);
+    }
+
+    // Set first project as active if none selected
+    if (!state.activeProjectId && state.projects.length > 0) {
+      state.activeProjectId = state.projects[0].id;
+      await loadProjectCues(state.projects[0].id);
+    }
+
+    renderAll();
+  } catch (err) {
+    console.error("[Flow] initializeFromSupabase error:", err);
+    renderAll(); // Fallback to empty UI
+  }
+}
 
 // =======================
 // ROOT RENDER
@@ -2839,246 +3558,29 @@ function renderAll() {
   renderPlayer();
 }
 
-renderAll();
+// Export for page.tsx to call after auth
+window.initializeFromSupabase = initializeFromSupabase;
+window.getActiveProject = getActiveProject; // Export for share-handler.js
 
-// Ensure global drag & drop listeners for document (helps with dragging from Finder)
-window.addEventListener('dragover', e => { if (isFileDragEvent(e)) e.preventDefault(); });
-window.addEventListener('drop', e => { if (isFileDragEvent(e)) e.preventDefault(); });
+// Don't auto-initialize - wait for page.tsx to call initializeFromSupabase
+console.log("[Flow] Script loaded, waiting for page.tsx to initialize...");
 
-console.log('flow.js loaded (full CodePen port)');
-// Flow UI JS (adapted from CodePen). This file expects to run after the DOM is ready
-(() => {
-  // Paste the original CodePen JS here. For brevity in this patch I'll attach a minimal bootstrap
-  // that wires New Project button and a simple renderAll call. The full behaviour can be pasted
-  // from your CodePen JS (we had it earlier in the conversation) if you want every feature.
-
-  // Minimal app state and helpers (full implementation exists in CodePen JS previously provided)
-  window.flowState = window.flowState || { projects: [] };
-
-  function uid() { return Math.random().toString(36).slice(2); }
-
-  function renderAll() {
-    try {
-      if (typeof window.renderProjectList === 'function') {
-        window.renderProjectList();
-      }
-    } catch (e) {
-      console.error('renderAll error', e);
-    }
-  }
-
-  // Wire New Project button
-  const newProjectBtn = document.getElementById('newProjectBtn');
-  if (newProjectBtn) {
-    newProjectBtn.addEventListener('click', createNewProject);
-  } else {
-    console.error("[FlowPreview] newProjectBtn not found in DOM");
-  }
-
-  // Core helpers: thumbnail generation and drop handling
-  function fileToDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('FileReader error'));
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(file);
+// Fallback auto-init if the page never calls us (e.g. auth bootstrap fails silently)
+window.addEventListener("DOMContentLoaded", () => {
+  if (!hasInitializedFromSupabase) {
+    console.log("[Flow] Auto-init fallback triggered");
+    initializeFromSupabase().catch(err => {
+      console.error("[Flow] Auto-init fallback error", err);
     });
   }
+});
 
-  function generateVideoThumbnailFromFile(file, seekTo = 0.5) {
-    return new Promise((resolve, reject) => {
-      if (!file.type.startsWith('video/')) return reject(new Error('Not a video'));
-      const url = URL.createObjectURL(file);
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      video.muted = true;
-      video.src = url;
-
-      const cleanup = () => { try { URL.revokeObjectURL(url); } catch (e) {} };
-
-      video.addEventListener('loadeddata', () => {
-        // clamp seek time
-        const time = Math.min(Math.max(0, seekTo), Math.max(0, video.duration || 0.5));
-        const doSeek = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth || 320;
-            canvas.height = video.videoHeight || 180;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            cleanup();
-            resolve(dataUrl);
-          } catch (err) {
-            cleanup();
-            reject(err);
-          }
-        };
-
-        // try setting currentTime; some browsers require a short timeout
-        try {
-          video.currentTime = time;
-        } catch (e) {
-          // ignore
-        }
-
-        // wait for seeked or fallback after a short timeout
-        const onSeeked = () => { doSeek(); video.removeEventListener('seeked', onSeeked); };
-        video.addEventListener('seeked', onSeeked);
-        setTimeout(() => { if (!video.seeking) doSeek(); }, 250);
-      });
-
-      video.addEventListener('error', (e) => { cleanup(); reject(new Error('Video load error')); });
+// Extra safety: delayed auto-init in case DOMContentLoaded already fired before script load
+setTimeout(() => {
+  if (!hasInitializedFromSupabase) {
+    console.log("[Flow] Delayed auto-init fallback");
+    initializeFromSupabase().catch(err => {
+      console.error("[Flow] Delayed auto-init error", err);
     });
   }
-
-  function showImmediatePreview(dataUrl, file) {
-    const playerMedia = document.getElementById('playerMedia');
-    if (!playerMedia) return;
-    // For video/audio show image; for other files show generic icon
-    if ((file && file.type.startsWith('video/')) || (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/'))) {
-      playerMedia.innerHTML = `<img src="${dataUrl}" alt="preview" style="max-width:100%;height:auto;border-radius:6px" />`;
-    } else if (dataUrl && dataUrl.startsWith('data:')) {
-      playerMedia.innerHTML = `<img src="${dataUrl}" alt="preview" style="max-width:100%;height:auto;border-radius:6px" />`;
-    } else {
-      playerMedia.innerHTML = `<div class="player-placeholder">File ready: ${file ? file.name : ''}</div>`;
-    }
-  }
-
-  // Drop handling for the main dropzone and refs dropzone
-  function setupDropzones() {
-    const global = document.getElementById('globalDropzone');
-    const refs = document.getElementById('refsDropzone');
-
-    function prevent(ev) { ev.preventDefault(); ev.stopPropagation(); }
-
-    function onDragOver(ev) { prevent(ev); if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy'; ev.currentTarget && ev.currentTarget.classList.add('dragover'); }
-    function onDragLeave(ev) { prevent(ev); ev.currentTarget && ev.currentTarget.classList.remove('dragover'); }
-
-    async function handleFiles(files, target) {
-      if (!files || files.length === 0) return;
-      const file = files[0];
-      
-      // Check if there's an active project
-      const activeProject = getActiveProject();
-      if (!activeProject) {
-        alert('Create or select a project before dropping media.');
-        return;
-      }
-
-      try {
-        // Use the main createCueFromFile function to handle this properly
-        await createCueFromFile(file);
-      } catch (err) {
-        console.error('handleFiles error', err);
-      }
-    }
-
-    if (global) {
-      global.addEventListener('dragover', onDragOver);
-      global.addEventListener('dragenter', onDragOver);
-      global.addEventListener('dragleave', onDragLeave);
-      global.addEventListener('drop', (ev) => { prevent(ev); onDragLeave(ev); handleFiles(ev.dataTransfer.files, 'global'); });
-    }
-
-    if (refs) {
-      refs.addEventListener('dragover', onDragOver);
-      refs.addEventListener('dragenter', onDragOver);
-      refs.addEventListener('dragleave', onDragLeave);
-      refs.addEventListener('drop', (ev) => { prevent(ev); onDragLeave(ev); handleFiles(ev.dataTransfer.files, 'refs'); });
-    }
-  }
-
-  // Load the rest of the full CodePen JS if present on window (we attached it earlier in the conversation)
-  if (window.__FLOW_CODEPEN_JS__) {
-    try { window.__FLOW_CODEPEN_JS__(); } catch (e) { console.error(e); }
-  }
-
-  // Load projects from Supabase on startup
-  async function initializeFromSupabase() {
-    try {
-      console.log('🚀 Loading projects from API...');
-      
-      const response = await fetch('/api/projects');
-      const data = await response.json();
-      
-      if (data.error) {
-        console.error('Failed to load projects:', data.error);
-        return;
-      }
-      
-      const projects = data.projects || [];
-      
-      if (projects && projects.length > 0) {
-        // Transform Supabase projects to match our state format
-        state.projects = projects.map(dbProject => ({
-          id: dbProject.id,
-          name: dbProject.name,
-          description: dbProject.description,
-          cues: (dbProject.cues || []).map(dbCue => ({
-            id: dbCue.id,
-            index: dbCue.index_in_project,
-            originalName: dbCue.original_name,
-            name: dbCue.name,
-            displayName: dbCue.display_name,
-            status: dbCue.status,
-            versions: (dbCue.versions || []).map(dbVersion => ({
-              id: dbVersion.id,
-              index: dbVersion.index_in_cue,
-              status: dbVersion.status,
-              media: dbVersion.media_type ? {
-                type: dbVersion.media_type,
-                url: dbVersion.media_url,
-                storagePath: dbVersion.media_storage_path,
-                originalName: dbVersion.media_original_name,
-                displayName: dbVersion.media_display_name,
-                duration: dbVersion.media_duration,
-                thumbnailUrl: dbVersion.media_thumbnail_url,
-                thumbnailPath: dbVersion.media_thumbnail_path,
-                peaks: null
-              } : null,
-              comments: [],
-              deliverables: [],
-              isOpen: true
-            })),
-            isOpen: true
-          })),
-          activeCueId: null,
-          activeVersionId: null,
-          references: [],
-          activeReferenceId: null
-        }));
-
-        if (state.projects.length > 0) {
-          state.activeProjectId = state.projects[0].id;
-          
-          // Set first cue and version as active if they exist
-          const firstProject = state.projects[0];
-          if (firstProject.cues && firstProject.cues.length > 0) {
-            firstProject.activeCueId = firstProject.cues[0].id;
-            if (firstProject.cues[0].versions && firstProject.cues[0].versions.length > 0) {
-              firstProject.activeVersionId = firstProject.cues[0].versions[0].id;
-            }
-          }
-        }
-
-        console.log('✅ Loaded', state.projects.length, 'projects from Supabase');
-        renderAll();
-      } else {
-        console.log('📭 No projects in Supabase');
-      }
-    } catch (err) {
-      console.error('❌ Error loading from Supabase:', err);
-    }
-  }
-
-  // Initialize from Supabase after a short delay to ensure DOM is ready
-  setTimeout(() => {
-    initializeFromSupabase();
-  }, 500);
-
-  // Initialize dropzones after DOM ready
-  try { setupDropzones(); } catch (e) { console.error('setupDropzones failed', e); }
-
-  console.log('Flow UI script loaded');
-})();
+}, 800);

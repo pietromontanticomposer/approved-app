@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Login - Approved</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #0a0a0a;
+      color: #fff;
+    }
+    .test-section {
+      background: #1a1a1a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid #333;
+    }
+    h2 {
+      margin-top: 0;
+      color: #0066ff;
+    }
+    button {
+      padding: 12px 24px;
+      margin: 5px;
+      background: #0066ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #0052cc;
+    }
+    button.secondary {
+      background: #333;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      background: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 14px;
+    }
+    .status {
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .success { background: #1a4d1a; color: #44ff44; }
+    .error { background: #4d1a1a; color: #ff6b6b; }
+    .info { background: #1a3d4d; color: #4db8ff; }
+    a {
+      color: #0066ff;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 Test Sistema Multi-Utente</h1>
+
+  <div class="test-section">
+    <h2>1️⃣ Test Connessione Supabase</h2>
+    <button onclick="testConnection()">Test Connection</button>
+    <div id="connection-status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>2️⃣ Test Funzioni RPC</h2>
+    <button onclick="testRPCFunctions()">Test RPC Functions</button>
+    <div id="rpc-status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>3️⃣ Test Login con Magic Link</h2>
+    <input type="email" id="email" placeholder="your@email.com" />
+    <button onclick="testMagicLink()">Invia Magic Link</button>
+    <div id="magic-status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>4️⃣ Test Creazione Invito</h2>
+    <p style="color: #999; font-size: 14px;">Prima devi essere loggato</p>
+    <button onclick="testCreateInvite()">Crea Invito Test</button>
+    <div id="invite-status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>📋 Link Utili</h2>
+    <a href="http://localhost:3000/login" target="_blank">→ Pagina Login</a><br>
+    <a href="https://supabase.com/dashboard/project/waaigankcctijalvlppk/sql/new" target="_blank">→ Supabase SQL Editor</a><br>
+    <a href="https://supabase.com/dashboard/project/waaigankcctijalvlppk/auth/users" target="_blank">→ Supabase Users</a>
+  </div>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    const { createClient } = supabase;
+    
+    const SUPABASE_URL = 'https://waaigankcctijalvlppk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndhYWlnYW5rY2N0aWphbHZscHBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NzUzNjIsImV4cCI6MjA4MDQ1MTM2Mn0.qDbrFUNFLj_i7YDzRM48uxCS1weMSYM3b4CvR_xyRFg';
+    
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function showStatus(elementId, message, type) {
+      const el = document.getElementById(elementId);
+      el.innerHTML = `<div class="status ${type}">${message}</div>`;
+    }
+
+    async function testConnection() {
+      showStatus('connection-status', 'Testing...', 'info');
+      
+      try {
+        const { data, error } = await client.from('teams').select('count').limit(1);
+        
+        if (error) {
+          showStatus('connection-status', `❌ Error: ${error.message}`, 'error');
+        } else {
+          showStatus('connection-status', '✅ Connessione Supabase OK!', 'success');
+        }
+      } catch (err) {
+        showStatus('connection-status', `❌ ${err.message}`, 'error');
+      }
+    }
+
+    async function testRPCFunctions() {
+      showStatus('rpc-status', 'Testing RPC functions...', 'info');
+      
+      const testToken = '00000000-0000-0000-0000-000000000000';
+      
+      try {
+        const { data, error } = await client.rpc('get_invite_details', { 
+          invite_token: testToken 
+        });
+        
+        if (error && error.message.includes('function')) {
+          showStatus('rpc-status', 
+            '❌ Funzioni NON trovate!<br><br>' +
+            '<strong>DEVI APPLICARE LE MIGRATION:</strong><br>' +
+            '1. Vai su <a href="https://supabase.com/dashboard/project/waaigankcctijalvlppk/sql/new" target="_blank">SQL Editor</a><br>' +
+            '2. Copia tutto da migrations/005_invite_functions.sql<br>' +
+            '3. Incolla e Run<br>' +
+            '4. Riprova questo test', 
+            'error');
+        } else {
+          showStatus('rpc-status', '✅ Funzioni RPC esistono e funzionano!', 'success');
+        }
+      } catch (err) {
+        showStatus('rpc-status', `❌ ${err.message}`, 'error');
+      }
+    }
+
+    async function testMagicLink() {
+      const email = document.getElementById('email').value;
+      
+      if (!email) {
+        showStatus('magic-status', '⚠️  Inserisci una email', 'error');
+        return;
+      }
+      
+      showStatus('magic-status', 'Invio magic link...', 'info');
+      
+      try {
+        const { error } = await client.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: 'http://localhost:3000/',
+          },
+        });
+        
+        if (error) {
+          showStatus('magic-status', `❌ ${error.message}`, 'error');
+        } else {
+          showStatus('magic-status', 
+            `✅ Magic link inviato a ${email}!<br><br>` +
+            'Controlla la tua email e clicca il link per loggarti.', 
+            'success');
+        }
+      } catch (err) {
+        showStatus('magic-status', `❌ ${err.message}`, 'error');
+      }
+    }
+
+    async function testCreateInvite() {
+      showStatus('invite-status', 'Testing...', 'info');
+      
+      try {
+        const { data: { user } } = await client.auth.getUser();
+        
+        if (!user) {
+          showStatus('invite-status', '⚠️  Devi prima fare login!', 'error');
+          return;
+        }
+        
+        // Get user's team
+        const { data: membership } = await client
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', user.id)
+          .limit(1)
+          .single();
+        
+        if (!membership) {
+          showStatus('invite-status', '⚠️  Nessun team trovato per il tuo utente', 'error');
+          return;
+        }
+        
+        // Try to create an invite
+        const res = await fetch('http://localhost:3000/api/invites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            team_id: membership.team_id,
+            role: 'viewer',
+            is_link_invite: true
+          })
+        });
+        
+        const result = await res.json();
+        
+        if (result.error) {
+          showStatus('invite-status', `❌ ${result.error}`, 'error');
+        } else {
+          showStatus('invite-status', 
+            `✅ Invito creato!<br><br>` +
+            `<strong>Link:</strong><br>` +
+            `<a href="${result.invite_url}" target="_blank">${result.invite_url}</a>`, 
+            'success');
+        }
+      } catch (err) {
+        showStatus('invite-status', `❌ ${err.message}`, 'error');
+      }
+    }
+
+    // Auto-test connection on load
+    testConnection();
+  </script>
+</body>
+</html>

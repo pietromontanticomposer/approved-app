@@ -1,0 +1,355 @@
+// Minimal Flow UI - Bootstrap only
+console.log('[Flow] Initializing minimal UI...');
+
+// Inizializza lo stato globale se non esiste
+if (!window.__state) {
+  window.__state = { projects: [], activeProjectId: null };
+  console.log('[Flow] Created window.__state');
+}
+
+// Select a project
+function selectProject(projectId, projectName) {
+  console.log('[selectProject] Selected:', projectName, projectId);
+  window.__state.activeProjectId = projectId;
+  
+  // Aggiorna l'header
+  const titleEl = document.getElementById('projectTitle');
+  if (titleEl) {
+    titleEl.textContent = projectName;
+  }
+  
+  // Evidenzia il progetto selezionato nella sidebar usando la classe
+  document.querySelectorAll('.project-item').forEach(item => {
+    if (item.dataset.projectId === projectId) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+  
+  console.log('[selectProject] Project selected and UI updated');
+}
+
+// Render projects list
+function renderProjectList() {
+  console.log('[renderProjectList] START');
+  
+  // Cerca gli elementi DOM al momento del render (non all'inizio)
+  const myProjectListEl = document.getElementById("myProjectList");
+  const sharedProjectListEl = document.getElementById("sharedProjectList");
+  
+  // Se gli elementi non esistono ancora, aspetta e riprova
+  if (!myProjectListEl || !sharedProjectListEl) {
+    console.warn('[renderProjectList] DOM not ready yet, retrying in 100ms...');
+    setTimeout(renderProjectList, 100);
+    return;
+  }
+  
+  const user = window.flowAuth ? window.flowAuth.getUser() : null;
+  console.log('[renderProjectList] User:', user?.email);
+  
+  const userId = user?.id;
+  const allProjects = window.__state?.projects || [];
+  console.log('[renderProjectList] All projects:', allProjects.length);
+  
+  // My projects: sono il proprietario
+  const myProjects = allProjects.filter(p => !p.owner_id || p.owner_id === userId);
+  
+  // Shared projects: non sono il proprietario MA sono nei team_members
+  const sharedProjects = allProjects.filter(p => {
+    if (!p.owner_id || p.owner_id === userId) return false; // Già nei miei
+    // Controllo se sono nei team_members
+    const members = p.team_members || [];
+    return members.some(m => m.user_id === userId);
+  });
+
+  console.log('[renderProjectList] My:', myProjects.length, 'Shared:', sharedProjects.length);
+  console.log('[renderProjectList] myProjectListEl found:', myProjectListEl ? 'YES' : 'NO');
+  console.log('[renderProjectList] sharedProjectListEl found:', sharedProjectListEl ? 'YES' : 'NO');
+
+  // My projects
+  if (myProjectListEl) {
+    console.log('[renderProjectList] Rendering myProjectList with', myProjects.length, 'items');
+    myProjectListEl.innerHTML = '';
+    if (myProjects.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'project-item empty';
+      li.textContent = 'Nessun progetto creato.';
+      myProjectListEl.appendChild(li);
+    } else {
+      myProjects.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'project-item' + (window.__state.activeProjectId === p.id ? ' active' : '');
+        li.dataset.projectId = p.id;
+
+        const label = document.createElement('span');
+        label.textContent = p.name;
+
+        const dd = document.createElement('div');
+        dd.className = 'download-dropdown project-dropdown';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'icon-btn tiny download-toggle';
+        btn.textContent = '⋯';
+
+        const menu = document.createElement('div');
+        menu.className = 'download-menu';
+        menu.innerHTML = `
+          <button data-action="rename">Rename</button>
+          <button data-action="delete">Delete</button>
+        `;
+
+        dd.appendChild(btn);
+        dd.appendChild(menu);
+
+        li.appendChild(label);
+        li.appendChild(dd);
+
+        li.addEventListener('click', e => {
+          if (e.target.closest('.download-dropdown')) return;
+          selectProject(p.id, p.name);
+        });
+
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const open = dd.classList.contains('open');
+          document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
+          if (!open) dd.classList.add('open');
+        });
+
+        menu.querySelectorAll('button').forEach(b => {
+          b.addEventListener('click', e => {
+            e.stopPropagation();
+            dd.classList.remove('open');
+            const action = b.dataset.action;
+            if (action === 'rename') {
+              const newName = prompt('Rename project', p.name);
+              if (newName && newName.trim()) {
+                p.name = newName.trim();
+                renderProjectList();
+              }
+            }
+            if (action === 'delete') {
+              const ok = confirm(`Delete project "${p.name}"?`);
+              if (!ok) return;
+              window.__state.projects = window.__state.projects.filter(x => x.id !== p.id);
+              window.__state.activeProjectId = null;
+              renderProjectList();
+            }
+          });
+        });
+
+        myProjectListEl.appendChild(li);
+      });
+    }
+  } else {
+    console.error('[renderProjectList] ❌ myProjectListEl is NULL or undefined!');
+  }
+
+  // Shared projects
+  if (sharedProjectListEl) {
+    console.log('[renderProjectList] Rendering sharedProjectList with', sharedProjects.length, 'items');
+    sharedProjectListEl.innerHTML = '';
+    if (sharedProjects.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'project-item empty';
+      li.textContent = 'Nessun progetto condiviso.';
+      sharedProjectListEl.appendChild(li);
+    } else {
+      sharedProjects.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'project-item' + (window.__state.activeProjectId === p.id ? ' active' : '');
+        li.dataset.projectId = p.id;
+
+        const label = document.createElement('span');
+        label.textContent = p.name;
+
+        const dd = document.createElement('div');
+        dd.className = 'download-dropdown project-dropdown';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'icon-btn tiny download-toggle';
+        btn.textContent = '⋯';
+
+        const menu = document.createElement('div');
+        menu.className = 'download-menu';
+        menu.innerHTML = `
+          <button data-action="rename">Rename</button>
+          <button data-action="delete">Delete</button>
+        `;
+
+        dd.appendChild(btn);
+        dd.appendChild(menu);
+
+        li.appendChild(label);
+        li.appendChild(dd);
+
+        li.addEventListener('click', e => {
+          if (e.target.closest('.download-dropdown')) return;
+          selectProject(p.id, p.name);
+        });
+
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const open = dd.classList.contains('open');
+          document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
+          if (!open) dd.classList.add('open');
+        });
+
+        menu.querySelectorAll('button').forEach(b => {
+          b.addEventListener('click', e => {
+            e.stopPropagation();
+            dd.classList.remove('open');
+            const action = b.dataset.action;
+            if (action === 'rename') {
+              const newName = prompt('Rename project', p.name);
+              if (newName && newName.trim()) {
+                p.name = newName.trim();
+                renderProjectList();
+              }
+            }
+            if (action === 'delete') {
+              const ok = confirm(`Delete project "${p.name}"?`);
+              if (!ok) return;
+              window.__state.projects = window.__state.projects.filter(x => x.id !== p.id);
+              window.__state.activeProjectId = null;
+              renderProjectList();
+            }
+          });
+        });
+
+        sharedProjectListEl.appendChild(li);
+      });
+    }
+  } else {
+    console.error('[renderProjectList] ❌ sharedProjectListEl is NULL or undefined!');
+  }
+  
+  console.log('[renderProjectList] COMPLETE');
+}
+
+// Create new project
+async function createNewProject() {
+  const name = prompt("Project name");
+  if (!name || !name.trim()) return;
+
+  const user = window.flowAuth ? window.flowAuth.getUser() : null;
+  const teamId = null; // Let server auto-create
+  
+  try {
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        name: name.trim(),
+        team_id: teamId || 'auto',
+        owner_id: user?.id || null
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert("Failed: " + (error.message || response.statusText));
+      return;
+    }
+
+    console.log("✅ Project created");
+    // Reload from server
+    if (typeof window.initializeFromSupabase === 'function') {
+      await window.initializeFromSupabase();
+    }
+  } catch (err) {
+    console.error("Error:", err);
+    alert("Error: " + err.message);
+  }
+}
+
+// Initialize app from API
+async function initializeFromSupabase() {
+  console.log('[initializeFromSupabase] START - Fetching projects...');
+  
+  try {
+    console.log('[initializeFromSupabase] About to fetch /api/projects');
+    const response = await fetch('/api/projects');
+    console.log('[initializeFromSupabase] Response received:', response);
+    console.log('[initializeFromSupabase] Response status:', response.status);
+    console.log('[initializeFromSupabase] Response ok:', response.ok);
+    
+    if (!response.ok) {
+      console.error('[initializeFromSupabase] ❌ Response NOT OK:', response.status, response.statusText);
+      const text = await response.text();
+      console.error('[initializeFromSupabase] Response body:', text);
+      return;
+    }
+
+    const data = await response.json();
+    console.log('[initializeFromSupabase] ✅ JSON parsed successfully');
+    console.log('[initializeFromSupabase] Received data:', data);
+    console.log('[initializeFromSupabase] Projects count:', data.projects?.length || 0);
+    
+    if (!data.projects || data.projects.length === 0) {
+      console.warn('[initializeFromSupabase] ⚠️ No projects in response');
+    }
+    
+    window.__state = { projects: data.projects || [], activeProjectId: null };
+    console.log('[initializeFromSupabase] ✅ State set:', window.__state);
+    console.log('[initializeFromSupabase] State projects count:', window.__state.projects.length);
+    console.log('[initializeFromSupabase] Calling renderProjectList()');
+    
+    renderProjectList();
+    
+    // Attach event listeners dopo che il DOM è sicuramente pronto
+    attachEventListeners();
+    
+    console.log('[initializeFromSupabase] ✅ COMPLETE');
+  } catch (err) {
+    console.error('[initializeFromSupabase] ❌ Exception:', err);
+    console.error('[initializeFromSupabase] Error message:', err.message);
+    console.error('[initializeFromSupabase] Error stack:', err.stack);
+  }
+}
+
+// Attach event listeners
+function attachEventListeners() {
+  const newProjectBtn = document.getElementById('newProjectBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+  
+  if (newProjectBtn && !newProjectBtn.__attached) {
+    newProjectBtn.addEventListener('click', createNewProject);
+    newProjectBtn.__attached = true;
+    console.log('[Flow] Attached newProjectBtn');
+  }
+
+  if (signOutBtn && !signOutBtn.__attached) {
+    signOutBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('[Flow] Sign out clicked');
+      if (window.flowAuth) {
+        window.flowAuth.signOut();
+      }
+    });
+    signOutBtn.__attached = true;
+    console.log('[Flow] Attached signOutBtn');
+  }
+}
+
+// Fallback delegation if elements not in DOM
+document.addEventListener('click', function delegated(e) {
+  const target = e.target;
+  if (target.id === 'newProjectBtn' || target.closest('#newProjectBtn')) {
+    createNewProject();
+  }
+  if (target.id === 'signOutBtn' || target.closest('#signOutBtn')) {
+    e.preventDefault();
+    if (window.flowAuth) window.flowAuth.signOut();
+  }
+});
+
+// Expose globally
+window.initializeFromSupabase = initializeFromSupabase;
+window.renderProjectList = renderProjectList;
+
+console.log('[Flow] Ready');

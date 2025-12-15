@@ -1,0 +1,20 @@
+/* Patch for version status bars */
+
+.version-row.status-approved::before,
+.version-row.status-changes-requested::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+}
+
+.version-row.status-approved::before {
+  background: #22c55e;
+}
+
+.version-row.status-changes-requested::before {
+  background: #ef4444;
+}

@@ -1,17 +1,21 @@
-import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
+import postgres from "postgres";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const connectionString =
+  process.env.SUPABASE_DB_URL ||
+  process.env.DATABASE_URL ||
+  process.env.SUPABASE_CONNECTION_STRING;
 
-if (!supabaseUrl || !supabaseServiceRoleKey) {
-  console.error("Missing Supabase credentials in environment variables");
+if (!connectionString) {
+  console.error(
+    "Missing SUPABASE_DB_URL (or DATABASE_URL/SUPABASE_CONNECTION_STRING) in env. Cannot run migrations."
+  );
   process.exit(1);
 }
 
-// Create admin client (service role key allows DDL operations)
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+// Use a pooled connection; keep max small to avoid exhausting Supabase pool
+const sql = postgres(connectionString, { max: 1 });
 
 async function runMigration() {
   try {
@@ -19,10 +23,10 @@ async function runMigration() {
 
     // Read the SQL file
     const migrationPath = path.join(process.cwd(), "migrations", "001_init.sql");
-    const sql = fs.readFileSync(migrationPath, "utf-8");
+    const sqlText = fs.readFileSync(migrationPath, "utf-8");
 
     // Split SQL into individual statements (semicolon-separated)
-    const statements = sql
+    const statements = sqlText
       .split(";")
       .map((stmt) => stmt.trim())
       .filter((stmt) => stmt.length > 0 && !stmt.startsWith("--"));
@@ -32,12 +36,13 @@ async function runMigration() {
       const statement = statements[i];
       console.log(`📝 Executing statement ${i + 1}/${statements.length}...`);
 
-      const { error } = await supabase.rpc("exec_sql", {
-        sql: statement,
-      });
-
-      if (error) {
-        console.warn(`⚠️  Statement ${i + 1} warning/error:`, error.message);
+      try {
+        await sql.unsafe(statement);
+      } catch (error: any) {
+        console.warn(
+          `⚠️  Statement ${i + 1} warning/error:`,
+          error?.message || String(error)
+        );
         // Continue on error to allow idempotent re-runs
       }
     }
@@ -46,6 +51,8 @@ async function runMigration() {
   } catch (err) {
     console.error("❌ Migration failed:", err);
     process.exit(1);
+  } finally {
+    await sql.end({ timeout: 5 });
   }
 }
 
