@@ -22,6 +22,70 @@ let currentPlayerMediaType = null;
 let referencesCollapsed = false;
 let hasInitializedFromSupabase = false; // Prevent double init when fallback kicks in
 
+// Global fetch wrapper: automatically attach auth headers (Authorization / x-actor-id)
+// for same-origin API calls so the server can resolve the actor reliably.
+;(function attachFetchAuth() {
+  if (typeof window === 'undefined' || !window.fetch) return;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init) {
+    try {
+      const url = typeof input === 'string' ? input : (input && input.url) ? input.url : '';
+      // Only intercept same-origin API calls
+      if (url && url.startsWith('/api')) {
+        init = init || {};
+        init.headers = init.headers || {};
+
+        // If headers already include Authorization or x-actor-id, do not overwrite
+        const hasAuthHeader = (init.headers['Authorization'] || init.headers['authorization']);
+        const hasActor = (init.headers['x-actor-id'] || init.headers['X-Actor-Id']);
+
+        if (!hasAuthHeader || !hasActor) {
+          try {
+            // Prefer flowAuth if available (handles special demo flows)
+            if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
+              const fh = window.flowAuth.getAuthHeaders();
+              if (fh && typeof fh === 'object') init.headers = { ...fh, ...init.headers };
+            } else if (window.supabaseClient && window.supabaseClient.auth) {
+              try {
+                const sessionRes = await window.supabaseClient.auth.getSession();
+                const session = sessionRes?.data?.session;
+                if (session && session.user && session.user.id && !hasActor) {
+                  init.headers['x-actor-id'] = session.user.id;
+                }
+                if (session && session.access_token && !hasAuthHeader) {
+                  init.headers['Authorization'] = 'Bearer ' + session.access_token;
+                }
+              } catch (e) {
+                // ignore
+              }
+            } else {
+              // Try to parse cookie-based supabase session (best-effort)
+              try {
+                const cookie = document.cookie || '';
+                const m = cookie.match(/(?:sb-access-token|supabase-auth-token|access_token|token)=([^;]+)/);
+                if (m && m[1]) {
+                  let val = decodeURIComponent(m[1]);
+                  // cookie could be JSON
+                  if (val.startsWith('{')) {
+                    try { const parsed = JSON.parse(val); if (parsed?.access_token) init.headers['Authorization'] = 'Bearer ' + parsed.access_token; } catch(e){}
+                  } else {
+                    init.headers['Authorization'] = 'Bearer ' + val;
+                  }
+                }
+              } catch (e) {}
+            }
+          } catch (e) {
+            // swallow
+          }
+        }
+      }
+    } catch (e) {
+      // continue without enrichment
+    }
+    return originalFetch(input, init);
+  };
+})();
+
 // Upload progress tracking
 let uploadProgressBar = null;
 let activeUploads = 0;
@@ -443,7 +507,7 @@ async function createNewProject() {
       alert('Errore nella creazione del progetto');
       return;
     }
-    const data = await response.json();
+    const data = await res.json();
     // Support both response shapes:
     // - { projects: [...] }
     // - { my_projects: [...], shared_with_me: [...] }
@@ -459,16 +523,21 @@ async function createNewProject() {
 
     console.log("[Flow] Loaded projects:", projects.length);
 
-    // Populate state with projects from DB
+    // Populate state with projects from DB (preserve owner/team_members)
     state.projects = projects.map(p => ({
       id: p.id,
       name: p.name || "Untitled",
-      team_id: p.team_id, // Add team_id for sharing
+      team_id: p.team_id,
+      owner_id: p.owner_id || null,
+      team_members: p.team_members || [],
       cues: [], // Load on demand if needed
       activeCueId: null,
       activeVersionId: null,
       references: p.references || []
     }));
+    // Re-render UI after creating project
+    renderAll();
+  } catch (err) {
     console.error('[FlowPreview] Exception creating project', err);
     alert('Errore nella creazione del progetto');
   }
@@ -1484,6 +1553,116 @@ if (volumeSlider) {
 // =======================
 // COMMENTS
 // =======================
+// Small non-blocking alert/confirm helpers (returns Promises)
+function showAlert(message) {
+  return new Promise((resolve) => {
+    try {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ap-overlay-alert';
+      Object.assign(wrapper.style, {
+        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: '9999', background: 'rgba(0,0,0,0.45)'
+      });
+
+      const box = document.createElement('div');
+      Object.assign(box.style, {
+        background: '#020617', color: '#e5e7eb', padding: '12px 16px',
+        borderRadius: '8px', boxShadow: '0 6px 18px rgba(0,0,0,0.6)',
+        maxWidth: '90%', textAlign: 'center', border: '1px solid #1f2937'
+      });
+
+      const txt = document.createElement('div');
+      txt.style.marginBottom = '12px';
+      txt.textContent = message || '';
+
+      const ok = document.createElement('button');
+      ok.className = 'primary-btn tiny';
+      ok.textContent = 'OK';
+
+      // close on OK, click outside, or ESC
+      const cleanup = () => {
+        try { document.body.removeChild(wrapper); } catch (e) {}
+        document.removeEventListener('keydown', onKey);
+      };
+      const onKey = (ev) => { if (ev.key === 'Escape') { cleanup(); resolve(); } };
+
+      ok.addEventListener('click', () => { cleanup(); resolve(); });
+      wrapper.addEventListener('click', (ev) => { if (ev.target === wrapper) { cleanup(); resolve(); } });
+      document.addEventListener('keydown', onKey);
+
+      box.appendChild(txt);
+      box.appendChild(ok);
+      wrapper.appendChild(box);
+      document.body.appendChild(wrapper);
+    } catch (e) {
+      // fallback to native alert if something goes wrong
+      try { alert(message); } catch (e2) {}
+      resolve();
+    }
+  });
+}
+
+function showConfirm(message) {
+  return new Promise((resolve) => {
+    try {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ap-overlay-confirm';
+      Object.assign(wrapper.style, {
+        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: '9999', background: 'rgba(0,0,0,0.45)'
+      });
+
+      const box = document.createElement('div');
+      Object.assign(box.style, {
+        background: '#020617', color: '#e5e7eb', padding: '14px 18px',
+        borderRadius: '8px', boxShadow: '0 6px 18px rgba(0,0,0,0.6)',
+        maxWidth: '90%', textAlign: 'center', border: '1px solid #1f2937'
+      });
+
+      const txt = document.createElement('div');
+      txt.style.marginBottom = '12px';
+      txt.textContent = message || '';
+
+      const yes = document.createElement('button');
+      yes.className = 'primary-btn tiny';
+      yes.textContent = 'Yes';
+      const no = document.createElement('button');
+      no.className = 'ghost-btn tiny';
+      no.style.marginLeft = '8px';
+      no.textContent = 'No';
+
+      const cleanup = (val) => {
+        try { document.body.removeChild(wrapper); } catch (e) {}
+        document.removeEventListener('keydown', onKey);
+        resolve(val);
+      };
+      const onKey = (ev) => { if (ev.key === 'Escape') cleanup(false); };
+
+      yes.addEventListener('click', () => cleanup(true));
+      no.addEventListener('click', () => cleanup(false));
+      wrapper.addEventListener('click', (ev) => { if (ev.target === wrapper) cleanup(false); });
+      document.addEventListener('keydown', onKey);
+
+      box.appendChild(txt);
+      // action row container for consistent spacing
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'center';
+      row.style.gap = '8px';
+      row.appendChild(yes);
+      row.appendChild(no);
+      box.appendChild(row);
+      wrapper.appendChild(box);
+      document.body.appendChild(wrapper);
+    } catch (e) {
+      // fallback to native confirm
+      try { resolve(confirm(message)); } catch (e2) { resolve(false); }
+    }
+  });
+}
+
 function renderComments() {
   const ctx = getActiveContext();
   if (!ctx || !ctx.version.media) {
@@ -1507,6 +1686,7 @@ function renderComments() {
 
   arr.forEach(c => {
     const li = document.createElement("li");
+    li.style.position = 'relative';
 
     const tc = document.createElement("span");
     tc.className = "timecode";
@@ -1519,9 +1699,183 @@ function renderComments() {
     const text = document.createElement("p");
     text.textContent = c.text;
 
+    // Actions (edit/delete) only visible to comment owner
+    const actions = document.createElement('div');
+    actions.className = 'comment-actions';
+    try {
+      const currentUser = window.flowAuth ? window.flowAuth.getUser() : null;
+      const currentUid = currentUser ? currentUser.id : null;
+      const isOwner = currentUid && c.actorId && currentUid === c.actorId;
+
+      if (isOwner) {
+        // Create menu-based actions (three-dot menu) instead of inline buttons
+        const renderOwnerActions = () => {
+          actions.innerHTML = '';
+          const menuContainer = document.createElement('div');
+          // reuse download-dropdown semantics so styling matches cue/refs menus
+          menuContainer.className = 'download-dropdown comment-dropdown';
+          menuContainer.style.position = 'absolute';
+          menuContainer.style.top = '8px';
+          menuContainer.style.right = '12px';
+
+          const menuBtn = document.createElement('button');
+          // use the same icon button classes as cue/refs three-dot menus
+          menuBtn.type = 'button';
+          menuBtn.className = 'icon-btn tiny download-toggle';
+          menuBtn.setAttribute('aria-label', 'Comment actions');
+          menuBtn.title = 'Comment actions';
+          // three-dot horizontal glyph to match other menus
+          menuBtn.textContent = '⋯';
+          // ensure visibility in case inherited styles hide small icon buttons
+          menuBtn.style.color = '#9ca3af';
+          menuBtn.style.background = 'transparent';
+          menuBtn.style.padding = '2px 6px';
+          menuBtn.style.fontSize = '16px';
+          menuBtn.style.lineHeight = '1';
+
+          const menu = document.createElement('div');
+          // reuse existing blue dropdown styles
+          menu.className = 'download-menu';
+          // we'll control visibility via CSS (.open) and position fixed to avoid clipping
+          menu.style.position = 'fixed';
+          menu.style.zIndex = 10000;
+
+          const mEdit = document.createElement('button');
+          mEdit.textContent = 'Edit';
+
+          const mDelete = document.createElement('button');
+          mDelete.textContent = 'Delete';
+
+          // Edit handler (reuse existing edit flow)
+          const startEdit = () => {
+            // replace text with input
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = c.text || '';
+            input.style.width = '60%';
+            const save = document.createElement('button');
+            save.className = 'primary-btn tiny';
+            save.textContent = 'Save';
+            const cancel = document.createElement('button');
+            cancel.className = 'ghost-btn tiny';
+            cancel.textContent = 'Cancel';
+
+            // swap nodes
+            li.replaceChild(input, text);
+            actions.innerHTML = '';
+            actions.appendChild(save);
+            actions.appendChild(cancel);
+
+            save.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const newText = input.value.trim();
+              if (!newText) {
+                await showAlert('Comment text cannot be empty');
+                return;
+              }
+              try {
+                const r = await fetch('/api/comments', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: c.id, text: newText })
+                });
+                const j = await r.json();
+                if (!r.ok || j.error) {
+                  await showAlert('Errore aggiornamento commento: ' + (j.error || r.statusText));
+                  return;
+                }
+                // update local model
+                c.text = j.comment.text || newText;
+                // restore UI
+                text.textContent = c.text;
+                li.replaceChild(text, input);
+                renderOwnerActions();
+              } catch (err) {
+                console.error('Error updating comment', err);
+                alert('Eccezione durante aggiornamento commento');
+              }
+            });
+
+            cancel.addEventListener('click', (e) => {
+              e.stopPropagation();
+              // restore
+              li.replaceChild(text, input);
+              renderOwnerActions();
+            });
+          };
+
+          // Delete handler
+          const doDelete = async () => {
+            if (!await showConfirm('Delete this comment?')) return;
+            try {
+              const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+              const j = await r.json();
+              if (!r.ok || j.error) {
+                await showAlert('Errore cancellazione commento: ' + (j.error || r.statusText));
+                return;
+              }
+              // remove from local array
+              const idx = version.comments.findIndex(x => x.id === c.id);
+              if (idx >= 0) version.comments.splice(idx, 1);
+              renderComments();
+            } catch (err) {
+              console.error('Error deleting comment', err);
+              alert('Eccezione durante cancellazione commento');
+            }
+          };
+
+          mEdit.addEventListener('click', (ev) => { ev.stopPropagation(); startEdit(); });
+          mDelete.addEventListener('click', async (ev) => { ev.stopPropagation(); await doDelete(); });
+
+          menu.appendChild(mEdit);
+          menu.appendChild(mDelete);
+
+          // append menu button and menu into the download-dropdown wrapper
+          menuContainer.appendChild(menuBtn);
+          menuContainer.appendChild(menu);
+          actions.appendChild(menuContainer);
+
+          // Toggle open class on wrapper (same behavior as cue/refs menus)
+          menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = menuContainer.classList.contains('open');
+            document
+              .querySelectorAll('.download-dropdown.open')
+              .forEach(x => x.classList.remove('open'));
+            if (!open) {
+              menuContainer.classList.add('open');
+              // position relative to viewport using button rect
+              const rect = menuBtn.getBoundingClientRect();
+              // compute width (fallback if not yet rendered)
+              const mW = menu.offsetWidth || 150;
+              const left = Math.max(8, rect.right - mW);
+              const top = Math.max(8, rect.bottom + 6);
+              menu.style.left = left + 'px';
+              menu.style.top = top + 'px';
+            } else {
+              menuContainer.classList.remove('open');
+            }
+          });
+
+          // close menu when clicking an item
+          menu.querySelectorAll('button').forEach(b => {
+            b.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              menuContainer.classList.remove('open');
+            });
+          });
+        };
+
+        renderOwnerActions();
+      }
+    } catch (e) {
+      // ignore
+    }
+
     li.appendChild(tc);
     li.appendChild(author);
     li.appendChild(text);
+    if (actions && actions.childNodes && actions.childNodes.length) li.appendChild(actions);
 
     li.addEventListener("click", () => {
       const t = c.time || 0;
@@ -1581,22 +1935,43 @@ async function loadProjectCues(projectId) {
           name: dbCue.name || "Untitled",
           displayName: "",
           status: dbCue.status || "in-review",
-          versions: versions.map(v => ({
-            id: v.id,
-            index: v.index_in_cue || 0,
-            media: v.media_type ? {
-              type: v.media_type,
-              url: v.media_url,
-              originalName: v.media_filename || "Media",
-              displayName: v.media_filename || "Media",
-              duration: v.duration,
-              thumbnailUrl: v.thumbnail_url,
-              peaks: null
-            } : null,
-            comments: [],
-            deliverables: [],
-            status: v.status || "in-review"
-          })),
+            versions: await Promise.all(versions.map(async (v) => {
+              const ver = {
+                id: v.id,
+                index: v.index_in_cue || 0,
+                media: v.media_type ? {
+                  type: v.media_type,
+                  url: v.media_url,
+                  originalName: v.media_filename || "Media",
+                  displayName: v.media_filename || "Media",
+                  duration: v.duration,
+                  thumbnailUrl: v.thumbnail_url,
+                  peaks: null
+                } : null,
+                comments: [],
+                deliverables: [],
+                status: v.status || "in-review"
+              };
+              try {
+                const r = await fetch(`/api/comments?versionId=${encodeURIComponent(v.id)}`);
+                if (r.ok) {
+                  const d = await r.json();
+                  const rows = d.comments || [];
+                  ver.comments = (rows || []).map(rc => ({
+                    id: rc.id,
+                    time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
+                    author: rc.author || 'Client',
+                    actorId: rc.actor_id || null,
+                    text: rc.text || '',
+                    created_at: rc.created_at
+                  }));
+                }
+              } catch (e) {
+                console.warn('[Flow] Failed to load comments for version', v.id, e);
+                ver.comments = [];
+              }
+              return ver;
+            })),
           isOpen: true
         };
       })
@@ -1695,15 +2070,72 @@ function addCommentFromInput() {
     final = text.slice(tc.length).trim().replace(/^,/, "").trim();
   }
 
+  // determine author display (try client-side metadata), then optimistic UI
+  const user = window.flowAuth ? window.flowAuth.getUser() : null;
+  const meta = user && user.user_metadata ? user.user_metadata : {};
+  const first = meta.first_name || meta.firstName || meta.first || '';
+  const last = meta.last_name || meta.lastName || meta.last || '';
+  const displayName = meta.full_name || meta.fullName || meta.display_name || `${first} ${last}`.trim() || user?.email || 'Client';
+
+  const localId = uid();
   version.comments.push({
-    id: uid(),
+    id: localId,
     time: t,
-    author: "Client",
-    text: final
+    author: displayName,
+    text: final,
+    // optimistic actor id so owner actions (three-dot menu) show immediately
+    actorId: user ? user.id : null
   });
 
   commentInputEl.value = "";
   renderComments();
+
+  // persist to server
+  (async () => {
+    try {
+      let resp;
+      if (typeof apiCall === 'function') {
+        resp = await apiCall('/api/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
+        });
+      } else {
+        const r = await fetch('/api/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
+        });
+        try { resp = await r.json(); } catch(e) { resp = { error: 'invalid_json' }; }
+      }
+
+      console.log('[addComment] server response', resp);
+      if (!resp || resp.error) {
+        console.error('[addComment] failed to save', resp && resp.error);
+        try { alert('Errore salvataggio commento: ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
+        return;
+      }
+
+      // replace local optimistic id with server id if provided
+      const saved = resp.comment;
+      if (saved && saved.id) {
+        for (let c of version.comments) {
+          if (c.id === localId) {
+            c.id = saved.id;
+            c.created_at = saved.created_at || c.created_at;
+            // ensure actorId is set from server if present, otherwise keep optimistic value
+            if (saved.actorId) c.actorId = saved.actorId;
+            else if (user && user.id) c.actorId = user.id;
+            break;
+          }
+        }
+        renderComments();
+      }
+    } catch (err) {
+      console.error('[addComment] exception saving comment', err);
+      try { alert('Eccezione durante il salvataggio del commento: ' + String(err)); } catch(e){}
+    }
+  })();
 }
 
 commentInputEl.addEventListener("focus", () => {
@@ -2160,6 +2592,29 @@ function renderVersionPreviews() {
             // usually fetch only metadata until play is requested.
             v.src = getProxiedUrl(videoUrl);
           }
+
+          // When metadata is loaded, update version duration and the meta text
+          v.addEventListener('loadedmetadata', () => {
+            try {
+              if (!version.media) return;
+              // prefer existing duration, otherwise take from video element
+              if (!version.media.duration || !isFinite(version.media.duration)) {
+                version.media.duration = v.duration;
+              }
+              const metaEl = document.querySelector(
+                `.version-row[data-version-id="${version.id}"] .version-meta`
+              );
+              if (metaEl) {
+                const d = version.media.duration ? formatTime(version.media.duration) : "--:--";
+                const filesCount = (version.deliverables && version.deliverables.length) ? ` · ${version.deliverables.length} tech files` : "";
+                metaEl.textContent = version.media
+                  ? (version.media.type === "audio" ? `Audio · ${d}` : `Video · ${d}`) + filesCount
+                  : filesCount || "Only deliverables";
+              }
+            } catch (e) {
+              console.warn('video loadedmetadata handler failed', e);
+            }
+          });
 
           // overlay play icon for affordance
           const wrap = document.createElement("div");
@@ -3027,73 +3482,76 @@ function renderPlayer() {
 // PROJECT LIST + HEADER
 // =======================
 function renderProjectList() {
-  projectListEl.innerHTML = "";
+  // Two lists: my projects (left) and shared-with-me (right)
+  const myListEl = document.getElementById('projectList');
+  const sharedListEl = document.getElementById('sharedProjectList');
 
-  if (!state.projects.length) {
-    const li = document.createElement("li");
-    li.className = "project-item empty";
-    li.textContent = 'No projects yet. Click "New project".';
-    projectListEl.appendChild(li);
-    return;
+  if (!myListEl || !sharedListEl) return;
+
+  // Split projects into owned vs shared.
+  // Prefer the server-provided `is_shared` flag when present (covers direct project_members).
+  const userId = window.flowAuth?.getUser?.()?.id || null;
+  const hasIsShared = state.projects.some(p => typeof p.is_shared !== 'undefined');
+  let myProjects, sharedProjects;
+  if (hasIsShared) {
+    myProjects = state.projects.filter(p => !p.is_shared && (!p.owner_id || p.owner_id === userId));
+    sharedProjects = state.projects.filter(p => p.is_shared || (p.owner_id && p.owner_id !== userId && (p.team_members || []).some(m => m.user_id === userId)));
+  } else {
+    myProjects = state.projects.filter(p => !p.owner_id || p.owner_id === userId);
+    sharedProjects = state.projects.filter(p => {
+      if (!p.owner_id) return false;
+      if (p.owner_id === userId) return false;
+      const members = p.team_members || [];
+      return members.some(m => m.user_id === userId) || (p.shared && p.shared.length);
+    });
   }
 
-  state.projects.forEach(project => {
-    const li = document.createElement("li");
-    li.className =
-      "project-item" + (project.id === state.activeProjectId ? " active" : "");
-
-    const label = document.createElement("span");
-    label.textContent = project.name;
-
-    const dd = document.createElement("div");
-    dd.className = "download-dropdown project-dropdown";
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "icon-btn tiny download-toggle";
-    btn.textContent = "⋯";
-
-    const menu = document.createElement("div");
-    menu.className = "download-menu";
-    menu.innerHTML = `
-      <button data-action="rename">Rename</button>
-      <button data-action="delete">Delete</button>
-    `;
-
-    dd.appendChild(btn);
-    dd.appendChild(menu);
-
-    li.appendChild(label);
-    li.appendChild(dd);
-
-    li.addEventListener("click", e => {
-      if (e.target.closest(".download-dropdown")) return;
-      state.activeProjectId = project.id;
-      // Reload cues from DB
-      loadProjectCues(project.id);
+  myListEl.innerHTML = '';
+  if (myProjects.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'project-item empty';
+    li.textContent = 'No projects yet. Click "New project".';
+    myListEl.appendChild(li);
+  } else {
+    myProjects.forEach(project => {
+      const li = document.createElement('li');
+      li.className = 'project-item' + (project.id === state.activeProjectId ? ' active' : '');
+      const label = document.createElement('span');
+      label.textContent = project.name;
+      li.appendChild(label);
+      li.addEventListener('click', () => selectProject(project.id));
+      myListEl.appendChild(li);
     });
+  }
 
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      const open = dd.classList.contains("open");
-      document
-        .querySelectorAll(".download-dropdown.open")
-        .forEach(x => x.classList.remove("open"));
-      if (!open) dd.classList.add("open");
+  sharedListEl.innerHTML = '';
+  if (sharedProjects.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'project-item empty';
+    if (!userId) {
+      // If not logged in, prompt to login so shared projects (which require auth) become visible
+      const a = document.createElement('a');
+      a.href = '/login';
+      a.textContent = 'Log in to see shared projects.';
+      a.style.color = '#9ca3af';
+      a.style.textDecoration = 'underline';
+      li.appendChild(a);
+    } else {
+      li.textContent = 'No shared projects yet.';
+    }
+    sharedListEl.appendChild(li);
+  } else {
+    sharedProjects.forEach(project => {
+      const li = document.createElement('li');
+      li.className = 'project-item' + (project.id === state.activeProjectId ? ' active' : '');
+      const label = document.createElement('span');
+      label.textContent = project.name;
+      li.appendChild(label);
+      li.addEventListener('click', () => selectProject(project.id));
+      sharedListEl.appendChild(li);
     });
+  }
 
-    menu.querySelectorAll("button").forEach(b => {
-      b.addEventListener("click", e => {
-        e.stopPropagation();
-        dd.classList.remove("open");
-        const action = b.dataset.action;
-        if (action === "rename") renameProject(project);
-        if (action === "delete") deleteProject(project.id);
-      });
-    });
-
-    projectListEl.appendChild(li);
-  });
 }
 
 function renderProjectHeader() {
@@ -3473,6 +3931,17 @@ async function initializeFromSupabase() {
     let fetchHeaders = { 'Content-Type': 'application/json' };
     try {
       if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
+        // Ensure flowAuth has run its bootstrap (some hosts may have a session
+        // stored in Supabase but flowAuth.initAuth wasn't awaited before we
+        // initialize). Call initAuth() if available and no session is present.
+        try {
+          const s = window.flowAuth.getSession && window.flowAuth.getSession();
+          if (!s && typeof window.flowAuth.initAuth === 'function') {
+            await window.flowAuth.initAuth();
+          }
+        } catch (e) {
+          // ignore init errors and fall back to other detection below
+        }
         const fh = window.flowAuth.getAuthHeaders();
         if (fh && typeof fh === 'object') fetchHeaders = { ...fetchHeaders, ...fh };
       } else if (window.supabaseClient && window.supabaseClient.auth) {
@@ -3490,28 +3959,64 @@ async function initializeFromSupabase() {
         }
       }
 
-    // Fetch projects
-    const response = await fetch("/api/projects", { headers: fetchHeaders });
+    } catch (e) {
+      // ignore header detection errors and proceed anonymously
+    }
+
+    // Fetch projects (allow one retry after attempting client auth bootstrap)
+    let response = await fetch("/api/projects", { headers: fetchHeaders });
+    let didRetry = false;
     if (!response.ok) {
       console.error("[Flow] Failed to fetch projects:", response.statusText);
       renderAll(); // Fallback to empty UI
       return;
     }
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // If the initial fetch returned the public all-projects list (no actor info)
+    // and we have a client `flowAuth` available, try to initAuth() then retry once.
+    try {
+      const looksAnonymous = !data.my_projects && !data.shared_with_me;
+      if (looksAnonymous && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
+        const boot = await window.flowAuth.initAuth().catch(() => false);
+        if (boot) {
+          // rebuild headers after auth bootstrap
+          try {
+            let newHeaders = { 'Content-Type': 'application/json' };
+            const fh = window.flowAuth.getAuthHeaders && window.flowAuth.getAuthHeaders();
+            if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
+            response = await fetch('/api/projects', { headers: newHeaders });
+            data = await response.json();
+            didRetry = true;
+            console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
+          } catch (e) {
+            // ignore retry errors
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
     const projects = data.projects || [];
 
     console.log("[Flow] Loaded projects:", projects.length);
 
     // Populate state with projects from DB
+    // Preserve owner and team_members so we can split "my" vs "shared" projects in the UI
+    // Also mark projects returned in server `shared_with_me` so direct project_members are respected
+    const sharedIds = new Set((Array.isArray(data.shared_with_me) ? data.shared_with_me : []).map(p => p.id));
     state.projects = projects.map(p => ({
       id: p.id,
       name: p.name || "Untitled",
-      team_id: p.team_id, // Add team_id for sharing
+      team_id: p.team_id,
+      owner_id: p.owner_id || null,
+      team_members: p.team_members || [],
+      is_shared: sharedIds.has(p.id),
       cues: [], // Load on demand if needed
       activeCueId: null,
       activeVersionId: null,
-      references: [],
+      references: p.references || [],
       activeReferenceId: null
     }));
 
