@@ -585,7 +585,12 @@ async function deleteProject(id) {
   if (!ok) return;
 
   try {
-    const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    // Get auth headers from flowAuth
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+    const res = await fetch(`/api/projects?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers
+    });
     if (!res.ok) {
       console.error('[FlowPreview] Failed to delete project', await res.text());
       alert('Errore nella cancellazione del progetto');
@@ -3496,6 +3501,78 @@ function renderPlayer() {
 // =======================
 // PROJECT LIST + HEADER
 // =======================
+
+function showProjectMenu(event, project) {
+  // Remove any existing menu
+  const existingMenu = document.querySelector('.project-context-menu');
+  if (existingMenu) existingMenu.remove();
+
+  // Create menu
+  const menu = document.createElement('div');
+  menu.className = 'project-context-menu';
+  menu.style.cssText = `
+    position: fixed;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 10000;
+    min-width: 150px;
+    padding: 4px 0;
+  `;
+
+  const renameOption = document.createElement('div');
+  renameOption.textContent = 'Rename';
+  renameOption.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:14px;color:#374151;';
+  renameOption.addEventListener('mouseenter', () => { renameOption.style.background = '#f3f4f6'; });
+  renameOption.addEventListener('mouseleave', () => { renameOption.style.background = 'transparent'; });
+  renameOption.addEventListener('click', () => {
+    menu.remove();
+    renameProject(project);
+  });
+
+  const deleteOption = document.createElement('div');
+  deleteOption.textContent = 'Delete';
+  deleteOption.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:14px;color:#dc2626;';
+  deleteOption.addEventListener('mouseenter', () => { deleteOption.style.background = '#fef2f2'; });
+  deleteOption.addEventListener('mouseleave', () => { deleteOption.style.background = 'transparent'; });
+  deleteOption.addEventListener('click', () => {
+    menu.remove();
+    deleteProject(project.id);
+  });
+
+  menu.appendChild(renameOption);
+  menu.appendChild(deleteOption);
+
+  // Position menu near the click
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  let x = event.clientX;
+  let y = event.clientY;
+
+  // Adjust if menu goes off screen
+  if (x + rect.width > window.innerWidth) {
+    x = window.innerWidth - rect.width - 10;
+  }
+  if (y + rect.height > window.innerHeight) {
+    y = window.innerHeight - rect.height - 10;
+  }
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  // Close menu on click outside
+  setTimeout(() => {
+    const closeMenu = (e) => {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    document.addEventListener('click', closeMenu);
+  }, 0);
+}
+
 function renderProjectList() {
   // Two lists: my projects (left) and shared-with-me (right)
   const myListEl = document.getElementById('projectList');
@@ -3521,6 +3598,40 @@ function renderProjectList() {
     });
   }
 
+  // Helper to create project item with menu
+  function createProjectItem(project, isOwned) {
+    const li = document.createElement('li');
+    li.className = 'project-item' + (project.id === state.activeProjectId ? ' active' : '');
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.justifyContent = 'space-between';
+    li.style.gap = '8px';
+
+    const label = document.createElement('span');
+    label.textContent = project.name;
+    label.style.flex = '1';
+    label.style.cursor = 'pointer';
+    label.addEventListener('click', () => selectProject(project.id));
+    li.appendChild(label);
+
+    if (isOwned) {
+      const menuBtn = document.createElement('button');
+      menuBtn.innerHTML = '⋮';
+      menuBtn.className = 'project-item-menu';
+      menuBtn.style.cssText = 'background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#9ca3af;opacity:0.6;';
+      menuBtn.title = 'Project options';
+      menuBtn.addEventListener('mouseenter', () => { menuBtn.style.opacity = '1'; });
+      menuBtn.addEventListener('mouseleave', () => { menuBtn.style.opacity = '0.6'; });
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showProjectMenu(e, project);
+      });
+      li.appendChild(menuBtn);
+    }
+
+    return li;
+  }
+
   myListEl.innerHTML = '';
   if (myProjects.length === 0) {
     const li = document.createElement('li');
@@ -3529,13 +3640,7 @@ function renderProjectList() {
     myListEl.appendChild(li);
   } else {
     myProjects.forEach(project => {
-      const li = document.createElement('li');
-      li.className = 'project-item' + (project.id === state.activeProjectId ? ' active' : '');
-      const label = document.createElement('span');
-      label.textContent = project.name;
-      li.appendChild(label);
-      li.addEventListener('click', () => selectProject(project.id));
-      myListEl.appendChild(li);
+      myListEl.appendChild(createProjectItem(project, true));
     });
   }
 
@@ -3557,13 +3662,7 @@ function renderProjectList() {
     sharedListEl.appendChild(li);
   } else {
     sharedProjects.forEach(project => {
-      const li = document.createElement('li');
-      li.className = 'project-item' + (project.id === state.activeProjectId ? ' active' : '');
-      const label = document.createElement('span');
-      label.textContent = project.name;
-      li.appendChild(label);
-      li.addEventListener('click', () => selectProject(project.id));
-      sharedListEl.appendChild(li);
+      sharedListEl.appendChild(createProjectItem(project, false));
     });
   }
 
