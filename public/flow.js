@@ -3611,14 +3611,17 @@ function renderProjectList() {
     label.textContent = project.name;
     label.style.flex = '1';
     label.style.cursor = 'pointer';
-    label.addEventListener('click', () => selectProject(project.id));
+    label.style.minWidth = '0'; // Allow text truncation if needed
     li.appendChild(label);
 
     if (isOwned) {
+      // For owned projects: click on label, menu button for options
+      label.addEventListener('click', () => selectProject(project.id));
+
       const menuBtn = document.createElement('button');
       menuBtn.innerHTML = '⋮';
       menuBtn.className = 'project-item-menu';
-      menuBtn.style.cssText = 'background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#9ca3af;opacity:0.6;';
+      menuBtn.style.cssText = 'background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#9ca3af;opacity:0.6;flex-shrink:0;';
       menuBtn.title = 'Project options';
       menuBtn.addEventListener('mouseenter', () => { menuBtn.style.opacity = '1'; });
       menuBtn.addEventListener('mouseleave', () => { menuBtn.style.opacity = '0.6'; });
@@ -3627,6 +3630,10 @@ function renderProjectList() {
         showProjectMenu(e, project);
       });
       li.appendChild(menuBtn);
+    } else {
+      // For shared projects: entire li is clickable (no menu)
+      li.style.cursor = 'pointer';
+      li.addEventListener('click', () => selectProject(project.id));
     }
 
     return li;
