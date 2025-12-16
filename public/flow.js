@@ -3981,15 +3981,26 @@ async function initializeFromSupabase() {
       if (looksAnonymous && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
         const boot = await window.flowAuth.initAuth().catch(() => false);
         if (boot) {
-          // rebuild headers after auth bootstrap
+          // After initAuth we may be in a demo fallback (demo token/local id).
+          // Avoid retrying the fetch if initAuth produced a demo token — that
+          // would overwrite a server-resolved actor response (e.g. when the
+          // server already returned shared_with_me for the true authenticated user).
           try {
-            let newHeaders = { 'Content-Type': 'application/json' };
             const fh = window.flowAuth.getAuthHeaders && window.flowAuth.getAuthHeaders();
-            if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
-            response = await fetch('/api/projects', { headers: newHeaders });
-            data = await response.json();
-            didRetry = true;
-            console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
+            const authVal = fh && (fh.Authorization || fh.authorization || '');
+            const actorVal = fh && (fh['x-actor-id'] || fh['X-Actor-Id'] || '');
+            const isDemoToken = typeof authVal === 'string' && authVal.includes('demo');
+            const isDemoActor = typeof actorVal === 'string' && actorVal.startsWith('demo');
+            if (isDemoToken || isDemoActor) {
+              console.log('[Flow] flowAuth initialized into demo mode; skipping retry to avoid overriding actor-resolved data');
+            } else {
+              let newHeaders = { 'Content-Type': 'application/json' };
+              if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
+              response = await fetch('/api/projects', { headers: newHeaders });
+              data = await response.json();
+              didRetry = true;
+              console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
+            }
           } catch (e) {
             // ignore retry errors
           }

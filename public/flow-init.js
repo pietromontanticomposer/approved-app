@@ -113,6 +113,14 @@
       await safeFetchProjects();
     }
 
+    // Expose a safe fallback so other scripts (e.g. page init) can trigger
+    // a minimal project fetch if `initializeFromSupabase` is not available.
+    try {
+      window.safeFetchProjectsFallback = safeFetchProjects;
+    } catch (e) {
+      // ignore
+    }
+
   } catch (err) {
     console.error('[flow-init] unexpected error', err);
   }

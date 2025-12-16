@@ -340,12 +340,40 @@ export default function Page() {
                   }
 
                   // Defer heavy bootstrap until auth is ready
-                  if (typeof (window as any).initializeFromSupabase === 'function') {
-                    console.log('[PageInit] Calling initializeFromSupabase...');
-                    (window as any).initializeFromSupabase();
-                  } else {
-                    console.warn('[PageInit] initializeFromSupabase NOT FOUND');
-                  }
+                  // Try to call the main initializer; if not present, attempt
+                  // the safe fallback exposed by `flow-init.js`. If neither is
+                  // available yet, wait briefly and retry for robustness.
+                  const callInitOrFallback = async () => {
+                    if (typeof (window as any).initializeFromSupabase === 'function') {
+                      console.log('[PageInit] Calling initializeFromSupabase...');
+                      (window as any).initializeFromSupabase();
+                      return;
+                    }
+
+                    if (typeof (window as any).safeFetchProjectsFallback === 'function') {
+                      console.log('[PageInit] initializeFromSupabase not found - calling safeFetchProjectsFallback');
+                      try {
+                        await (window as any).safeFetchProjectsFallback();
+                        return;
+                      } catch (e) {
+                        console.warn('[PageInit] safeFetchProjectsFallback failed', e);
+                      }
+                    }
+
+                    // Retry a couple of times in case scripts are still loading
+                    for (let i = 0; i < 6; i++) {
+                      await new Promise(r => setTimeout(r, 250));
+                      if (typeof (window as any).initializeFromSupabase === 'function') {
+                        console.log('[PageInit] initializeFromSupabase became available - calling it');
+                        (window as any).initializeFromSupabase();
+                        return;
+                      }
+                    }
+
+                    console.warn('[PageInit] initializeFromSupabase NOT FOUND after retries');
+                  };
+
+                  callInitOrFallback().catch(e => console.error('[PageInit] init/fallback error', e));
                 }
               } else {
                 console.error('[PageInit] flowAuth.initAuth not found');
