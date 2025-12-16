@@ -322,11 +322,12 @@ function computeCueStatus(cue) {
 
 async function setVersionStatus(project, cue, version, status) {
   if (!VERSION_STATUSES[status]) return;
-  
+
   try {
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/versions/update', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         cue_id: cue.id,
         version_id: version.id,
@@ -497,9 +498,11 @@ async function createNewProject() {
 
   const finalName = name.trim() || defaultName;
   try {
+    // Get auth headers from flowAuth
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/projects', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ name: finalName, description: '', team_id: 'auto' })
     });
     if (!res.ok) {
@@ -552,12 +555,14 @@ async function renameProject(project) {
   const name = prompt("Rename project", project.name);
   if (name === null) return;
   if (!name.trim()) return;
-  
+
   const newName = name.trim();
   try {
+    // Get auth headers from flowAuth
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/projects', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ id: project.id, name: newName })
     });
     if (!res.ok) {
@@ -625,9 +630,10 @@ async function createCueFromFile(file) {
 
   // Save cue to database
   try {
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/cues', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         project_id: project.id,
         cue: {
@@ -816,9 +822,10 @@ async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
       media_thumbnail_url: version.media && version.media.thumbnailUrl ? version.media.thumbnailUrl : null
     };
 
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/versions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         cue_id: cueId,
         version: versionData
@@ -1779,9 +1786,10 @@ function renderComments() {
                 return;
               }
               try {
+                const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
                 const r = await fetch('/api/comments', {
                   method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers,
                   body: JSON.stringify({ id: c.id, text: newText })
                 });
                 const j = await r.json();
@@ -2098,17 +2106,18 @@ function addCommentFromInput() {
   // persist to server
   (async () => {
     try {
+      const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
       let resp;
       if (typeof apiCall === 'function') {
         resp = await apiCall('/api/comments', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
         });
       } else {
         const r = await fetch('/api/comments', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
         });
         try { resp = await r.json(); } catch(e) { resp = { error: 'invalid_json' }; }
@@ -2510,9 +2519,10 @@ function renderCueList() {
           if (name && name.trim()) {
             const newName = name.trim();
             try {
+              const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
               const res = await fetch('/api/cues', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ id: cue.id, name: newName })
               });
               if (!res.ok) {
