@@ -3610,12 +3610,12 @@ function renderProjectList() {
     const label = document.createElement('span');
     label.textContent = project.name;
     label.style.flex = '1';
-    label.style.cursor = 'pointer';
     label.style.minWidth = '0'; // Allow text truncation if needed
     li.appendChild(label);
 
     if (isOwned) {
       // For owned projects: click on label, menu button for options
+      label.style.cursor = 'pointer';
       label.addEventListener('click', () => selectProject(project.id));
 
       const menuBtn = document.createElement('button');
@@ -3631,9 +3631,12 @@ function renderProjectList() {
       });
       li.appendChild(menuBtn);
     } else {
-      // For shared projects: entire li is clickable (no menu)
+      // For shared projects: entire li and label are clickable (no menu)
       li.style.cursor = 'pointer';
-      li.addEventListener('click', () => selectProject(project.id));
+      label.style.cursor = 'pointer';
+      const clickHandler = () => selectProject(project.id);
+      li.addEventListener('click', clickHandler);
+      label.addEventListener('click', clickHandler);
     }
 
     return li;
