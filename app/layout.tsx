@@ -1,6 +1,7 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
+import SupabaseSyncBridge from "./components/SupabaseSyncBridge";
 
 export const metadata: Metadata = {
   title: "Approved",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body style={{ margin: 0, padding: 0 }}>
+        <a href="/login" style={{position: 'fixed', right: 12, top: 12, zIndex: 1000, background: '#0f172a', color: '#fff', padding: '6px 8px', borderRadius: 6, textDecoration: 'none', fontSize: 13}}>Login</a>
         {children}
+        <SupabaseSyncBridge />
         {/* Initialize Supabase sync bridge */}
         <script
           dangerouslySetInnerHTML={{

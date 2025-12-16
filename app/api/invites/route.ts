@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { resolveActorId } from '@/lib/actorResolver';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -31,6 +32,12 @@ export async function GET(req: Request) {
     if (!actorId) {
       const hdr = req.headers.get('x-actor-id');
       if (hdr) actorId = hdr;
+    }
+
+    // If actorId present but not a UID, attempt to resolve email -> UID
+    if (actorId) {
+      const resolved = await resolveActorId(actorId);
+      if (resolved) actorId = resolved;
     }
 
     if (!actorId) {
@@ -102,6 +109,11 @@ export async function POST(req: Request) {
     if (!actorId) {
       const hdr = req.headers.get('x-actor-id');
       if (hdr) actorId = hdr;
+    }
+
+    if (actorId) {
+      const resolved = await resolveActorId(actorId);
+      if (resolved) actorId = resolved;
     }
 
     if (!actorId) {

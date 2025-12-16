@@ -14,6 +14,8 @@ export default function SharePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     initializeShare();
@@ -110,8 +112,19 @@ export default function SharePage() {
     const tokenQuery = params.get('token') || '';
 
     if (!user) {
-      localStorage.setItem('pending_share', JSON.stringify({ share_id: shareId, token: tokenQuery }));
-      router.push('/login');
+      // Show signup option instead of forcing immediate redirect to login
+      try {
+        localStorage.setItem('pending_share', JSON.stringify({ share_id: shareId, token: tokenQuery }));
+      } catch (e) {
+        console.warn('[Share] could not set pending_share', e);
+      }
+      // If an email is already filled, send magic link automatically
+      if (email && supabase) {
+        await sendMagicLink(email);
+        return;
+      }
+      // otherwise navigate to register/login where user can sign up
+      router.push('/register');
       return;
     }
 
@@ -146,6 +159,28 @@ export default function SharePage() {
     } catch (err) {
       console.error('[Share] redeem error', err);
       setError('Errore durante l\'apertura del progetto');
+    }
+  };
+
+  const sendMagicLink = async (addr: string) => {
+    if (!supabase) {
+      setError('Impossibile inizializzare l\'autenticazione');
+      return;
+    }
+    setSending(true);
+    try {
+      const redirectTo = window.location.href.split('#')[0];
+      const res = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo } });
+      if (res.error) {
+        setError(res.error.message || 'Errore durante l\'invio del link');
+      } else {
+        setSuccess(true);
+      }
+    } catch (e: any) {
+      console.error('[Share] sendMagicLink error', e);
+      setError(e?.message || 'Errore durante l\'invio del link');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -188,9 +223,30 @@ export default function SharePage() {
       <p style={{ color: '#999' }}>Progetto: <strong>{share.project_name}</strong></p>
       <p style={{ color: '#999' }}>Ruolo consentito: <strong>{share.role}</strong></p>
       <div style={{ marginTop: 20 }}>
-        <button onClick={handleOpen} style={{ padding: '10px 14px' }}>
-          {user ? 'Apri progetto' : 'Accedi per aprire'}
-        </button>
+        {user ? (
+          <button onClick={handleOpen} style={{ padding: '10px 14px' }}>
+            Apri progetto
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexDirection: 'column', maxWidth: 420 }}>
+            <p style={{ color: '#555' }}>Per aprire il progetto devi avere un account. Puoi crearne uno rapidamente inserendo la tua email qui sotto; ti invieremo un link magico per accedere e completare l'apertura.</p>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="La tua email"
+              style={{ padding: '8px 10px', fontSize: 16 }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => sendMagicLink(email)} disabled={sending || !email} style={{ padding: '10px 14px' }}>
+                {sending ? 'Invio…' : 'Ricevi link magico'}
+              </button>
+              <button onClick={() => { localStorage.setItem('pending_share', JSON.stringify({ share_id: token, token: (new URLSearchParams(window.location.search)).get('token') || '' })); router.push('/login'); }} style={{ padding: '10px 14px' }}>
+                Ho già un account (Accedi)
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

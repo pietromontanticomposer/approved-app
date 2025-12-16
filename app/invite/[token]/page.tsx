@@ -112,8 +112,8 @@ export default function InvitePage() {
 
       // If invite contains a project_id, instruct app to open that project after redirect
       try {
-        if (resolvedInvite && resolvedInvite.project_id) {
-          localStorage.setItem('open_project', resolvedInvite.project_id);
+        if (invite && invite.project_id) {
+          localStorage.setItem('open_project', invite.project_id);
         }
       } catch (e) {
         console.warn('[Invite] Could not set open_project', e);

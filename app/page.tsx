@@ -362,6 +362,7 @@ export default function Page() {
           }, 5000);
         }}
       />
+      <Script src="/flow-init.js" strategy="afterInteractive" />
     </>
   );
 }

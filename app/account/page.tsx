@@ -18,6 +18,8 @@ export default function AccountPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [theme, setTheme] = useState("dark");
   const [language, setLanguage] = useState("it");
   const [notifications, setNotifications] = useState(true);
@@ -30,6 +32,10 @@ export default function AccountPage() {
 
       const { data: userData } = await client.auth.getUser();
       setUser(userData?.user || null);
+
+      const meta = userData?.user?.user_metadata || {};
+      setFirstName(meta.first_name || meta.firstName || "");
+      setLastName(meta.last_name || meta.lastName || "");
 
       const identities: ProviderInfo[] = (userData?.user?.identities || []).map((i: any) => ({
         provider: i.provider,
@@ -68,6 +74,33 @@ export default function AccountPage() {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) setError(error.message);
     else setMessage("Password aggiornata");
+  };
+
+  const handleSaveProfile = async () => {
+    if (!supabase) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const full = `${firstName || ""} ${lastName || ""}`.trim();
+      const { error: updErr } = await supabase.auth.updateUser({
+        data: {
+          first_name: firstName || null,
+          last_name: lastName || null,
+          full_name: full || null,
+        },
+      });
+      if (updErr) {
+        setError(updErr.message || 'Errore aggiornamento profilo');
+        return;
+      }
+
+      // Refresh user
+      const { data: refreshed } = await supabase.auth.getUser();
+      setUser(refreshed?.user || null);
+      setMessage('Profilo aggiornato');
+    } catch (e: any) {
+      setError(e?.message || 'Errore');
+    }
   };
 
   const showPasswordSection = providers.some(p => p.provider === "email");
@@ -111,8 +144,17 @@ export default function AccountPage() {
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>👤 Dati personali</h2>
           <div style={styles.fieldRow}>
+            <div style={styles.label}>Nome</div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Nome" style={{ ...styles.input, width: '140px' }} />
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Cognome" style={{ ...styles.input, width: '180px' }} />
+              <button style={styles.primaryButton} onClick={handleSaveProfile}>Salva</button>
+            </div>
+            
+          </div>
+          <div style={styles.fieldRow}>
             <div style={styles.label}>Nome completo</div>
-            <div style={styles.value}>{user.user_metadata?.full_name || "—"}</div>
+            <div style={styles.value}>{user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || "—"}</div>
           </div>
           <div style={styles.fieldRow}>
             <div style={styles.label}>Email</div>

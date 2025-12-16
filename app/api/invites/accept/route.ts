@@ -22,6 +22,18 @@ export async function POST(req: Request) {
     }
 
     if (!actorId) actorId = req.headers.get('x-actor-id');
+    if (!actorId) actorId = req.headers.get('x-actor-id');
+
+    // If actorId is an email or non-UUID, try to resolve it
+    if (actorId) {
+      try {
+        const { resolveActorId } = await import('@/lib/actorResolver');
+        const resolved = await resolveActorId(actorId);
+        if (resolved) actorId = resolved;
+      } catch (e) {
+        // ignore
+      }
+    }
 
     const body = await req.json();
     const inviteToken = body?.invite_token;
