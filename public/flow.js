@@ -503,8 +503,13 @@ async function createNewProject() {
       body: JSON.stringify({ name: finalName, description: '', team_id: 'auto' })
     });
     if (!res.ok) {
-      console.error('[FlowPreview] Failed to create project', await res.text());
-      alert('Errore nella creazione del progetto');
+      const text = await res.text().catch(() => '<non-text-response>');
+      console.error('[FlowPreview] Failed to create project', res.status, text);
+      try {
+        alert('Errore nella creazione del progetto:\n' + (text || 'unknown'));
+      } catch (e) {
+        // ignore alert failures
+      }
       return;
     }
     const data = await res.json();
