@@ -270,6 +270,27 @@ export default function Page() {
 
   return (
     <>
+      <Script
+        id="initialize-stub"
+        strategy="beforeInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `
+            // Ensure initializer stubs exist early to avoid race when scripts load
+            window.initializeFromSupabase = window.initializeFromSupabase || (async function(){
+              console.warn('[InitStub] initializeFromSupabase called before implementation');
+            });
+            window.safeFetchProjectsFallback = window.safeFetchProjectsFallback || (async function(){
+              console.warn('[InitStub] safeFetchProjectsFallback called before implementation');
+              try {
+                const res = await fetch('/api/projects?debug=1', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+                if (res.ok) return res.json();
+              } catch (e) {
+                console.warn('[InitStub] fallback fetch failed', e);
+              }
+            });
+          `,
+        }}
+      />
       <div dangerouslySetInnerHTML={{ __html: html }} />
       
       {/* Share Modal */}
