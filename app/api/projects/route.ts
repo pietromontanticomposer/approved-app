@@ -1,6 +1,7 @@
 // app/api/projects/route.ts
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { resolveActorId } from '@/lib/actorResolver';
 
 type DbProject = {
   id: string;
@@ -18,10 +19,24 @@ export async function GET(req: Request) {
   try {
     console.log('[GET /api/projects] Request started');
 
-    console.log('[GET /api/projects] Fetching projects from Supabase...');
+    // Quick debug: log incoming host and auth headers (no secrets printed)
+    const url = new URL(req.url);
+    const isDebug = url.searchParams.get('debug') === '1' || req.headers.get('x-debug') === '1';
+    console.log('[GET /api/projects] Fetching projects from Supabase... host=', url.host, 'debug=', isDebug);
+    if (isDebug) {
+      console.log('[GET /api/projects] Incoming headers (x-actor-id, authorization present):', {
+        'x-actor-id': Boolean(req.headers.get('x-actor-id')),
+        'authorization_present': Boolean(req.headers.get('authorization'))
+      });
+    }
     
     // If caller provides an actor id (x-actor-id) return two lists: my_projects and shared_with_me
     let actorId = req.headers.get('x-actor-id');
+    // If header contains an email or non-UUID, try to resolve it to a UID
+    if (actorId) {
+      const resolved = await resolveActorId(actorId);
+      if (resolved) actorId = resolved;
+    }
 
     // If no explicit actor id, try Authorization Bearer token
     if (!actorId) {
@@ -85,6 +100,8 @@ export async function GET(req: Request) {
 
     if (!actorId) {
       console.log('[GET /api/projects] No actor header or valid token provided — returning public projects list');
+    } else {
+      console.log('[GET /api/projects] Resolved actorId=', actorId);
     }
 
     if (actorId) {
@@ -189,7 +206,12 @@ export async function GET(req: Request) {
       const myProjectsHydrated = await hydrate(myProjects || []);
       const sharedHydrated = await hydrate(sharedProjects || []);
 
-      return NextResponse.json({ my_projects: myProjectsHydrated, shared_with_me: sharedHydrated }, { status: 200 });
+      // Maintain backward compatibility: include a combined `projects` array
+      const combined = [...(myProjectsHydrated || []), ...(sharedHydrated || [])];
+
+      const body = { my_projects: myProjectsHydrated, shared_with_me: sharedHydrated, projects: combined };
+      if (isDebug) body['__debug'] = { resolved_actor_id: actorId };
+      return NextResponse.json(body, { status: 200 });
     }
 
     // Fallback: return all projects (existing behavior)
@@ -222,7 +244,9 @@ export async function GET(req: Request) {
       })
     );
 
-    return NextResponse.json({ projects }, { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const respBody: any = { projects };
+    if (isDebug) respBody['__debug'] = { resolved_actor_id: null };
+    return NextResponse.json(respBody, { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err: any) {
     console.error("[GET /api/projects] Exception:", {
       message: err?.message,
