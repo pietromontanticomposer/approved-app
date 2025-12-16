@@ -3998,7 +3998,16 @@ async function initializeFromSupabase() {
     } catch (e) {
       // ignore
     }
-    const projects = data.projects || [];
+    // Normalize project list: accept either `projects` (combined) or
+    // `my_projects` + `shared_with_me` shapes coming from the server.
+    let projects = [];
+    if (Array.isArray(data.projects)) {
+      projects = data.projects;
+    } else {
+      const my = Array.isArray(data.my_projects) ? data.my_projects : [];
+      const shared = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
+      projects = [...my, ...shared];
+    }
 
     console.log("[Flow] Loaded projects:", projects.length);
 
