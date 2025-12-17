@@ -1,21 +1,36 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth } from '@/lib/auth';
+
+export const runtime = "nodejs";
 
 /**
  * POST /api/teams
  * Create a new team/workspace
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { name, owner_id } = body;
+    console.log('[POST /api/teams] Request started');
 
-    if (!name || !owner_id) {
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { name } = body;
+
+    if (!name) {
       return NextResponse.json(
-        { error: "name and owner_id are required" },
+        { error: "name is required" },
         { status: 400 }
       );
     }
+
+    // SECURITY: Always use authenticated user as owner_id
+    // This prevents users from creating teams on behalf of other users
+    const owner_id = auth.userId;
 
     // Create team
     const { data: team, error: teamError } = await supabaseAdmin
