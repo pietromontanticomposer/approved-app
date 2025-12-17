@@ -326,12 +326,12 @@ async function setVersionStatus(project, cue, version, status) {
   try {
     const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
     const res = await fetch('/api/versions/update', {
-      method: 'PATCH',
+      method: 'POST',
       headers,
       body: JSON.stringify({
-        cue_id: cue.id,
-        version_id: version.id,
-        status: status
+        versionId: version.id,
+        projectId: state.activeProjectId,
+        updates: { status: status }
       })
     });
     if (!res.ok) {
@@ -833,7 +833,8 @@ async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
       headers,
       body: JSON.stringify({
         cue_id: cueId,
-        version: versionData
+        version: versionData,
+        projectId: state.activeProjectId
       })
     });
 
@@ -1795,7 +1796,7 @@ function renderComments() {
                 const r = await fetch('/api/comments', {
                   method: 'PATCH',
                   headers,
-                  body: JSON.stringify({ id: c.id, text: newText })
+                  body: JSON.stringify({ id: c.id, text: newText, projectId: state.activeProjectId })
                 });
                 const j = await r.json();
                 if (!r.ok || j.error) {
@@ -1826,7 +1827,7 @@ function renderComments() {
           const doDelete = async () => {
             if (!await showConfirm('Delete this comment?')) return;
             try {
-              const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+              const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}&projectId=${state.activeProjectId}`, { method: 'DELETE' });
               const j = await r.json();
               if (!r.ok || j.error) {
                 await showAlert('Errore cancellazione commento: ' + (j.error || r.statusText));
@@ -1940,7 +1941,7 @@ async function loadProjectCues(projectId) {
     // Load versions for each cue
     const cuesWithVersions = await Promise.all(
       cuesFromDb.map(async (dbCue) => {
-        const versionResponse = await fetch(`/api/versions?cueId=${dbCue.id}`);
+        const versionResponse = await fetch(`/api/versions?cueId=${dbCue.id}&projectId=${projectId}`);
         const versionData = versionResponse.ok ? await versionResponse.json() : { versions: [] };
         const versions = versionData.versions || [];
 
@@ -1971,7 +1972,7 @@ async function loadProjectCues(projectId) {
                 status: v.status || "in-review"
               };
               try {
-                const r = await fetch(`/api/comments?versionId=${encodeURIComponent(v.id)}`);
+                const r = await fetch(`/api/comments?versionId=${encodeURIComponent(v.id)}&projectId=${projectId}`);
                 if (r.ok) {
                   const d = await r.json();
                   const rows = d.comments || [];
@@ -2123,7 +2124,7 @@ function addCommentFromInput() {
         const r = await fetch('/api/comments', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
+          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName, projectId: state.activeProjectId })
         });
         try { resp = await r.json(); } catch(e) { resp = { error: 'invalid_json' }; }
       }
@@ -2528,7 +2529,7 @@ function renderCueList() {
               const res = await fetch('/api/cues', {
                 method: 'PATCH',
                 headers,
-                body: JSON.stringify({ id: cue.id, name: newName })
+                body: JSON.stringify({ id: cue.id, name: newName, projectId: state.activeProjectId })
               });
               if (!res.ok) {
                 console.error('[FlowPreview] Failed to rename cue', await res.text());
@@ -2551,7 +2552,7 @@ function renderCueList() {
           if (!ok) return;
           
           try {
-            const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}`, { method: 'DELETE' });
+            const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}&projectId=${state.activeProjectId}`, { method: 'DELETE' });
             if (!res.ok) {
               console.error('[FlowPreview] Failed to delete cue', await res.text());
               alert('Errore nella cancellazione della cue');
