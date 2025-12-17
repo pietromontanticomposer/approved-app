@@ -1,7 +1,16 @@
 // app/api/versions/route.ts
-import { NextResponse } from "next/server";
+/**
+ * Version Management API Route
+ *
+ * Secure implementation with authentication and authorization
+ */
+
+import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
+
+export const runtime = "nodejs";
 
 const isUuid = (value: string) =>
   typeof value === "string" &&
@@ -135,16 +144,46 @@ async function resolveMediaUrl(raw: string | null): Promise<string | null> {
 }
 
 /**
- * GET /api/versions?cueId=xxx
- * Ritorna le versioni di una cue
+ * GET /api/versions?cueId=xxx&projectId=xxx
+ * Returns versions for a cue
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    console.log('[GET /api/versions] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const url = new URL(req.url);
     const cueId = url.searchParams.get('cueId');
+    const projectId = url.searchParams.get('projectId');
 
-    if (!cueId) {
-      return NextResponse.json({ error: 'cueId required' }, { status: 400 });
+    if (!cueId || !isUuid(cueId)) {
+      return NextResponse.json({ error: 'Valid cueId required' }, { status: 400 });
+    }
+
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json({ error: 'Valid projectId required' }, { status: 400 });
+    }
+
+    // SECURITY: Verify cue belongs to project user can access
+    const { data: cue } = await supabaseAdmin
+      .from("cues")
+      .select("project_id")
+      .eq("id", cueId)
+      .single();
+
+    if (!cue || cue.project_id !== projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // SECURITY: Check project access permission
+    const canAccess = await canAccessProject(auth.userId, projectId);
+    if (!canAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { data: versions, error } = await supabaseAdmin
@@ -196,11 +235,18 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    console.log('[POST /api/versions] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    
-    const { cue_id, version } = body;
+    const { cue_id, version, projectId } = body;
 
     if (!cue_id || !version) {
       return NextResponse.json(
@@ -214,6 +260,30 @@ export async function POST(req: Request) {
         { error: "cue_id must be a UUID" },
         { status: 400 }
       );
+    }
+
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json(
+        { error: "Valid projectId required" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Verify cue belongs to project
+    const { data: cue } = await supabaseAdmin
+      .from("cues")
+      .select("project_id")
+      .eq("id", cue_id)
+      .single();
+
+    if (!cue || cue.project_id !== projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // SECURITY: Check project modify permission
+    const canModify = await canModifyProject(auth.userId, projectId);
+    if (!canModify) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const version_id = uuidv4();
@@ -242,17 +312,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log('[POST /api/versions] Version created:', data.id);
     return NextResponse.json({ version: data }, { status: 201 });
   } catch (err: any) {
     console.error("[POST /api/versions] Error", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 });
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   try {
+    console.log('[PATCH /api/versions] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { id, status } = body;
+    const { id, status, projectId } = body;
 
     if (!id || !status) {
       return NextResponse.json(
@@ -268,6 +347,30 @@ export async function PATCH(req: Request) {
       );
     }
 
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json(
+        { error: "Valid projectId required" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Verify version belongs to project user can modify
+    const { data: version } = await supabaseAdmin
+      .from("versions")
+      .select("cue_id, cues(project_id)")
+      .eq("id", id)
+      .single();
+
+    if (!version || !version.cues || (version.cues as any).project_id !== projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // SECURITY: Check project modify permission
+    const canModify = await canModifyProject(auth.userId, projectId);
+    if (!canModify) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { data, error } = await supabaseAdmin
       .from("versions")
       .update({ status })
@@ -280,9 +383,10 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log('[PATCH /api/versions] Version updated:', data.id);
     return NextResponse.json({ version: data }, { status: 200 });
   } catch (err: any) {
     console.error("[PATCH /api/versions] Error", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 });
   }
 }
