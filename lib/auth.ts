@@ -112,7 +112,7 @@ export async function canAccessProject(userId: string, projectId: string): Promi
     // Check if user is in project_members
     const { data: member } = await supabaseAdmin
       .from('project_members')
-      .select('id')
+      .select('member_id')
       .eq('project_id', projectId)
       .eq('member_id', userId)
       .maybeSingle();
@@ -125,7 +125,7 @@ export async function canAccessProject(userId: string, projectId: string): Promi
     if (project.team_id) {
       const { data: teamMember } = await supabaseAdmin
         .from('team_members')
-        .select('id')
+        .select('user_id')
         .eq('team_id', project.team_id)
         .eq('user_id', userId)
         .maybeSingle();
