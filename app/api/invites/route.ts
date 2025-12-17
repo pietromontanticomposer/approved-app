@@ -1,8 +1,16 @@
 // app/api/invites/route.ts
-import { NextResponse } from "next/server";
+/**
+ * Team Invites API Route
+ *
+ * Secure implementation with standard authentication
+ */
+
+import { NextResponse, NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveActorId } from '@/lib/actorResolver';
+import { verifyAuth } from '@/lib/auth';
+
+export const runtime = "nodejs";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -10,42 +18,19 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * GET /api/invites?team_id=xxx
- * Lista inviti di un team (solo owner)
+ * Lists invites for a team (owner only)
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    // Determine actor: prefer Authorization Bearer token, then x-actor-id header, then cookie-based anon client
-    const authHeader = req.headers.get('authorization') || '';
-    let actorId: string | null = null;
+    console.log('[GET /api/invites] Request started');
 
-    if (authHeader.toLowerCase().startsWith('bearer ')) {
-      const token = authHeader.split(' ')[1];
-      try {
-        const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
-        if (!verifyErr && verified?.user?.id) actorId = verified.user.id;
-        else console.warn('[/api/invites] supabaseAdmin.auth.getUser failed', verifyErr);
-      } catch (e) {
-        console.warn('[/api/invites] token verification error', e);
-      }
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!actorId) {
-      const hdr = req.headers.get('x-actor-id');
-      if (hdr) actorId = hdr;
-    }
-
-    // If actorId present but not a UID, attempt to resolve email -> UID
-    if (actorId) {
-      const resolved = await resolveActorId(actorId);
-      if (resolved) actorId = resolved;
-    }
-
-    if (!actorId) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (user?.id) actorId = user.id;
-      if (authError || !actorId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actorId = auth.userId;
 
     const url = new URL(req.url);
     const teamId = url.searchParams.get("team_id");
@@ -87,41 +72,20 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/invites
- * Crea un nuovo invito
+ * Creates a new invite
  * Body: { team_id, project_id?, email?, role, is_link_invite }
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    // Determine actorId: prefer Authorization Bearer token, then x-actor-id header, then cookie-based anon client
-    const authHeaderPost = req.headers.get('authorization') || '';
-    let actorId: string | null = null;
-    if (authHeaderPost.toLowerCase().startsWith('bearer ')) {
-      const token = authHeaderPost.split(' ')[1];
-      try {
-        const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
-        if (!verifyErr && verified?.user?.id) actorId = verified.user.id;
-        else console.warn('[/api/invites POST] supabaseAdmin.auth.getUser failed', verifyErr);
-      } catch (e) {
-        console.warn('[/api/invites POST] token verification error', e);
-      }
+    console.log('[POST /api/invites] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!actorId) {
-      const hdr = req.headers.get('x-actor-id');
-      if (hdr) actorId = hdr;
-    }
-
-    if (actorId) {
-      const resolved = await resolveActorId(actorId);
-      if (resolved) actorId = resolved;
-    }
-
-    if (!actorId) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (user?.id) actorId = user.id;
-      if (authError || !actorId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const actorId = auth.userId;
 
     const body = await req.json();
     const { team_id, project_id, email, role, is_link_invite } = body;
@@ -179,28 +143,19 @@ export async function POST(req: Request) {
 
 /**
  * DELETE /api/invites?invite_id=xxx
- * Revoca un invito
+ * Revokes an invite
  */
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   try {
-    const authHeaderDel = req.headers.get('authorization') || '';
-    let actorIdDel: string | null = null;
-    if (authHeaderDel.toLowerCase().startsWith('bearer ')) {
-      const token = authHeaderDel.split(' ')[1];
-      try {
-        const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
-        if (!verifyErr && verified?.user?.id) actorIdDel = verified.user.id;
-      } catch (e) {
-        console.warn('[/api/invites DELETE] token verification error', e);
-      }
+    console.log('[DELETE /api/invites] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!actorIdDel) actorIdDel = req.headers.get('x-actor-id');
-    if (!actorIdDel) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (user?.id) actorIdDel = user.id;
-      if (authError || !actorIdDel) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+
+    const actorIdDel = auth.userId;
 
     const url = new URL(req.url);
     const inviteId = url.searchParams.get("invite_id");
