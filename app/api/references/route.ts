@@ -1,7 +1,16 @@
 // app/api/references/route.ts
-import { NextResponse } from "next/server";
+/**
+ * Reference Files API Route
+ *
+ * Secure implementation with authentication and authorization
+ */
+
+import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
+
+export const runtime = "nodejs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const STORAGE_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "media";
@@ -84,15 +93,29 @@ async function resolveMediaUrl(raw: string | null): Promise<string | null> {
 
 /**
  * GET /api/references?projectId=xxx
- * Ritorna reference files di un progetto
+ * Returns reference files for a project
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    console.log('[GET /api/references] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const url = new URL(req.url);
     const projectId = url.searchParams.get('projectId');
 
-    if (!projectId) {
-      return NextResponse.json({ error: 'projectId required' }, { status: 400 });
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json({ error: 'Valid projectId required' }, { status: 400 });
+    }
+
+    // SECURITY: Check project access permission
+    const canAccess = await canAccessProject(auth.userId, projectId);
+    if (!canAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { data: roots, error } = await supabaseAdmin
@@ -148,8 +171,16 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    console.log('[POST /api/references] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { project_id, root_id, name, type, url, size } = body;
 
@@ -167,6 +198,12 @@ export async function POST(req: Request) {
       );
     }
 
+    // SECURITY: Check project modify permission
+    const canModify = await canModifyProject(auth.userId, project_id);
+    if (!canModify) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // If root_id is provided, add to existing reference root
     if (root_id) {
       if (!isUuid(root_id)) {
@@ -174,6 +211,17 @@ export async function POST(req: Request) {
           { error: "root_id must be a UUID" },
           { status: 400 }
         );
+      }
+
+      // SECURITY: Verify root belongs to the project
+      const { data: root } = await supabaseAdmin
+        .from("references_root")
+        .select("project_id")
+        .eq("id", root_id)
+        .single();
+
+      if (!root || root.project_id !== project_id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
       const version_id = uuidv4();
@@ -251,10 +299,18 @@ export async function POST(req: Request) {
   }
 }
 
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   try {
+    console.log('[DELETE /api/references] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { rootId, versionId } = body;
+    const { rootId, versionId, projectId } = body;
 
     if (!rootId) {
       return NextResponse.json(
@@ -268,6 +324,30 @@ export async function DELETE(req: Request) {
         { error: "rootId must be a UUID" },
         { status: 400 }
       );
+    }
+
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json(
+        { error: "Valid projectId required" },
+        { status: 400 }
+      );
+    }
+
+    // SECURITY: Verify root belongs to project user can modify
+    const { data: root } = await supabaseAdmin
+      .from("references_root")
+      .select("project_id")
+      .eq("id", rootId)
+      .single();
+
+    if (!root || root.project_id !== projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // SECURITY: Check project modify permission
+    const canModify = await canModifyProject(auth.userId, projectId);
+    if (!canModify) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Delete specific version if versionId provided
