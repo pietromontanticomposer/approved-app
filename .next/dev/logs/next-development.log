@@ -1235,3 +1235,198 @@ It can also happen if the client has a browser extension installed which messes 
 [05:22:39.697] Server  LOG     [GET /api/projects] Unauthorized request
 [05:25:44.548] Browser LOG     [FlowAuth] Auth state changed: TOKEN_REFRESHED
 [05:25:44.548] Browser LOG     [FlowAuth] Auth state changed: TOKEN_REFRESHED
+[05:26:38.179] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[05:26:38.444] Server  LOG     [GET /api/projects] Request started
+[05:26:38.544] Browser LOG     [SupabaseClient] Initialized with persistence
+[05:26:38.544] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         webcrx=""
+                        >
+                  ...
+
+[05:26:38.544] Browser LOG     Home page mounted - initializing Supabase client
+[05:26:38.544] Browser LOG     ✅ SupabaseSync bridge initialized
+[05:26:38.544] Browser LOG     [HomePage] Supabase client ready: true
+[05:26:38.544] Browser LOG     [FlowAuth] Ready
+[05:26:38.544] Browser LOG     [ShareHandler] Script loaded
+[05:26:38.544] Browser ERROR   [FlowPreview] shareBtn not found in DOM
+[05:26:38.544] Browser ERROR   [FlowPreview] deliverBtn not found in DOM
+[05:26:38.545] Browser LOG     [Flow] Script loaded, waiting for page.tsx to initialize...
+[05:26:38.545] Browser LOG     [PageInit] Scripts loaded
+[05:26:38.545] Browser LOG     [flow-init] start
+[05:26:38.545] Browser LOG     [flow-init] bootstrapping flowAuth.initAuth before initializeFromSupabase
+[05:26:38.545] Browser LOG     [FlowAuth] Initializing auth...
+[05:26:38.545] Browser LOG     [PageInit] Supabase ready, initializing auth...
+[05:26:38.545] Browser LOG     [FlowAuth] Initializing auth...
+[05:26:38.545] Browser LOG     [FlowAuth] ✅ Session loaded: pietromontanticomposer@gmail.com
+[05:26:38.545] Browser LOG     [flow-init] flowAuth.initAuth result true
+[05:26:38.545] Browser LOG     [flow-init] calling initializeFromSupabase
+[05:26:38.545] Browser LOG     [Flow] initializeFromSupabase() called
+[05:26:38.545] Browser LOG     [FlowAuth] ✅ Session loaded: pietromontanticomposer@gmail.com
+[05:26:38.545] Browser LOG     [PageInit] ✅ Auth successful, app loaded
+[05:26:38.545] Browser LOG     [PageInit] Calling initializeFromSupabase...
+[05:26:38.545] Browser LOG     [Flow] initializeFromSupabase already ran - skipping
+[05:26:38.545] Browser LOG     [FlowAuth] Auth state changed: INITIAL_SESSION
+[05:26:38.545] Browser LOG     [FlowAuth] Auth state changed: INITIAL_SESSION
+[05:26:39.182] Server  LOG     [GET /api/projects] Authenticated user: "65e6a4da-631d-4fb2-a1d3-988847890aa7"
+[05:26:39.630] Server  LOG     [GET /api/projects] Found 1 "owned projects"
+[05:26:39.969] Server  LOG     [GET /api/projects] Found 0 "shared projects"
+[05:26:40.258] Browser LOG     [Flow] Loaded projects: 1
+[05:26:40.258] Browser LOG     [Flow] Loading cues for project: e7b071cb-2a95-488c-afac-70fc44af8104
+[05:26:40.283] Server  LOG     [GET /api/cues] result {}
+[05:26:40.388] Browser LOG     [Flow] Loaded cues: 2
+[05:26:40.444] Server  LOG     [GET /api/projects] Request started
+[05:26:40.464] Server  LOG     [GET /api/versions] result {}
+[05:26:40.554] Server  LOG     [GET /api/versions] result {}
+[05:26:40.663] Browser LOG     [flow-init] initializeFromSupabase left empty list, running fallback fetch
+[05:26:40.663] Browser LOG     [flow-init] fetching /api/projects with headers {"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IjlZVFhPY2cySjRzK3NiRkIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3dhYWlnYW5rY2N0aWphbHZscHBrLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2NWU2YTRkYS02MzFkLTRmYjItYTFkMy05ODg4NDc4OTBhYTciLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY1OTQ0OTA4LCJpYXQiOjE3NjU5NDEzMDgsImVtYWlsIjoicGlldHJvbW9udGFudGljb21wb3NlckBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsIjoicGlldHJvbW9udGFudGljb21wb3NlckBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyc3RfbmFtZSI6IlBpZXRybyIsImZ1bGxfbmFtZSI6IlBpZXRybyBNb250YW50aSIsImxhc3RfbmFtZSI6Ik1vbnRhbnRpIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJzdWIiOiI2NWU2YTRkYS02MzFkLTRmYjItYTFkMy05ODg4NDc4OTBhYTcifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2NTkyNDEzNn1dLCJzZXNzaW9uX2lkIjoiOTIzOGQzOTktN2IxNC00YWUxLWI2MjEtMDEwNjdmNTIyZmVmIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.LvK-NhmKdfsRZp38pXrvAVyptbs1GesvKx1iLv6OFFU","Content-Type":"application/json","x-actor-id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"}
+[05:26:40.663] Browser LOG     [Flow] Loaded 1 versions for cue d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4
+[05:26:40.663] Browser LOG     [Flow] Loaded 1 versions for cue 572fcffe-ee22-48b1-b525-77f13faf232f
+[05:26:40.727] Server  LOG     [GET /api/projects] Authenticated user: "65e6a4da-631d-4fb2-a1d3-988847890aa7"
+[05:26:40.844] Server  LOG     [GET /api/projects] Found 1 "owned projects"
+[05:26:40.918] Browser LOG     [Flow] cuesWithVersions sample: [{"id":"572fcffe-ee22-48b1-b525-77f13faf232f","isOpen":true,"versions":1},{"id":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","isOpen":true,"versions":1}]
+[05:26:40.918] Browser LOG     [Flow] Project cues loaded successfully
+[05:26:40.918] Browser LOG     [Flow] References sanitized: 0
+[05:26:40.918] Browser LOG     renderCueList: project e7b071cb-2a95-488c-afac-70fc44af8104 cuesCount 2
+[05:26:40.918] Browser LOG     renderCueList: {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:26:40.918] Browser LOG     renderCueList: {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:26:40.918] Browser LOG     renderCueList: project e7b071cb-2a95-488c-afac-70fc44af8104 cuesCount 2
+[05:26:40.918] Browser LOG     renderCueList: {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:26:40.918] Browser LOG     renderCueList: {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:26:40.918] Browser LOG     renderCueList: details.toggle {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","detailsOpen":true}
+[05:26:40.918] Browser LOG     renderCueList: details.toggle {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","detailsOpen":true}
+[05:26:40.918] Browser LOG     renderCueList: details.toggle {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","detailsOpen":true}
+[05:26:40.918] Browser LOG     renderCueList: details.toggle {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","detailsOpen":true}
+[05:26:41.190] Server  LOG     [GET /api/projects] Found 0 "shared projects"
+[05:26:41.488] Browser LOG     [flow-init] /api/projects response 200 {"my_projects":[{"created_at":"2025-12-12T18:34:35.209713+00:00","description":null,"id":"e7b071cb-2a95-488c-afac-70fc44af8104","name":"Dio Ladro","owner_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7","team_id":"cb1a651e-6240-4d49-8f68-fe1b2beae2b8","team_members":[{"joined_at":"2025-12-13T22:35:15.812+00:00","role":"owner","user_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"},{"joined_at":"2025-12-15T04:54:40.657157+00:00","role":"viewer","user_id":"519c4346-cc31-439a-b01e-937660df8f5a"}],"updated_at":"2025-12-13T22:31:40.505272+00:00"}],"projects":[{"created_at":"2025-12-12T18:34:35.209713+00:00","description":null,"id":"e7b071cb-2a95-488c-afac-70fc44af8104","name":"Dio Ladro","owner_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7","team_id":"cb1a651e-6240-4d49-8f68-fe1b2beae2b8","team_members":[{"joined_at":"2025-12-13T22:35:15.812+00:00","role":"owner","user_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"},{"joined_at":"2025-12-15T04:54:40.657157+00:00","role":"viewer","user_id":"519c4346-cc31-439a-b01e-937660df8f5a"}],"updated_at":"2025-12-13T22:31:40.505272+00:00"}],"shared_with_me":[]}
+[05:29:24.963] Browser LOG     [FlowAuth] Auth state changed: SIGNED_IN
+[05:29:24.963] Browser LOG     [FlowAuth] Auth state changed: SIGNED_IN
+[05:34:01.015] Browser LOG     [FlowAuth] Auth state changed: SIGNED_IN
+[05:34:01.015] Browser LOG     [FlowAuth] Auth state changed: SIGNED_IN
+[05:34:02.204] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[05:34:02.487] Server  LOG     [GET /api/projects] Request started
+[05:34:02.591] Browser LOG     [SupabaseClient] Initialized with persistence
+[05:34:02.591] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <script>
+                      <script>
+                      <script>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         webcrx=""
+                        >
+                  ...
+
+[05:34:02.591] Browser LOG     Home page mounted - initializing Supabase client
+[05:34:02.591] Browser LOG     ✅ SupabaseSync bridge initialized
+[05:34:02.591] Browser LOG     [HomePage] Supabase client ready: true
+[05:34:02.591] Browser LOG     [FlowAuth] Ready
+[05:34:02.591] Browser LOG     [ShareHandler] Script loaded
+[05:34:02.591] Browser ERROR   [FlowPreview] shareBtn not found in DOM
+[05:34:02.591] Browser ERROR   [FlowPreview] deliverBtn not found in DOM
+[05:34:02.591] Browser LOG     [Flow] Script loaded, waiting for page.tsx to initialize...
+[05:34:02.591] Browser LOG     [PageInit] Scripts loaded
+[05:34:02.591] Browser LOG     [flow-init] start
+[05:34:02.591] Browser LOG     [flow-init] bootstrapping flowAuth.initAuth before initializeFromSupabase
+[05:34:02.591] Browser LOG     [FlowAuth] Initializing auth...
+[05:34:02.591] Browser LOG     [FlowAuth] ✅ Session loaded: pietromontanticomposer@gmail.com
+[05:34:02.591] Browser LOG     [flow-init] flowAuth.initAuth result true
+[05:34:02.591] Browser LOG     [flow-init] calling initializeFromSupabase
+[05:34:02.591] Browser LOG     [Flow] initializeFromSupabase() called
+[05:34:02.591] Browser LOG     [FlowAuth] Auth state changed: INITIAL_SESSION
+[05:34:02.591] Browser LOG     [PageInit] Supabase ready, initializing auth...
+[05:34:02.591] Browser LOG     [FlowAuth] Initializing auth...
+[05:34:02.591] Browser LOG     [FlowAuth] ✅ Session loaded: pietromontanticomposer@gmail.com
+[05:34:02.591] Browser LOG     [PageInit] ✅ Auth successful, app loaded
+[05:34:02.591] Browser LOG     [PageInit] Calling initializeFromSupabase...
+[05:34:02.591] Browser LOG     [Flow] initializeFromSupabase already ran - skipping
+[05:34:02.591] Browser LOG     [FlowAuth] Auth state changed: INITIAL_SESSION
+[05:34:02.927] Server  LOG     [GET /api/projects] Authenticated user: "65e6a4da-631d-4fb2-a1d3-988847890aa7"
+[05:34:03.434] Server  LOG     [GET /api/projects] Found 1 "owned projects"
+[05:34:03.883] Server  LOG     [GET /api/projects] Found 0 "shared projects"
+[05:34:04.390] Server  LOG     [GET /api/cues] Request started
+[05:34:04.393] Browser LOG     [Flow] Loaded projects: 1
+[05:34:04.393] Browser LOG     [Flow] Loading cues for project: e7b071cb-2a95-488c-afac-70fc44af8104
+[05:34:04.468] Server  LOG     [GET /api/projects] Request started
+[05:34:04.559] Browser LOG     [flow-init] initializeFromSupabase left empty list, running fallback fetch
+[05:34:04.559] Browser LOG     [flow-init] fetching /api/projects with headers {"Authorization":"Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IjlZVFhPY2cySjRzK3NiRkIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3dhYWlnYW5rY2N0aWphbHZscHBrLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI2NWU2YTRkYS02MzFkLTRmYjItYTFkMy05ODg4NDc4OTBhYTciLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY1OTQ0OTA4LCJpYXQiOjE3NjU5NDEzMDgsImVtYWlsIjoicGlldHJvbW9udGFudGljb21wb3NlckBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsIjoicGlldHJvbW9udGFudGljb21wb3NlckBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyc3RfbmFtZSI6IlBpZXRybyIsImZ1bGxfbmFtZSI6IlBpZXRybyBNb250YW50aSIsImxhc3RfbmFtZSI6Ik1vbnRhbnRpIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJzdWIiOiI2NWU2YTRkYS02MzFkLTRmYjItYTFkMy05ODg4NDc4OTBhYTcifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc2NTkyNDEzNn1dLCJzZXNzaW9uX2lkIjoiOTIzOGQzOTktN2IxNC00YWUxLWI2MjEtMDEwNjdmNTIyZmVmIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.LvK-NhmKdfsRZp38pXrvAVyptbs1GesvKx1iLv6OFFU","Content-Type":"application/json","x-actor-id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"}
+[05:34:04.560] Server  LOG     [GET /api/projects] Authenticated user: "65e6a4da-631d-4fb2-a1d3-988847890aa7"
+[05:34:04.718] Server  LOG     [GET /api/projects] Found 1 "owned projects"
+[05:34:04.810] Server  LOG     [GET /api/cues] Found 2 "cues for project" "e7b071cb-2a95-488c-afac-70fc44af8104"
+[05:34:04.918] Browser LOG     [Flow] Loaded cues: 2
+[05:34:05.105] Server  LOG     [GET /api/versions] result {}
+[05:34:05.156] Server  LOG     [GET /api/versions] result {}
+[05:34:05.280] Server  LOG     [GET /api/comments] Request started
+[05:34:05.285] Server  LOG     [GET /api/projects] Found 0 "shared projects"
+[05:34:05.287] Browser LOG     [Flow] Loaded 1 versions for cue d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4
+[05:34:05.287] Browser LOG     [Flow] Loaded 1 versions for cue 572fcffe-ee22-48b1-b525-77f13faf232f
+[05:34:05.296] Server  LOG     [GET /api/comments] Request started
+[05:34:05.534] Browser LOG     [flow-init] /api/projects response 200 {"my_projects":[{"created_at":"2025-12-12T18:34:35.209713+00:00","description":null,"id":"e7b071cb-2a95-488c-afac-70fc44af8104","name":"Dio Ladro","owner_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7","team_id":"cb1a651e-6240-4d49-8f68-fe1b2beae2b8","team_members":[{"joined_at":"2025-12-13T22:35:15.812+00:00","role":"owner","user_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"},{"joined_at":"2025-12-15T04:54:40.657157+00:00","role":"viewer","user_id":"519c4346-cc31-439a-b01e-937660df8f5a"}],"updated_at":"2025-12-13T22:31:40.505272+00:00"}],"projects":[{"created_at":"2025-12-12T18:34:35.209713+00:00","description":null,"id":"e7b071cb-2a95-488c-afac-70fc44af8104","name":"Dio Ladro","owner_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7","team_id":"cb1a651e-6240-4d49-8f68-fe1b2beae2b8","team_members":[{"joined_at":"2025-12-13T22:35:15.812+00:00","role":"owner","user_id":"65e6a4da-631d-4fb2-a1d3-988847890aa7"},{"joined_at":"2025-12-15T04:54:40.657157+00:00","role":"viewer","user_id":"519c4346-cc31-439a-b01e-937660df8f5a"}],"updated_at":"2025-12-13T22:31:40.505272+00:00"}],"shared_with_me":[]}
+[05:34:05.645] Browser LOG     [Flow] cuesWithVersions sample: [{"id":"572fcffe-ee22-48b1-b525-77f13faf232f","isOpen":true,"versions":1},{"id":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","isOpen":true,"versions":1}]
+[05:34:05.645] Browser LOG     [Flow] Project cues loaded successfully
+[05:34:05.828] Browser LOG     [Flow] References sanitized: 0
+[05:34:05.828] Browser LOG     renderCueList: project e7b071cb-2a95-488c-afac-70fc44af8104 cuesCount 2
+[05:34:05.828] Browser LOG     renderCueList: {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:34:05.828] Browser LOG     renderCueList: {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:34:05.828] Browser LOG     renderCueList: project e7b071cb-2a95-488c-afac-70fc44af8104 cuesCount 2
+[05:34:05.828] Browser LOG     renderCueList: {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:34:05.828] Browser LOG     renderCueList: {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","cueIsOpen":true,"detailsOpen":true,"projectActiveCue":"572fcffe-ee22-48b1-b525-77f13faf232f","versions":1}
+[05:34:05.828] Browser LOG     renderCueList: details.toggle {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","detailsOpen":true}
+[05:34:05.828] Browser LOG     renderCueList: details.toggle {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","detailsOpen":true}
+[05:34:05.828] Browser LOG     renderCueList: details.toggle {"cueId":"572fcffe-ee22-48b1-b525-77f13faf232f","detailsOpen":true}
+[05:34:05.828] Browser LOG     renderCueList: details.toggle {"cueId":"d5a15c3f-5fb1-4a9c-a05c-0b6c2dbd45b4","detailsOpen":true}
