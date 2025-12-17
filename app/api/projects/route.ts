@@ -1,262 +1,218 @@
 // app/api/projects/route.ts
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveActorId } from '@/lib/actorResolver';
+/**
+ * Projects API Route
+ *
+ * Secure, professional implementation with:
+ * - Server-side authentication verification
+ * - Proper authorization checks
+ * - Input validation
+ * - Error handling
+ * - Type safety
+ */
 
-type DbProject = {
+import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth, canModifyProject, canAccessProject } from '@/lib/auth';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+type Project = {
   id: string;
   name: string;
   description: string | null;
   created_at: string;
+  updated_at: string;
+  team_id: string | null;
+  owner_id: string | null;
 };
+
+type ProjectWithMembers = Project & {
+  team_members: TeamMember[];
+};
+
+type TeamMember = {
+  user_id: string;
+  role: string;
+  joined_at: string;
+};
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Hydrate projects with team member information
+ */
+async function hydrateProjectsWithTeamMembers(projects: Project[]): Promise<ProjectWithMembers[]> {
+  return Promise.all(
+    projects.map(async (project) => {
+      let teamMembers: TeamMember[] = [];
+
+      if (project.team_id) {
+        try {
+          const { data } = await supabaseAdmin
+            .from('team_members')
+            .select('user_id, role, joined_at')
+            .eq('team_id', project.team_id);
+
+          teamMembers = data || [];
+        } catch (err) {
+          console.warn(`[Projects] Warning loading team_members for project ${project.id}:`, err);
+        }
+      }
+
+      return { ...project, team_members: teamMembers };
+    })
+  );
+}
+
+/**
+ * Get projects owned by user
+ */
+async function getOwnedProjects(userId: string): Promise<Project[]> {
+  const { data, error } = await supabaseAdmin
+    .from('projects')
+    .select('*')
+    .eq('owner_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[Projects] Error loading owned projects:', error);
+    throw new Error(`Failed to load owned projects: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Get projects shared with user
+ */
+async function getSharedProjects(userId: string, ownedProjectIds: string[]): Promise<Project[]> {
+  // Get project IDs from project_members
+  const { data: membershipRows, error: membershipError } = await supabaseAdmin
+    .from('project_members')
+    .select('project_id')
+    .eq('member_id', userId);
+
+  if (membershipError) {
+    console.error('[Projects] Error loading project memberships:', membershipError);
+    throw new Error(`Failed to load project memberships: ${membershipError.message}`);
+  }
+
+  const projectIdsFromMembership = (membershipRows || [])
+    .map(r => r.project_id)
+    .filter(Boolean);
+
+  // Get team IDs for user
+  const { data: teamRows, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId);
+
+  if (teamError) {
+    console.error('[Projects] Error loading team memberships:', teamError);
+    throw new Error(`Failed to load team memberships: ${teamError.message}`);
+  }
+
+  const teamIds = (teamRows || []).map(t => t.team_id).filter(Boolean);
+
+  // Get project IDs from teams
+  let projectIdsFromTeams: string[] = [];
+  if (teamIds.length > 0) {
+    const { data: teamProjects, error: teamProjectsError } = await supabaseAdmin
+      .from('projects')
+      .select('id')
+      .in('team_id', teamIds);
+
+    if (teamProjectsError) {
+      console.error('[Projects] Error loading team projects:', teamProjectsError);
+      throw new Error(`Failed to load team projects: ${teamProjectsError.message}`);
+    }
+
+    projectIdsFromTeams = (teamProjects || []).map(p => p.id).filter(Boolean);
+  }
+
+  // Combine and deduplicate, excluding owned projects
+  const allSharedIds = new Set([...projectIdsFromMembership, ...projectIdsFromTeams]);
+  const ownedIdsSet = new Set(ownedProjectIds);
+  const finalSharedIds = Array.from(allSharedIds).filter(id => !ownedIdsSet.has(id));
+
+  if (finalSharedIds.length === 0) {
+    return [];
+  }
+
+  // Fetch shared projects
+  const { data: sharedProjects, error: sharedError } = await supabaseAdmin
+    .from('projects')
+    .select('*')
+    .in('id', finalSharedIds)
+    .order('created_at', { ascending: false});
+
+  if (sharedError) {
+    console.error('[Projects] Error loading shared projects:', sharedError);
+    throw new Error(`Failed to load shared projects: ${sharedError.message}`);
+  }
+
+  return sharedProjects || [];
+}
+
+// ============================================================================
+// API ROUTES
+// ============================================================================
 
 /**
  * GET /api/projects
- * Ritorna la lista dei progetti da Supabase
- * Usa il service role per bypassare RLS
+ *
+ * Returns user's owned and shared projects
+ * Requires: Authentication
+ * Returns: { my_projects: Project[], shared_with_me: Project[], projects: Project[] }
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     console.log('[GET /api/projects] Request started');
 
-    // Quick debug: log incoming host and auth headers (no secrets printed)
-    const url = new URL(req.url);
-    const isDebug = url.searchParams.get('debug') === '1' || req.headers.get('x-debug') === '1';
-    console.log('[GET /api/projects] Fetching projects from Supabase... host=', url.host, 'debug=', isDebug);
-    if (isDebug) {
-      console.log('[GET /api/projects] Incoming headers (x-actor-id, authorization present):', {
-        'x-actor-id': Boolean(req.headers.get('x-actor-id')),
-        'authorization_present': Boolean(req.headers.get('authorization'))
-      });
-    }
-    
-    // If caller provides an actor id (x-actor-id) return two lists: my_projects and shared_with_me
-    let actorId = req.headers.get('x-actor-id');
-    // If header contains an email or non-UUID, try to resolve it to a UID
-    if (actorId) {
-      const resolved = await resolveActorId(actorId);
-      if (resolved) actorId = resolved;
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[GET /api/projects] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
     }
 
-    // If no explicit actor id, try Authorization Bearer token
-    if (!actorId) {
-      const authHeader = req.headers.get('authorization') || '';
-      if (authHeader.toLowerCase().startsWith('bearer ')) {
-        const token = authHeader.split(' ')[1];
-        try {
-          const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token as string);
-          if (!verifyErr && verified?.user?.id) actorId = verified.user.id;
-          else console.warn('[GET /api/projects] auth.getUser failed', verifyErr?.message || verifyErr);
-        } catch (e) {
-          console.warn('[GET /api/projects] token verification error', e?.message || e);
-        }
-      }
-    }
+    const userId = auth.userId;
+    console.log('[GET /api/projects] Authenticated user:', userId);
 
-    // If still no actorId, try to extract an access token from cookies (common cookie names)
-    if (!actorId) {
-      try {
-        const cookieHeader = req.headers.get('cookie') || '';
-        if (cookieHeader) {
-          // Common Supabase cookie names and patterns
-          const keys = ['sb-access-token', 'supabase-auth-token', 'access_token', 'token', 'sb:token'];
-          const pairs = cookieHeader.split(';').map(s => s.trim());
-          for (const pair of pairs) {
-            const eq = pair.indexOf('=');
-            if (eq === -1) continue;
-            const k = pair.substring(0, eq).trim();
-            const v = pair.substring(eq + 1).trim();
-            if (keys.includes(k) && v) {
-              // cookie may be URL encoded or JSON; try to parse JSON
-              let cand = v;
-              try {
-                cand = decodeURIComponent(v);
-              } catch (e) {}
-              if (cand.startsWith('{')) {
-                try {
-                  const parsed = JSON.parse(cand);
-                  // supabase session shapes may contain access_token
-                  if (parsed?.access_token) {
-                    const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(parsed.access_token);
-                    if (!verifyErr && verified?.user?.id) { actorId = verified.user.id; break; }
-                  }
-                } catch (e) {}
-              } else {
-                // try token-like string
-                const jwtMatch = cand.match(/([A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+)/);
-                const token = jwtMatch ? jwtMatch[1] : cand;
-                try {
-                  const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token as string);
-                  if (!verifyErr && verified?.user?.id) { actorId = verified.user.id; break; }
-                } catch (e) {}
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // ignore cookie parsing issues
-      }
-    }
+    // Fetch owned projects
+    const ownedProjects = await getOwnedProjects(userId);
+    console.log('[GET /api/projects] Found', ownedProjects.length, 'owned projects');
 
-    if (!actorId) {
-      console.log('[GET /api/projects] No actor header or valid token provided — returning public projects list');
-    } else {
-      console.log('[GET /api/projects] Resolved actorId=', actorId);
-    }
+    // Fetch shared projects
+    const ownedProjectIds = ownedProjects.map(p => p.id);
+    const sharedProjects = await getSharedProjects(userId, ownedProjectIds);
+    console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
 
-    if (actorId) {
-      // My projects: where owner_id == actorId
-      const { data: myProjects, error: myErr } = await supabaseAdmin
-        .from('projects')
-        .select('*')
-        .eq('owner_id', actorId)
-        .order('created_at', { ascending: false });
+    // Hydrate with team member info
+    const myProjectsHydrated = await hydrateProjectsWithTeamMembers(ownedProjects);
+    const sharedProjectsHydrated = await hydrateProjectsWithTeamMembers(sharedProjects);
 
-      if (myErr) {
-        console.error('[GET /api/projects] Error loading my projects:', myErr);
-        return NextResponse.json({ error: myErr.message }, { status: 500 });
-      }
+    // Combine for backward compatibility
+    const allProjects = [...myProjectsHydrated, ...sharedProjectsHydrated];
 
-      // Shared: projects where user is in project_members OR is member of a team that owns the project,
-      // excluding projects the user already owns
-      // 1) project_members
-      const { data: pmRows, error: pmErr } = await supabaseAdmin
-        .from('project_members')
-        .select('project_id, role')
-        .eq('member_id', actorId);
+    return NextResponse.json({
+      my_projects: myProjectsHydrated,
+      shared_with_me: sharedProjectsHydrated,
+      projects: allProjects, // Backward compatibility
+    }, { status: 200 });
 
-      if (pmErr) {
-        console.error('[GET /api/projects] Error loading project_members:', pmErr);
-        return NextResponse.json({ error: pmErr.message }, { status: 500 });
-      }
-
-      const projectIdsFromMembers = (pmRows || []).map((r: any) => r.project_id).filter(Boolean);
-
-      // 2) team_members -> collect team ids
-      const { data: tmRows, error: tmErr } = await supabaseAdmin
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', actorId);
-
-      if (tmErr) {
-        console.error('[GET /api/projects] Error loading team_members:', tmErr);
-        return NextResponse.json({ error: tmErr.message }, { status: 500 });
-      }
-
-      const teamIds = (tmRows || []).map((t: any) => t.team_id).filter(Boolean);
-
-      // Collect shared project ids from team membership
-      let projectIdsFromTeams: string[] = [];
-      if (teamIds.length) {
-        const { data: projectsFromTeams, error: pftErr } = await supabaseAdmin
-          .from('projects')
-          .select('id')
-          .in('team_id', teamIds);
-
-        if (pftErr) {
-          console.error('[GET /api/projects] Error loading projects for teams:', pftErr);
-          return NextResponse.json({ error: pftErr.message }, { status: 500 });
-        }
-
-        projectIdsFromTeams = (projectsFromTeams || []).map((p: any) => p.id).filter(Boolean);
-      }
-
-      const sharedIdsSet = new Set<string>([...projectIdsFromMembers, ...projectIdsFromTeams]);
-      // Remove projects owned by actor
-      const ownedIds = new Set((myProjects || []).map((p: any) => p.id));
-      const finalSharedIds = Array.from(sharedIdsSet).filter((id) => !ownedIds.has(id));
-
-      let sharedProjects: any[] = [];
-      if (finalSharedIds.length) {
-        const { data: sp, error: spErr } = await supabaseAdmin
-          .from('projects')
-          .select('*')
-          .in('id', finalSharedIds)
-          .order('created_at', { ascending: false });
-
-        if (spErr) {
-          console.error('[GET /api/projects] Error loading shared projects:', spErr);
-          return NextResponse.json({ error: spErr.message }, { status: 500 });
-        }
-
-        sharedProjects = sp || [];
-      }
-
-      // For each project include team_members minimal info
-      const hydrate = async (projectsList: any[]) => {
-        return Promise.all(
-          (projectsList || []).map(async (project) => {
-            let teamMembersData: any[] = [];
-            try {
-              if (project.team_id) {
-                const { data } = await supabaseAdmin
-                  .from('team_members')
-                  .select('user_id, role, joined_at')
-                  .eq('team_id', project.team_id);
-                teamMembersData = data || [];
-              }
-            } catch (e: any) {
-              console.warn('[GET /api/projects] Warning loading team_members for project', project.id, e?.message || e);
-            }
-            return { ...project, team_members: teamMembersData };
-          })
-        );
-      };
-
-      const myProjectsHydrated = await hydrate(myProjects || []);
-      const sharedHydrated = await hydrate(sharedProjects || []);
-
-      // Maintain backward compatibility: include a combined `projects` array
-      const combined = [...(myProjectsHydrated || []), ...(sharedHydrated || [])];
-
-      const body = { my_projects: myProjectsHydrated, shared_with_me: sharedHydrated, projects: combined };
-      if (isDebug) body['__debug'] = { resolved_actor_id: actorId };
-      return NextResponse.json(body, { status: 200 });
-    }
-
-    // Fallback: return all projects (existing behavior)
-    const { data: projectsData, error: projectsError } = await supabaseAdmin
-      .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (projectsError) {
-      console.error('[GET /api/projects] Error loading projects:', projectsError);
-      return NextResponse.json({ error: projectsError.message, code: projectsError.code }, { status: 500 });
-    }
-
-    const projects = await Promise.all(
-          (projectsData || []).map(async (project: any) => {
-        let teamMembersData: any[] = [];
-        try {
-          if (project.team_id) {
-            const { data } = await supabaseAdmin
-              .from('team_members')
-              .select('user_id, role, joined_at')
-              .eq('team_id', project.team_id);
-            teamMembersData = data || [];
-          }
-        } catch (e: any) {
-          console.warn('[GET /api/projects] Warning loading team_members for project', project.id, e?.message || e);
-        }
-
-        return { ...project, team_members: teamMembersData };
-      })
-    );
-
-    const respBody: any = { projects };
-    if (isDebug) respBody['__debug'] = { resolved_actor_id: null };
-    return NextResponse.json(respBody, { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err: any) {
-    console.error("[GET /api/projects] Exception:", {
-      message: err?.message,
-      stack: err?.stack
-    });
+    console.error('[GET /api/projects] Error:', err);
     return NextResponse.json(
-      {
-        error: err?.message || "Errore imprevisto",
-        details: String(err),
-      },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
@@ -264,89 +220,78 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/projects
- * Crea un nuovo progetto su Supabase
- * Body JSON: { title: string, description?: string, team_id: string }
+ *
+ * Creates a new project
+ * Requires: Authentication
+ * Body: { name: string, description?: string, team_id?: string }
+ * Returns: { project: Project }
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.text();
+    console.log('[POST /api/projects] Request started');
 
-    if (!rawBody) {
-      console.error("[POST /api/projects] Empty request body");
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[POST /api/projects] Unauthorized request');
       return NextResponse.json(
-        { error: "Empty request body" },
-        { status: 400 }
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
       );
     }
 
+    const userId = auth.userId;
+
+    // Parse and validate request body
     let body: any;
     try {
-      body = JSON.parse(rawBody);
+      body = await req.json();
     } catch (err) {
-      console.error(
-        "[POST /api/projects] JSON parse error",
-        err,
-        "RAW:",
-        rawBody
-      );
+      console.error('[POST /api/projects] Invalid JSON:', err);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: 'Invalid JSON in request body' },
         { status: 400 }
       );
     }
 
-    const rawName = typeof body.name === "string" ? body.name : "";
-    const rawDescription =
-      typeof body.description === "string" ? body.description : "";
-    let teamId = typeof body.team_id === "string" ? body.team_id : "";
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    let teamId = typeof body.team_id === 'string' ? body.team_id : 'auto';
 
-    const name = rawName.trim();
-    const description = rawDescription.trim();
-
+    // Validate required fields
     if (!name) {
       return NextResponse.json(
-        { error: "Name is required" },
+        { error: 'Project name is required' },
         { status: 400 }
       );
     }
 
-    // Determine actor (owner) from Authorization or x-actor-id header
-    let actorId = req.headers.get('x-actor-id') || null;
-    try {
-      const authHeader = req.headers.get('authorization') || '';
-      if (authHeader.toLowerCase().startsWith('bearer ')) {
-        const token = authHeader.split(' ')[1];
-        if (token) {
-          const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
-          if (!verifyErr && verified?.user?.id) actorId = verified.user.id;
-          else console.warn('[/api/projects] auth.getUser failed', verifyErr);
-        }
-      }
-    } catch (e) {
-      console.warn('[/api/projects] token verification error', e);
-    }
+    // Handle auto team assignment
+    if (teamId === 'auto') {
+      console.log('[POST /api/projects] Auto-assigning team');
 
-    // If team_id is 'auto' or missing, get first team from DB or create one
-    if (!teamId || teamId === 'auto') {
-      console.log('[POST /api/projects] Auto-creating workspace');
-      
-      // Try to find existing team
-      const { data: existingTeams } = await supabaseAdmin
-        .from('teams')
-        .select('id')
-        .limit(1);
-      
-      if (existingTeams && existingTeams.length > 0) {
-        teamId = existingTeams[0].id;
+      // Find user's first team
+      const { data: userTeams } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single();
+
+      if (userTeams?.team_id) {
+        teamId = userTeams.team_id;
         console.log('[POST /api/projects] Using existing team:', teamId);
       } else {
-        // Create new team
+        // Create personal workspace
         const { data: newTeam, error: teamError } = await supabaseAdmin
           .from('teams')
-          .insert({ name: 'Personal Workspace', owner_id: actorId || 'system' })
+          .insert({
+            name: 'My Workspace',
+            owner_id: userId
+          })
           .select()
           .single();
-        
+
         if (teamError) {
           console.error('[POST /api/projects] Error creating team:', teamError);
           return NextResponse.json(
@@ -354,52 +299,64 @@ export async function POST(req: Request) {
             { status: 500 }
           );
         }
-        
+
         teamId = newTeam.id;
         console.log('[POST /api/projects] Created new team:', teamId);
+
+        // Add user as team member
+        await supabaseAdmin
+          .from('team_members')
+          .insert({
+            team_id: teamId,
+            user_id: userId,
+            role: 'admin'
+          });
       }
     }
 
-    // Include owner_id if we determined an actor
-    const projectInsert: any = { name, description: description || null, team_id: teamId };
-    if (actorId) projectInsert.owner_id = actorId;
-
-    const { data, error } = await supabaseAdmin
-      .from("projects")
-      .insert(projectInsert)
-      .select("id, name, description, created_at, team_id, owner_id")
+    // Create project
+    const { data: project, error: createError } = await supabaseAdmin
+      .from('projects')
+      .insert({
+        name,
+        description: description || null,
+        team_id: teamId,
+        owner_id: userId
+      })
+      .select()
       .single();
 
-    if (error) {
-      console.error("[POST /api/projects] Supabase insert error", error);
+    if (createError) {
+      console.error('[POST /api/projects] Error creating project:', createError);
       return NextResponse.json(
-        {
-          error:
-            error.message || "Errore nella creazione del progetto su Supabase",
-          details: error,
-        },
+        { error: `Failed to create project: ${createError.message}` },
         { status: 500 }
       );
     }
 
-    // If we created the project and we know the owner, add membership row
+    // Add creator as project member
     try {
-      if (actorId && data?.id) {
-        await supabaseAdmin.from('project_members').upsert({ project_id: data.id, member_id: actorId, role: 'owner', added_by: actorId }, { onConflict: '(project_id, member_id)' });
-      }
-    } catch (e) {
-      console.warn('[POST /api/projects] Warning adding project_members for owner', e);
+      await supabaseAdmin
+        .from('project_members')
+        .upsert({
+          project_id: project.id,
+          member_id: userId,
+          role: 'owner',
+          added_by: userId
+        }, {
+          onConflict: 'project_id,member_id'
+        });
+    } catch (err) {
+      console.warn('[POST /api/projects] Warning adding project membership:', err);
     }
 
-    return NextResponse.json({ project: data as DbProject }, { status: 201 });
+    console.log('[POST /api/projects] Project created:', project.id);
+    return NextResponse.json({ project }, { status: 201 });
+
   } catch (err: any) {
-    console.error("[POST /api/projects] Unexpected error", err);
+    console.error('[POST /api/projects] Error:', err);
     return NextResponse.json(
-      {
-        error:
-          err?.message || "Errore imprevisto nella creazione del progetto",
-        details: String(err),
-      },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
@@ -407,112 +364,96 @@ export async function POST(req: Request) {
 
 /**
  * PATCH /api/projects
- * Aggiorna titolo e descrizione
- * Body JSON: { id: string, title?: string, description?: string }
+ *
+ * Updates a project's name or description
+ * Requires: Authentication + ownership/admin permission
+ * Body: { id: string, name?: string, description?: string }
+ * Returns: { project: Project }
  */
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
   try {
-    const rawBody = await req.text();
+    console.log('[PATCH /api/projects] Request started');
 
-    if (!rawBody) {
-      console.error("[PATCH /api/projects] Empty request body");
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[PATCH /api/projects] Unauthorized request');
       return NextResponse.json(
-        { error: "Empty request body" },
-        { status: 400 }
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
       );
     }
 
+    const userId = auth.userId;
+
+    // Parse and validate request body
     let body: any;
     try {
-      body = JSON.parse(rawBody);
+      body = await req.json();
     } catch (err) {
-      console.error(
-        "[PATCH /api/projects] JSON parse error",
-        err,
-        "RAW:",
-        rawBody
-      );
+      console.error('[PATCH /api/projects] Invalid JSON:', err);
       return NextResponse.json(
-        { error: "Invalid JSON body" },
+        { error: 'Invalid JSON in request body' },
         { status: 400 }
       );
     }
 
-    const id = typeof body.id === "string" ? body.id : "";
-    const rawName = typeof body.name === "string" ? body.name : "";
-    const rawDescription =
-      typeof body.description === "string" ? body.description : "";
-    const deleteCueId = typeof body.deleteCueId === "string" ? body.deleteCueId : "";
+    const projectId = typeof body.id === 'string' ? body.id.trim() : '';
+    const name = typeof body.name === 'string' ? body.name.trim() : null;
+    const description = typeof body.description === 'string' ? body.description.trim() : null;
 
-    if (!id) {
+    if (!projectId) {
       return NextResponse.json(
-        { error: "id is required" },
+        { error: 'Project ID is required' },
         { status: 400 }
       );
     }
 
-    // Handle cue deletion
-    if (deleteCueId) {
-      console.log("[PATCH /api/projects] Deleting cue:", deleteCueId);
-      const { error: deleteError } = await supabaseAdmin
-        .from("cues")
-        .delete()
-        .eq("id", deleteCueId)
-        .eq("project_id", id);
-
-      if (deleteError) {
-        console.error("[PATCH /api/projects] Supabase cue delete error", deleteError);
-        return NextResponse.json(
-          {
-            error: deleteError.message || "Errore nella cancellazione della cue",
-            details: deleteError,
-          },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ success: true, message: "Cue deleted" }, { status: 200 });
+    // SECURITY: Check if user can modify this project
+    const canModify = await canModifyProject(userId, projectId);
+    if (!canModify) {
+      console.log('[PATCH /api/projects] User not authorized to modify project');
+      return NextResponse.json(
+        { error: 'Forbidden - you do not have permission to modify this project' },
+        { status: 403 }
+      );
     }
 
-    const update: { name?: string; description?: string | null } = {};
+    // Build update object
+    const updates: any = {};
+    if (name !== null) updates.name = name;
+    if (description !== null) updates.description = description;
 
-    if (rawName.trim()) update.name = rawName.trim();
-    if (rawDescription.trim()) update.description = rawDescription.trim();
-
-    if (!Object.keys(update).length) {
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
-        { error: "Nothing to update" },
+        { error: 'Nothing to update' },
         { status: 400 }
       );
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("projects")
-      .update(update)
-      .eq("id", id)
-      .select("id, name, description, created_at")
+    // Update project
+    const { data: project, error: updateError } = await supabaseAdmin
+      .from('projects')
+      .update(updates)
+      .eq('id', projectId)
+      .select()
       .single();
 
-    if (error) {
-      console.error("[PATCH /api/projects] Supabase update error", error);
+    if (updateError) {
+      console.error('[PATCH /api/projects] Error updating project:', updateError);
       return NextResponse.json(
-        {
-          error: error.message || "Errore nell'aggiornamento del progetto",
-          details: error,
-        },
+        { error: `Failed to update project: ${updateError.message}` },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ project: data as DbProject }, { status: 200 });
+    console.log('[PATCH /api/projects] Project updated:', projectId);
+    return NextResponse.json({ project }, { status: 200 });
+
   } catch (err: any) {
-    console.error("[PATCH /api/projects] Unexpected error", err);
+    console.error('[PATCH /api/projects] Error:', err);
     return NextResponse.json(
-      {
-        error:
-          err?.message || "Errore imprevisto nell'aggiornamento del progetto",
-        details: String(err),
-      },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
@@ -520,67 +461,79 @@ export async function PATCH(req: Request) {
 
 /**
  * DELETE /api/projects
- * Cancella un progetto.
- * Può ricevere l'id sia nel body JSON { id } sia come query string ?id=...
+ *
+ * Deletes a project
+ * Requires: Authentication + ownership/admin permission
+ * Query: ?id=<project_id> OR Body: { id: string }
+ * Returns: { success: true }
  */
-export async function DELETE(req: Request) {
+export async function DELETE(req: NextRequest) {
   try {
+    console.log('[DELETE /api/projects] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[DELETE /api/projects] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const userId = auth.userId;
+
+    // Get project ID from query or body
     const url = new URL(req.url);
-    const queryId = url.searchParams.get("id") ?? "";
+    let projectId = url.searchParams.get('id') || '';
 
-    const rawBody = await req.text();
-
-    let body: any = null;
-    if (rawBody) {
+    if (!projectId) {
       try {
-        body = JSON.parse(rawBody);
+        const body = await req.json();
+        projectId = typeof body.id === 'string' ? body.id.trim() : '';
       } catch (err) {
-        console.error(
-          "[DELETE /api/projects] JSON parse error",
-          err,
-          "RAW:",
-          rawBody
-        );
-        // Se il body è invalido ma abbiamo queryId, possiamo comunque procedere.
+        // Body parsing failed, continue with empty projectId
       }
     }
 
-    const bodyId =
-      body && typeof body.id === "string" ? body.id.trim() : "";
-
-    const id = bodyId || queryId;
-
-    if (!id) {
+    if (!projectId) {
       return NextResponse.json(
-        { error: "id is required" },
+        { error: 'Project ID is required' },
         { status: 400 }
       );
     }
 
-    const { error } = await supabaseAdmin.from("projects").delete().eq("id", id);
-
-    if (error) {
-      console.error("[DELETE /api/projects] Supabase delete error", error);
+    // SECURITY: Check if user can modify this project
+    const canModify = await canModifyProject(userId, projectId);
+    if (!canModify) {
+      console.log('[DELETE /api/projects] User not authorized to delete project');
       return NextResponse.json(
-        {
-          error:
-            error.message || "Errore nella cancellazione del progetto",
-          details: error,
-        },
+        { error: 'Forbidden - you do not have permission to delete this project' },
+        { status: 403 }
+      );
+    }
+
+    // Delete project (cascade will handle related records)
+    const { error: deleteError } = await supabaseAdmin
+      .from('projects')
+      .delete()
+      .eq('id', projectId);
+
+    if (deleteError) {
+      console.error('[DELETE /api/projects] Error deleting project:', deleteError);
+      return NextResponse.json(
+        { error: `Failed to delete project: ${deleteError.message}` },
         { status: 500 }
       );
     }
 
+    console.log('[DELETE /api/projects] Project deleted:', projectId);
     return NextResponse.json({ success: true }, { status: 200 });
+
   } catch (err: any) {
-    console.error("[DELETE /api/projects] Unexpected error", err);
+    console.error('[DELETE /api/projects] Error:', err);
     return NextResponse.json(
-      {
-        error:
-          err?.message ||
-          "Errore imprevisto nella cancellazione del progetto",
-        details: String(err),
-      },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }

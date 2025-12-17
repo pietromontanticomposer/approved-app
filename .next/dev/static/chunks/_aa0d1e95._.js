@@ -1074,13 +1074,38 @@ function Page() {
   `;
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
         children: [
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
+                id: "initialize-stub",
+                strategy: "beforeInteractive",
+                dangerouslySetInnerHTML: {
+                    __html: `
+            // Ensure initializer stubs exist early to avoid race when scripts load
+            window.initializeFromSupabase = window.initializeFromSupabase || (async function(){
+              console.warn('[InitStub] initializeFromSupabase called before implementation');
+            });
+            window.safeFetchProjectsFallback = window.safeFetchProjectsFallback || (async function(){
+              console.warn('[InitStub] safeFetchProjectsFallback called before implementation');
+              try {
+                const res = await fetch('/api/projects?debug=1', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+                if (res.ok) return res.json();
+              } catch (e) {
+                console.warn('[InitStub] fallback fetch failed', e);
+              }
+            });
+          `
+                }
+            }, void 0, false, {
+                fileName: "[project]/app/page.tsx",
+                lineNumber: 273,
+                columnNumber: 7
+            }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                 dangerouslySetInnerHTML: {
                     __html: html
                 }
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 273,
+                lineNumber: 294,
                 columnNumber: 7
             }, this),
             shareData && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$app$2f$components$2f$ShareModal$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1091,7 +1116,7 @@ function Page() {
                 teamId: shareData.teamId
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 277,
+                lineNumber: 298,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1099,7 +1124,7 @@ function Page() {
                 strategy: "beforeInteractive"
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 286,
+                lineNumber: 307,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1107,7 +1132,7 @@ function Page() {
                 strategy: "beforeInteractive"
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 290,
+                lineNumber: 311,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1115,7 +1140,7 @@ function Page() {
                 strategy: "afterInteractive"
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 294,
+                lineNumber: 315,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1123,7 +1148,7 @@ function Page() {
                 strategy: "afterInteractive"
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 295,
+                lineNumber: 316,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1169,12 +1194,36 @@ function Page() {
                                         console.warn('[PageInit] Error checking pending share/invite', e);
                                     }
                                     // Defer heavy bootstrap until auth is ready
-                                    if (typeof window.initializeFromSupabase === 'function') {
-                                        console.log('[PageInit] Calling initializeFromSupabase...');
-                                        window.initializeFromSupabase();
-                                    } else {
-                                        console.warn('[PageInit] initializeFromSupabase NOT FOUND');
-                                    }
+                                    // Try to call the main initializer; if not present, attempt
+                                    // the safe fallback exposed by `flow-init.js`. If neither is
+                                    // available yet, wait briefly and retry for robustness.
+                                    const callInitOrFallback = async ()=>{
+                                        if (typeof window.initializeFromSupabase === 'function') {
+                                            console.log('[PageInit] Calling initializeFromSupabase...');
+                                            window.initializeFromSupabase();
+                                            return;
+                                        }
+                                        if (typeof window.safeFetchProjectsFallback === 'function') {
+                                            console.log('[PageInit] initializeFromSupabase not found - calling safeFetchProjectsFallback');
+                                            try {
+                                                await window.safeFetchProjectsFallback();
+                                                return;
+                                            } catch (e) {
+                                                console.warn('[PageInit] safeFetchProjectsFallback failed', e);
+                                            }
+                                        }
+                                        // Retry a couple of times in case scripts are still loading
+                                        for(let i = 0; i < 6; i++){
+                                            await new Promise((r)=>setTimeout(r, 250));
+                                            if (typeof window.initializeFromSupabase === 'function') {
+                                                console.log('[PageInit] initializeFromSupabase became available - calling it');
+                                                window.initializeFromSupabase();
+                                                return;
+                                            }
+                                        }
+                                        console.warn('[PageInit] initializeFromSupabase NOT FOUND after retries');
+                                    };
+                                    callInitOrFallback().catch((e)=>console.error('[PageInit] init/fallback error', e));
                                 }
                             } else {
                                 console.error('[PageInit] flowAuth.initAuth not found');
@@ -1191,7 +1240,15 @@ function Page() {
                 }
             }, void 0, false, {
                 fileName: "[project]/app/page.tsx",
-                lineNumber: 296,
+                lineNumber: 317,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$script$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
+                src: "/flow-init.js",
+                strategy: "afterInteractive"
+            }, void 0, false, {
+                fileName: "[project]/app/page.tsx",
+                lineNumber: 414,
                 columnNumber: 7
             }, this)
         ]

@@ -70,8 +70,8 @@ function InvitePage() {
                 setLoading(false);
                 return;
             }
-            const resolvedInvite1 = Array.isArray(inviteData) ? inviteData[0] : inviteData;
-            setInvite(resolvedInvite1);
+            const resolvedInvite = Array.isArray(inviteData) ? inviteData[0] : inviteData;
+            setInvite(resolvedInvite);
             setLoading(false);
         } catch (err) {
             console.error("Error initializing invite:", err);
@@ -112,8 +112,8 @@ function InvitePage() {
             setSuccess(true);
             // If invite contains a project_id, instruct app to open that project after redirect
             try {
-                if (resolvedInvite && resolvedInvite.project_id) {
-                    localStorage.setItem('open_project', resolvedInvite.project_id);
+                if (invite && invite.project_id) {
+                    localStorage.setItem('open_project', invite.project_id);
                 }
             } catch (e) {
                 console.warn('[Invite] Could not set open_project', e);

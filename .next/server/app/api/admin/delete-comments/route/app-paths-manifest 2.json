@@ -1,0 +1,3 @@
+{
+  "/api/admin/delete-comments/route": "app/api/admin/delete-comments/route.js"
+}

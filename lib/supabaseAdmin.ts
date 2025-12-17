@@ -30,7 +30,7 @@ if (supabaseUrl && supabaseServiceKey) {
   function clone(obj: any) { return JSON.parse(JSON.stringify(obj)); }
 
   function createFrom(tableName: string) {
-    let q: any = {
+    const q: any = {
       _table: tableName,
       _select: '*',
       _where: [] as Array<{k:string,v:any}>,
@@ -67,7 +67,7 @@ if (supabaseUrl && supabaseServiceKey) {
           eq: async (k: string, v: any) => {
             const rows = db[tableName] || [];
             let updatedCount = 0;
-            for (let r of rows) {
+            for (const r of rows) {
               if (q._where.every(w => String(r[w.k]) === String(w.v)) && String(r[k]) === String(v)) {
                 Object.assign(r, payload);
                 updatedCount++;

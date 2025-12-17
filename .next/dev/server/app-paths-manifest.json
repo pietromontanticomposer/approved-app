@@ -1,11 +1,10 @@
 {
   "/account/page": "app/account/page.js",
+  "/api/comments/route": "app/api/comments/route.js",
   "/api/cues/route": "app/api/cues/route.js",
   "/api/media/stream/route": "app/api/media/stream/route.js",
   "/api/projects/route": "app/api/projects/route.js",
-  "/api/projects/share/route": "app/api/projects/share/route.js",
   "/api/references/route": "app/api/references/route.js",
-  "/api/share/details/route": "app/api/share/details/route.js",
   "/api/versions/route": "app/api/versions/route.js",
   "/login/page": "app/login/page.js",
   "/page": "app/page.js"

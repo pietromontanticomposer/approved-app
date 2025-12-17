@@ -110,6 +110,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/admin/delete-comments/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/delete-comments">> = Specific
+  const handler = {} as typeof import("../../../app/api/admin/delete-comments/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/comments/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/comments">> = Specific
@@ -123,6 +132,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/cues">> = Specific
   const handler = {} as typeof import("../../../app/api/cues/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/debug/supabase/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/debug/supabase">> = Specific
+  const handler = {} as typeof import("../../../app/api/debug/supabase/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

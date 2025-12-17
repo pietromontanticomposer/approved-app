@@ -4,7 +4,7 @@
     "/api/projects/save": {},
     "/api/media/stream": {},
     "/api/versions/update": {},
-    "/api/upload": {},
-    "/api/versions/create": {}
+    "/api/versions/create": {},
+    "/api/upload": {}
   }
 }

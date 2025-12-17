@@ -94,7 +94,7 @@ if (supabaseUrl && supabaseServiceKey) {
         return JSON.parse(JSON.stringify(obj));
     }
     function createFrom(tableName) {
-        let q = {
+        const q = {
             _table: tableName,
             _select: '*',
             _where: [],
@@ -151,7 +151,7 @@ if (supabaseUrl && supabaseServiceKey) {
                     eq: async (k, v)=>{
                         const rows = db[tableName] || [];
                         let updatedCount = 0;
-                        for (let r of rows){
+                        for (const r of rows){
                             if (q._where.every((w)=>String(r[w.k]) === String(w.v)) && String(r[k]) === String(v)) {
                                 Object.assign(r, payload);
                                 updatedCount++;

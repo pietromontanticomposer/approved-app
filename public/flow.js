@@ -3618,25 +3618,94 @@ function renderProjectList() {
       label.style.cursor = 'pointer';
       label.addEventListener('click', () => selectProject(project.id));
 
-      const menuBtn = document.createElement('button');
-      menuBtn.innerHTML = '⋮';
-      menuBtn.className = 'project-item-menu';
-      menuBtn.style.cssText = 'background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#9ca3af;opacity:0.6;flex-shrink:0;';
-      menuBtn.title = 'Project options';
-      menuBtn.addEventListener('mouseenter', () => { menuBtn.style.opacity = '1'; });
-      menuBtn.addEventListener('mouseleave', () => { menuBtn.style.opacity = '0.6'; });
-      menuBtn.addEventListener('click', (e) => {
+      // Reuse the same dropdown markup used by cues so styling/behavior is consistent
+      const dd = document.createElement('div');
+      dd.className = 'download-dropdown project-dropdown';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'icon-btn tiny download-toggle';
+      btn.textContent = '⋯';
+      btn.title = 'Project options';
+
+      const menu = document.createElement('div');
+      menu.className = 'download-menu';
+      menu.innerHTML = `
+        <button data-action="rename">Rename</button>
+        <button data-action="delete">Delete</button>
+      `;
+
+      dd.appendChild(btn);
+      dd.appendChild(menu);
+
+      // Toggle open/close
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        showProjectMenu(e, project);
+        const open = dd.classList.contains('open');
+        document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
+        if (!open) dd.classList.add('open');
       });
-      li.appendChild(menuBtn);
+
+      // Menu actions
+      menu.querySelectorAll('button').forEach(b => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dd.classList.remove('open');
+          const action = b.dataset.action;
+          if (action === 'rename') renameProject(project);
+          if (action === 'delete') deleteProject(project.id);
+        });
+      });
+
+      li.appendChild(dd);
     } else {
-      // For shared projects: entire li and label are clickable (no menu)
+      // For shared projects: keep li clickable, but also show the three-dot menu
       li.style.cursor = 'pointer';
       label.style.cursor = 'pointer';
       const clickHandler = () => selectProject(project.id);
       li.addEventListener('click', clickHandler);
       label.addEventListener('click', clickHandler);
+
+      // For shared projects show the same dropdown markup/behavior as owned projects
+      const ddShared = document.createElement('div');
+      ddShared.className = 'download-dropdown project-dropdown';
+
+      const btnShared = document.createElement('button');
+      btnShared.type = 'button';
+      btnShared.className = 'icon-btn tiny download-toggle';
+      btnShared.textContent = '⋯';
+      btnShared.title = 'Project options';
+
+      const menuShared = document.createElement('div');
+      menuShared.className = 'download-menu';
+      menuShared.innerHTML = `
+        <button data-action="rename">Rename</button>
+        <button data-action="delete">Delete</button>
+      `;
+
+      ddShared.appendChild(btnShared);
+      ddShared.appendChild(menuShared);
+
+      // Toggle open/close for shared project menu
+      btnShared.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = ddShared.classList.contains('open');
+        document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
+        if (!open) ddShared.classList.add('open');
+      });
+
+      // Menu actions for shared projects (same as owned)
+      menuShared.querySelectorAll('button').forEach(b => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          ddShared.classList.remove('open');
+          const action = b.dataset.action;
+          if (action === 'rename') renameProject(project);
+          if (action === 'delete') deleteProject(project.id);
+        });
+      });
+
+      li.appendChild(ddShared);
     }
 
     return li;

@@ -74,6 +74,12 @@
       "namedRegex": "^/account(?:/)?$"
     },
     {
+      "page": "/api/admin/delete-comments",
+      "regex": "^/api/admin/delete\\-comments(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/admin/delete\\-comments(?:/)?$"
+    },
+    {
       "page": "/api/comments",
       "regex": "^/api/comments(?:/)?$",
       "routeKeys": {},
@@ -84,6 +90,12 @@
       "regex": "^/api/cues(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/cues(?:/)?$"
+    },
+    {
+      "page": "/api/debug/supabase",
+      "regex": "^/api/debug/supabase(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/debug/supabase(?:/)?$"
     },
     {
       "page": "/api/invites",
