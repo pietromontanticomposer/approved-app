@@ -1,8 +1,38 @@
 // app/api/comments/route.ts
-import { NextResponse } from "next/server";
+/**
+ * Comments API Route
+ *
+ * Secure implementation with:
+ * - Server-side authentication verification
+ * - Proper authorization checks (user can only edit/delete own comments)
+ * - Input validation
+ * - Error handling
+ * - Type safety
+ */
+
+import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveActorId } from '@/lib/actorResolver';
+import { verifyAuth } from '@/lib/auth';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+type Comment = {
+  id: string;
+  version_id: string;
+  time_seconds: number;
+  author: string | null;
+  actor_id: string | null;
+  text: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 const isUuid = (value: string) =>
   typeof value === "string" &&
@@ -11,18 +41,71 @@ const isUuid = (value: string) =>
   );
 
 /**
- * GET /api/comments?versionId=xxx
- * Ritorna commenti di una versione
+ * Get user display name from auth metadata
  */
-export async function GET(req: Request) {
+async function getUserDisplayName(userId: string): Promise<string | null> {
   try {
+    const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+
+    if (!userData?.user?.user_metadata) {
+      return null;
+    }
+
+    const meta = userData.user.user_metadata as any;
+    const first = meta.first_name || meta.firstName || meta.first || '';
+    const last = meta.last_name || meta.lastName || meta.last || '';
+    const display = meta.display_name || meta.full_name || `${first} ${last}`.trim();
+
+    return display || null;
+  } catch (err) {
+    console.warn('[Comments] Error fetching user metadata:', err);
+    return null;
+  }
+}
+
+// ============================================================================
+// API ROUTES
+// ============================================================================
+
+/**
+ * GET /api/comments?versionId=xxx
+ *
+ * Returns comments for a version
+ * Requires: Authentication (to ensure user has access to the version/project)
+ * Returns: { comments: Comment[] }
+ */
+export async function GET(req: NextRequest) {
+  try {
+    console.log('[GET /api/comments] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[GET /api/comments] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
     const url = new URL(req.url);
     const versionId = url.searchParams.get('versionId');
 
     if (!versionId) {
-      return NextResponse.json({ error: 'versionId required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'versionId query parameter is required' },
+        { status: 400 }
+      );
     }
 
+    if (!isUuid(versionId)) {
+      return NextResponse.json(
+        { error: 'versionId must be a valid UUID' },
+        { status: 400 }
+      );
+    }
+
+    // Fetch comments
     const { data: comments, error } = await supabaseAdmin
       .from("comments")
       .select('*')
@@ -31,22 +114,62 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error("[GET /api/comments] Error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { error: `Failed to fetch comments: ${error.message}` },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ comments: comments || [] }, { status: 200 });
+
   } catch (err: any) {
-    console.error("[GET /api/comments] Exception:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("[GET /api/comments] Error:", err);
+    return NextResponse.json(
+      { error: err?.message || 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
 
-export async function POST(req: Request) {
+/**
+ * POST /api/comments
+ *
+ * Creates a new comment
+ * Requires: Authentication
+ * Body: { version_id: string, time_seconds: number, text: string, author?: string }
+ * Returns: { comment: Comment }
+ */
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    console.log('[POST /api/comments] incoming body:', body);
+    console.log('[POST /api/comments] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[POST /api/comments] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const userId = auth.userId;
+
+    // Parse and validate request body
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (err) {
+      console.error('[POST /api/comments] Invalid JSON:', err);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
     const { version_id, time_seconds, author, text } = body;
 
+    // Validate required fields
     if (!version_id || time_seconds === undefined || !text) {
       return NextResponse.json(
         { error: "version_id, time_seconds, and text are required" },
@@ -56,129 +179,103 @@ export async function POST(req: Request) {
 
     if (!isUuid(version_id)) {
       return NextResponse.json(
-        { error: "version_id must be a UUID" },
+        { error: "version_id must be a valid UUID" },
         { status: 400 }
       );
     }
 
-    // Derive author: prefer explicit body author, but always try to resolve
-    // actor id from headers when available so we can persist ownership.
-    let authorName = author || null;
-    let resolvedActorUid: string | null = null;
-    try {
-      const actorHeader = (req as any).headers?.get
-        ? req.headers.get('x-actor-id') || req.headers.get('x-actor') || null
-        : null;
+    if (typeof time_seconds !== 'number' || time_seconds < 0) {
+      return NextResponse.json(
+        { error: "time_seconds must be a non-negative number" },
+        { status: 400 }
+      );
+    }
 
-      const candidate = actorHeader || null;
-      if (candidate) {
-        const resolvedUid = await resolveActorId(candidate);
-        if (resolvedUid) {
-          resolvedActorUid = resolvedUid;
-          // If author wasn't provided, try to derive it from user metadata
-          if (!authorName) {
-            try {
-              const { data: userRow } = await supabaseAdmin
-                .from('auth.users')
-                .select('id, user_metadata')
-                .eq('id', resolvedUid)
-                .maybeSingle();
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return NextResponse.json(
+        { error: "text must be a non-empty string" },
+        { status: 400 }
+      );
+    }
 
-              if (userRow && userRow.user_metadata) {
-                const meta = userRow.user_metadata as any;
-                const first = meta.first_name || meta.firstName || meta.first || '';
-                const last = meta.last_name || meta.lastName || meta.last || '';
-                const display = meta.display_name || meta.full_name || `${first} ${last}`.trim();
-                if (display) authorName = display;
-              }
-            } catch (e) {
-              // ignore user lookup errors; we'll fall back later
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore resolution errors
+    // Determine author name
+    let authorName = typeof author === 'string' ? author.trim() : null;
+    if (!authorName) {
+      authorName = await getUserDisplayName(userId);
     }
 
     const comment_id = uuidv4();
 
-    // Debug: log incoming actor header and resolved UID to help diagnose null actor_id
-    try {
-      const actorHeaderDbg = (req as any).headers?.get ? req.headers.get('x-actor-id') || req.headers.get('x-actor') || null : null;
-      console.log('[POST /api/comments] actor header:', actorHeaderDbg, 'resolvedActorUid (pre-insert):', resolvedActorUid);
-    } catch (e) {
-      // ignore
-    }
-
-    // Try inserting including actor_id; if the DB schema doesn't yet contain
-    // actor_id (eg. dev instance without latest migrations) retry without it.
-    let data: any = null;
-    let insertError: any = null;
-    try {
-      const res = await supabaseAdmin
-        .from("comments")
-        .insert({
-          id: comment_id,
-          version_id,
-          time_seconds,
-          author: authorName || "Client",
-          actor_id: resolvedActorUid,
-          text,
-        })
-        .select()
-        .single();
-      data = res.data;
-      insertError = res.error;
-    } catch (e: any) {
-      insertError = e;
-    }
-
-    // If the insert failed due to missing actor_id column in schema cache,
-    // retry without actor_id to keep older deployments working.
-    if (insertError) {
-      const msg = (insertError && (insertError.message || insertError.error_description || String(insertError))) || '';
-      if (msg.toLowerCase().includes('actor_id') || msg.toLowerCase().includes('schema cache')) {
-        try {
-          const res2 = await supabaseAdmin
-            .from('comments')
-            .insert({
-              id: comment_id,
-              version_id,
-              time_seconds,
-              author: authorName || 'Client',
-              text,
-            })
-            .select()
-            .single();
-          data = res2.data;
-          insertError = res2.error;
-        } catch (e2: any) {
-          insertError = e2;
-        }
-      }
-    }
+    // Insert comment with verified actor_id
+    const { data, error: insertError } = await supabaseAdmin
+      .from("comments")
+      .insert({
+        id: comment_id,
+        version_id,
+        time_seconds,
+        author: authorName || "User",
+        actor_id: userId, // Verified server-side
+        text: text.trim(),
+      })
+      .select()
+      .single();
 
     if (insertError) {
-      console.error('[POST /api/comments] Supabase error', insertError);
-      return NextResponse.json({ error: insertError.message || JSON.stringify(insertError) }, { status: 500 });
+      console.error('[POST /api/comments] Error creating comment:', insertError);
+      return NextResponse.json(
+        { error: `Failed to create comment: ${insertError.message}` },
+        { status: 500 }
+      );
     }
 
-    console.log('[POST /api/comments] inserted comment:', data);
-
+    console.log('[POST /api/comments] Comment created:', comment_id);
     return NextResponse.json({ comment: data }, { status: 201 });
+
   } catch (err: any) {
-    console.error("[POST /api/comments] Error", err);
+    console.error("[POST /api/comments] Error:", err);
     return NextResponse.json(
-      { error: err.message || "Internal error" },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(req: Request) {
+/**
+ * PATCH /api/comments
+ *
+ * Updates a comment's text
+ * Requires: Authentication + ownership (user must be comment author)
+ * Body: { id: string, text: string }
+ * Returns: { comment: Comment }
+ */
+export async function PATCH(req: NextRequest) {
   try {
-    const body = await req.json();
+    console.log('[PATCH /api/comments] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[PATCH /api/comments] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const userId = auth.userId;
+
+    // Parse and validate request body
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (err) {
+      console.error('[PATCH /api/comments] Invalid JSON:', err);
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
     const { id, text } = body;
 
     if (!id || !text) {
@@ -190,16 +287,19 @@ export async function PATCH(req: Request) {
 
     if (!isUuid(id)) {
       return NextResponse.json(
-        { error: "id must be a UUID" },
+        { error: "id must be a valid UUID" },
         { status: 400 }
       );
     }
 
-    // Resolve actor id from header for authorization
-    const actorHeader = (req as any).headers?.get ? req.headers.get('x-actor-id') || req.headers.get('x-actor') || null : null;
-    const resolvedUid = actorHeader ? await resolveActorId(actorHeader) : null;
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return NextResponse.json(
+        { error: "text must be a non-empty string" },
+        { status: 400 }
+      );
+    }
 
-    // Fetch the comment to check ownership
+    // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
       .select('id, actor_id')
@@ -207,47 +307,90 @@ export async function PATCH(req: Request) {
       .maybeSingle();
 
     if (fetchErr) {
-      console.error('[PATCH /api/comments] Error fetching comment', fetchErr);
-      return NextResponse.json({ error: fetchErr.message || 'Error fetching comment' }, { status: 500 });
+      console.error('[PATCH /api/comments] Error fetching comment:', fetchErr);
+      return NextResponse.json(
+        { error: `Failed to fetch comment: ${fetchErr.message}` },
+        { status: 500 }
+      );
     }
 
     if (!existing) {
-      return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Comment not found' },
+        { status: 404 }
+      );
     }
 
-    // If actor_id is not set on the comment, require migration/backfill
+    // Check if comment has actor_id set
     if (!existing.actor_id) {
-      return NextResponse.json({ error: "Comment does not have an actor_id; run migrations/backfill to enable edits/deletes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Comment does not have an actor_id; backfill required to enable editing" },
+        { status: 403 }
+      );
     }
 
-    if (!resolvedUid || resolvedUid !== existing.actor_id) {
-      return NextResponse.json({ error: 'Not authorized to edit this comment' }, { status: 403 });
+    // Check ownership
+    if (existing.actor_id !== userId) {
+      console.log('[PATCH /api/comments] User not authorized to edit comment');
+      return NextResponse.json(
+        { error: 'Forbidden - you do not have permission to edit this comment' },
+        { status: 403 }
+      );
     }
 
-    const { data, error } = await supabaseAdmin
+    // Update comment
+    const { data, error: updateError } = await supabaseAdmin
       .from("comments")
-      .update({ text })
+      .update({ text: text.trim() })
       .eq("id", id)
       .select()
       .single();
 
-    if (error) {
-      console.error("[PATCH /api/comments] Supabase error", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (updateError) {
+      console.error("[PATCH /api/comments] Error updating comment:", updateError);
+      return NextResponse.json(
+        { error: `Failed to update comment: ${updateError.message}` },
+        { status: 500 }
+      );
     }
 
+    console.log('[PATCH /api/comments] Comment updated:', id);
     return NextResponse.json({ comment: data }, { status: 200 });
+
   } catch (err: any) {
-    console.error("[PATCH /api/comments] Error", err);
+    console.error("[PATCH /api/comments] Error:", err);
     return NextResponse.json(
-      { error: err.message || "Internal error" },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE(req: Request) {
+/**
+ * DELETE /api/comments?id=xxx
+ *
+ * Deletes a comment
+ * Requires: Authentication + ownership (user must be comment author)
+ * Query: ?id=<comment_id>
+ * Returns: { success: true }
+ */
+export async function DELETE(req: NextRequest) {
   try {
+    console.log('[DELETE /api/comments] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      console.log('[DELETE /api/comments] Unauthorized request');
+      return NextResponse.json(
+        { error: 'Unauthorized - authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const userId = auth.userId;
+
+    // Get comment ID from query
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -260,16 +403,12 @@ export async function DELETE(req: Request) {
 
     if (!isUuid(id)) {
       return NextResponse.json(
-        { error: "id must be a UUID" },
+        { error: "id must be a valid UUID" },
         { status: 400 }
       );
     }
 
-    // Resolve actor id from header for authorization
-    const actorHeader = (req as any).headers?.get ? req.headers.get('x-actor-id') || req.headers.get('x-actor') || null : null;
-    const resolvedUid = actorHeader ? await resolveActorId(actorHeader) : null;
-
-    // Fetch the comment to check ownership
+    // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
       .select('id, actor_id')
@@ -277,37 +416,58 @@ export async function DELETE(req: Request) {
       .maybeSingle();
 
     if (fetchErr) {
-      console.error('[DELETE /api/comments] Error fetching comment', fetchErr);
-      return NextResponse.json({ error: fetchErr.message || 'Error fetching comment' }, { status: 500 });
+      console.error('[DELETE /api/comments] Error fetching comment:', fetchErr);
+      return NextResponse.json(
+        { error: `Failed to fetch comment: ${fetchErr.message}` },
+        { status: 500 }
+      );
     }
 
     if (!existing) {
-      return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Comment not found' },
+        { status: 404 }
+      );
     }
 
+    // Check if comment has actor_id set
     if (!existing.actor_id) {
-      return NextResponse.json({ error: "Comment does not have an actor_id; run migrations/backfill to enable edits/deletes" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Comment does not have an actor_id; backfill required to enable deletion" },
+        { status: 403 }
+      );
     }
 
-    if (!resolvedUid || resolvedUid !== existing.actor_id) {
-      return NextResponse.json({ error: 'Not authorized to delete this comment' }, { status: 403 });
+    // Check ownership
+    if (existing.actor_id !== userId) {
+      console.log('[DELETE /api/comments] User not authorized to delete comment');
+      return NextResponse.json(
+        { error: 'Forbidden - you do not have permission to delete this comment' },
+        { status: 403 }
+      );
     }
 
-    const { error } = await supabaseAdmin
+    // Delete comment
+    const { error: deleteError } = await supabaseAdmin
       .from("comments")
       .delete()
       .eq("id", id);
 
-    if (error) {
-      console.error("[DELETE /api/comments] Supabase error", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (deleteError) {
+      console.error("[DELETE /api/comments] Error deleting comment:", deleteError);
+      return NextResponse.json(
+        { error: `Failed to delete comment: ${deleteError.message}` },
+        { status: 500 }
+      );
     }
 
+    console.log('[DELETE /api/comments] Comment deleted:', id);
     return NextResponse.json({ success: true }, { status: 200 });
+
   } catch (err: any) {
-    console.error("[DELETE /api/comments] Error", err);
+    console.error("[DELETE /api/comments] Error:", err);
     return NextResponse.json(
-      { error: err.message || "Internal error" },
+      { error: err?.message || 'Internal server error' },
       { status: 500 }
     );
   }
