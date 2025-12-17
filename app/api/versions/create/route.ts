@@ -1,44 +1,68 @@
-import { NextResponse } from "next/server";
+// app/api/versions/create/route.ts
+/**
+ * Version Create API Route
+ *
+ * Secure implementation with authentication and authorization
+ */
+
+import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth, canModifyProject } from '@/lib/auth';
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+export async function POST(req: NextRequest) {
   try {
+    console.log('[POST /api/versions/create] Request started');
+
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = auth.userId;
     const body = await req.json();
 
-    const {
-      projectId,
-      cueId,
-      cueIndex,
-      cueName,
-      version,
-      versionFiles,
-    } = body as any;
+    const { projectId, cueId, cueIndex, cueName, version, versionFiles } = body as any;
 
-    if (!projectId) {
-      return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+    if (!projectId || !isUuid(projectId)) {
+      return NextResponse.json({ error: "Valid projectId required" }, { status: 400 });
+    }
+
+    // SECURITY: Check project modify permission
+    const canModify = await canModifyProject(userId, projectId);
+    if (!canModify) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Ensure cue exists or create it
     let cue = null;
     if (cueId) {
-      const { data: cueData, error: cueError } = await supabaseAdmin
+      if (!isUuid(cueId)) {
+        return NextResponse.json({ error: "Invalid cueId" }, { status: 400 });
+      }
+      const { data: cueData } = await supabaseAdmin
         .from("cues")
         .select("*")
         .eq("id", cueId)
+        .eq("project_id", projectId) // Verify cue belongs to project
         .maybeSingle();
-      if (cueError) throw cueError;
       cue = cueData;
-    } else {
-      const insertCue = {
-        project_id: projectId,
-        index_in_project: cueIndex ?? 0,
-        name: cueName ?? null,
-      };
+    }
+
+    if (!cue) {
       const { data: newCue, error: newCueError } = await supabaseAdmin
         .from("cues")
-        .insert(insertCue)
+        .insert({
+          project_id: projectId,
+          index_in_project: cueIndex ?? 0,
+          name: cueName ?? null,
+        })
         .select()
         .single();
       if (newCueError) throw newCueError;
@@ -46,60 +70,49 @@ export async function POST(req: Request) {
     }
 
     // Insert version
-    const versionInsert: any = {
-      cue_id: cue.id,
-      index_in_cue: (version && version.index_in_cue) ?? 0,
-      status: (version && version.status) ?? "in-review",
-      media_type: version?.media_type ?? null,
-      media_storage_path: version?.media_storage_path ?? null,
-      media_url: version?.media_url ?? null,
-      media_original_name: version?.media_original_name ?? null,
-      media_display_name: version?.media_display_name ?? null,
-      media_duration: version?.media_duration ?? null,
-      media_thumbnail_path: version?.media_thumbnail_path ?? null,
-      media_thumbnail_url: version?.media_thumbnail_url ?? null,
-    };
-
     const { data: createdVersion, error: createVersionError } = await supabaseAdmin
       .from("versions")
-      .insert(versionInsert)
+      .insert({
+        cue_id: cue.id,
+        index_in_cue: version?.index_in_cue ?? 0,
+        status: version?.status ?? "in-review",
+        media_type: version?.media_type ?? null,
+        media_storage_path: version?.media_storage_path ?? null,
+        media_url: version?.media_url ?? null,
+        media_original_name: version?.media_original_name ?? null,
+        media_display_name: version?.media_display_name ?? null,
+        media_duration: version?.media_duration ?? null,
+        media_thumbnail_path: version?.media_thumbnail_path ?? null,
+        media_thumbnail_url: version?.media_thumbnail_url ?? null,
+      })
       .select()
       .single();
-    if (createVersionError) throw createVersionError;
 
-    // Extract and save waveform peaks asynchronously (don't wait)
-    if (versionInsert.media_url && versionInsert.media_type === "audio") {
-      fetch(`${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/waveform/extract-peaks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          versionId: createdVersion.id,
-          audioUrl: versionInsert.media_url,
-        }),
-      }).catch(err => console.warn("Background peak extraction failed:", err));
-    }
+    if (createVersionError) throw createVersionError;
 
     // Insert associated files if any
     let filesInserted = [];
     if (Array.isArray(versionFiles) && versionFiles.length > 0) {
-      const filesToInsert = versionFiles.map((f: any) => ({
-        version_id: createdVersion.id,
-        name: f.name,
-        type: f.type ?? null,
-        url: f.url ?? null,
-        size: f.size ?? null,
-      }));
-      const { data: insertedFiles, error: filesError } = await supabaseAdmin
+      const { data: insertedFiles } = await supabaseAdmin
         .from("version_files")
-        .insert(filesToInsert)
+        .insert(
+          versionFiles.map((f: any) => ({
+            version_id: createdVersion.id,
+            name: f.name,
+            type: f.type ?? null,
+            url: f.url ?? null,
+            size: f.size ?? null,
+          }))
+        )
         .select();
-      if (filesError) throw filesError;
-      filesInserted = insertedFiles;
+      filesInserted = insertedFiles || [];
     }
 
+    console.log('[POST /api/versions/create] Version created:', createdVersion.id);
     return NextResponse.json({ cue, version: createdVersion, files: filesInserted });
+
   } catch (err: any) {
-    console.error("[POST /api/versions/create]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error("[POST /api/versions/create] Error:", err);
+    return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 });
   }
 }
