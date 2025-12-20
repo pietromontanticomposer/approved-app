@@ -27,9 +27,9 @@ if (supabaseUrl && supabaseServiceKey) {
   };
 
   const { v4: uuidv4 } = require('uuid');
-  function clone(obj: any) { return JSON.parse(JSON.stringify(obj)); }
+  const clone = (obj: any) => JSON.parse(JSON.stringify(obj));
 
-  function createFrom(tableName: string) {
+  const createFrom = (tableName: string) => {
     const q: any = {
       _table: tableName,
       _select: '*',
@@ -97,7 +97,7 @@ if (supabaseUrl && supabaseServiceKey) {
       }
     };
     return q;
-  }
+  };
 
   const fakeAdmin = {
     from: (table: string) => createFrom(table),
@@ -109,4 +109,3 @@ if (supabaseUrl && supabaseServiceKey) {
     "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment. Set APP_ALLOW_FAKE_SUPABASE=1 to enable a local fake client for tests."
   );
 }
-
