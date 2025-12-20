@@ -278,7 +278,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const { id, name, status } = body;
+    const { id, name, status, index_in_project } = body;
 
     if (!id || !isUuid(id)) {
       return NextResponse.json(
@@ -323,6 +323,16 @@ export async function PATCH(req: NextRequest) {
     const updates: any = {};
     if (name !== undefined) updates.name = name;
     if (status !== undefined) updates.status = status;
+    if (index_in_project !== undefined) {
+      const idxNum = Number(index_in_project);
+      if (!Number.isFinite(idxNum) || idxNum < 0) {
+        return NextResponse.json(
+          { error: "index_in_project must be a non-negative number" },
+          { status: 400 }
+        );
+      }
+      updates.index_in_project = idxNum;
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(

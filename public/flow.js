@@ -12,6 +12,7 @@ const state = {
 let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
+let draggedCueId = null;
 const miniWaves = {};
 const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
@@ -3413,6 +3414,29 @@ function cleanupMiniWaves() {
   });
 }
 
+async function persistCueOrder(project) {
+  if (!project || !isOwnerOfProject(project)) return;
+  const headers =
+    (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
+      ? window.flowAuth.getAuthHeaders()
+      : { 'Content-Type': 'application/json' };
+
+  await Promise.all(
+    project.cues.map((cue, idx) =>
+      fetch('/api/cues', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          id: cue.id,
+          index_in_project: idx
+        })
+      }).catch(err => {
+        console.warn('[CueOrder] Failed to persist cue index', cue.id, err);
+      })
+    )
+  );
+}
+
 function renderCueList(options = {}) {
   const project = getActiveProject();
   console.log("renderCueList: project", project && project.id, "cuesCount", project && project.cues && project.cues.length);
@@ -3509,13 +3533,13 @@ function renderCueList(options = {}) {
     const menu = document.createElement("div");
     menu.className = "download-menu";
     const canOwnerActions = isOwnerOfProject(project);
+    const canClientApprove = !canOwnerActions;
     menu.innerHTML = `
       <button data-action="rename">${tr("action.rename")}</button>
       <button data-action="delete">${tr("action.delete")}</button>
       ${
-        canOwnerActions
+        canClientApprove
           ? `<div class="menu-sep"></div>
-      <button data-action="set-in-review">${tr("cues.setInReview")}</button>
       <button data-action="set-approved">${tr("cues.setApproved")}</button>`
           : ""
       }
@@ -3648,13 +3672,23 @@ function renderCueList(options = {}) {
           }
         }
         if (action === "set-in-review" || action === "set-approved") {
-          if (!isOwnerOfProject(project)) return;
           const latestVersion = cue.versions[cue.versions.length - 1];
           if (!latestVersion) {
             showAlert(tr("cues.noVersionsForStatus"));
             return;
           }
           const nextStatus = action === "set-approved" ? "approved" : "in_review";
+          if (action === "set-in-review" && !isOwnerOfProject(project)) return;
+          if (action === "set-approved" && isOwnerOfProject(project)) return;
+          if (nextStatus === "approved") {
+            const confirmed = await showConfirmDialog({
+              title: tr("cues.approveConfirmTitle"),
+              message: tr("cues.approveConfirmMessage"),
+              confirmLabel: tr("action.confirm"),
+              cancelLabel: tr("action.cancel")
+            });
+            if (!confirmed) return;
+          }
           await setVersionStatus(project, cue, latestVersion, nextStatus);
         }
       });
@@ -3685,6 +3719,28 @@ function renderCueList(options = {}) {
         }
       }, 0);
     });
+
+    const canReorder = isOwnerOfProject(project);
+    if (canReorder) {
+      summary.draggable = true;
+      summary.classList.add("cue-draggable");
+      summary.addEventListener("dragstart", e => {
+        draggedCueId = cue.id;
+        try {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("application/x-approved-cue", cue.id);
+          e.dataTransfer.setData("text/plain", cue.id);
+        } catch (err) {}
+        details.classList.add("dragging");
+      });
+      summary.addEventListener("dragend", () => {
+        draggedCueId = null;
+        details.classList.remove("dragging");
+        document
+          .querySelectorAll("details.cue-block.drag-over")
+          .forEach(el => el.classList.remove("drag-over"));
+      });
+    }
 
     // Also listen for native toggle events to keep state in sync
     details.addEventListener('toggle', () => {
@@ -4180,9 +4236,14 @@ function renderCueList(options = {}) {
     }
 
     details.addEventListener("dragover", e => {
-      if (!isFileDragEvent(e)) return;
       const projectNow = getActiveProject();
       if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (isFileDragEvent(e)) {
+        e.preventDefault();
+        details.classList.add("drag-over");
+        return;
+      }
+      if (!draggedCueId || draggedCueId === cue.id) return;
       e.preventDefault();
       details.classList.add("drag-over");
     });
@@ -4194,18 +4255,45 @@ function renderCueList(options = {}) {
     });
 
     details.addEventListener("drop", e => {
-      if (!isFileDragEvent(e)) return;
+      const projectNow = getActiveProject();
+      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (isFileDragEvent(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        details.classList.remove("drag-over");
+
+        const files = e.dataTransfer.files;
+        if (!files || !files.length) return;
+        Array.from(files).forEach(file => {
+          handleFileDropOnCue(projectNow, cue, file);
+        });
+        return;
+      }
+
+      if (!draggedCueId || draggedCueId === cue.id) return;
       e.preventDefault();
       e.stopPropagation();
       details.classList.remove("drag-over");
 
-      const projectNow = getActiveProject();
-      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      const fromIndex = projectNow.cues.findIndex(c => c.id === draggedCueId);
+      const toIndex = projectNow.cues.findIndex(c => c.id === cue.id);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
 
-      const files = e.dataTransfer.files;
-      if (!files || !files.length) return;
-      Array.from(files).forEach(file => {
-        handleFileDropOnCue(projectNow, cue, file);
+      const rect = details.getBoundingClientRect();
+      const insertAfter = e.clientY > rect.top + rect.height / 2;
+      const [moved] = projectNow.cues.splice(fromIndex, 1);
+      let insertIndex = toIndex + (insertAfter ? 1 : 0);
+      if (fromIndex < insertIndex) insertIndex -= 1;
+      projectNow.cues.splice(insertIndex, 0, moved);
+
+      projectNow.cues.forEach((c, idx) => {
+        c.index = idx;
+        c.index_in_project = idx;
+      });
+
+      renderCueList();
+      persistCueOrder(projectNow).catch(err => {
+        console.warn('[CueOrder] Persist failed', err);
       });
     });
   });
