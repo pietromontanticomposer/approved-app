@@ -764,6 +764,8 @@ function renderStaticWaveform(container, peaks, opts = {}) {
   canvas.width = width;
   canvas.height = height;
   canvas.className = "waveform-canvas";
+  canvas.dataset.waveWidth = String(width);
+  canvas.dataset.waveHeight = String(height);
   container.innerHTML = "";
   container.appendChild(canvas);
   const ctx = canvas.getContext("2d");
@@ -4221,12 +4223,32 @@ function renderVersionPreviews() {
     cue.versions.forEach(version => {
       const prev = document.getElementById(`preview-${version.id}`);
       if (!prev) return;
+      const targetWidth = Math.max(
+        0,
+        prev.clientWidth || prev.offsetWidth || 0
+      );
+      if (targetWidth < 30) {
+        if (!prev.dataset.waveRetry) {
+          prev.dataset.waveRetry = "1";
+          setTimeout(() => {
+            if (!prev.isConnected) return;
+            delete prev.dataset.waveRetry;
+            renderVersionPreviews();
+          }, 60);
+        }
+        return;
+      }
 
       // Skip if waveform already exists for this version (audio) and is valid
       if (version.media?.type === "audio") {
         const existingCanvas = prev.querySelector("canvas");
         if (existingCanvas && existingCanvas.width > 0) {
-          return;
+          const canvasWidth = existingCanvas.width || 0;
+          if (targetWidth && Math.abs(canvasWidth - targetWidth) > 2) {
+            existingCanvas.remove();
+          } else {
+            return;
+          }
         }
         if (miniWaves[version.id] && !existingCanvas) {
           try {
