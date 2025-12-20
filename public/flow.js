@@ -15,6 +15,54 @@ let activeAudioEl = null;
 const miniWaves = {};
 const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
+const waveformPersisted = new Set();
+const waveformPersistInFlight = new Set();
+
+async function persistWaveformPeaks(version, peaks) {
+  if (!version || !version.id || !peaks || !peaks.length) return;
+  if (waveformPersisted.has(version.id) || waveformPersistInFlight.has(version.id)) return;
+  if (version.media && version.media.waveformSaved) {
+    waveformPersisted.add(version.id);
+    return;
+  }
+
+  const project = getActiveProject();
+  if (!project) return;
+
+  waveformPersistInFlight.add(version.id);
+
+  try {
+    const headers =
+      (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
+        ? window.flowAuth.getAuthHeaders()
+        : { 'Content-Type': 'application/json' };
+
+    const resp = await fetch('/api/versions/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        versionId: version.id,
+        projectId: project.id,
+        updates: { media_waveform_data: JSON.stringify(peaks) }
+      })
+    });
+
+    if (!resp.ok) {
+      console.warn('[Waveform] Failed to persist peaks', version.id, resp.status);
+      waveformPersistInFlight.delete(version.id);
+      return;
+    }
+
+    waveformPersistInFlight.delete(version.id);
+    waveformPersisted.add(version.id);
+    if (version.media) {
+      version.media.waveformSaved = true;
+    }
+  } catch (err) {
+    waveformPersistInFlight.delete(version.id);
+    console.warn('[Waveform] Persist error', version.id, err);
+  }
+}
 let currentPlayerCueId = null;
 
 // Player cache to avoid flicker
@@ -2033,6 +2081,7 @@ function createMiniWave(version, container) {
           version.media.waveform = extractedPeaks;
           // Also cache the peaks in parse cache
           waveformParseCache.set(version.id, extractedPeaks);
+          persistWaveformPeaks(version, extractedPeaks);
         }
       }
     } catch (e) {
@@ -3032,6 +3081,13 @@ async function loadProjectCues(projectId) {
         const localMax = loadCueMaxRevisions(cue.id);
         if (localMax) cue.maxRevisions = localMax;
       }
+      if (Array.isArray(cue.versions)) {
+        cue.versions.forEach(version => {
+          if (version && version.media && version.media.waveform) {
+            version.media.waveformSaved = true;
+          }
+        });
+      }
     });
     if (project.cues.length > 0) {
       project.activeCueId = project.cues[0].id;
@@ -3101,7 +3157,8 @@ async function loadProjectCuesLegacy(projectId, headers) {
                     displayName: v.media_filename || "Media",
                     duration: v.duration || v.media_duration || null,
                     thumbnailUrl: v.thumbnail_url,
-                    waveform: v.waveform || v.media_waveform_data || null
+                    waveform: v.waveform || v.media_waveform_data || null,
+                    waveformSaved: !!(v.waveform || v.media_waveform_data)
                   }
                 : null,
               comments: [],
