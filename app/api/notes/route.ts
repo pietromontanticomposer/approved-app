@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       body: content.trim(),
       type: cueId ? "cue" : "general",
       author_id: auth.userId,
-      author_name: authorName || auth.userEmail || "User",
+      author_name: authorName || auth.email || "User",
     };
 
     const { data, error } = await supabaseAdmin
