@@ -1,7 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    // Enable type checking in production builds to catch errors early
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    // Still run eslint during builds to catch issues
+    ignoreDuringBuilds: false,
   },
   async headers() {
     return [

@@ -28,7 +28,7 @@ export default function SupabaseSyncBridge() {
         try {
           const { data, error } = await supabase
             .from("projects")
-            .select(`id, name, description, created_at, updated_at, cues(id, project_id, index_in_project, original_name, name, display_name, status, versions(id, cue_id, index_in_cue, status, media_type, media_storage_path, media_url, media_original_name, media_display_name, media_duration, media_thumbnail_path, media_thumbnail_url, media_waveform_data))`)
+            .select(`id, name, description, created_at, updated_at, cues(id, project_id, index_in_project, original_name, name, display_name, status, max_revisions, versions(id, cue_id, index_in_cue, status, media_type, media_storage_path, media_url, media_original_name, media_display_name, media_duration, media_thumbnail_path, media_thumbnail_url, media_waveform_data))`)
             .order("created_at", { ascending: true });
           if (error) throw error;
           console.log("✅ Projects loaded:", data?.length || 0);
@@ -49,7 +49,8 @@ export default function SupabaseSyncBridge() {
               original_name: cue.originalName || null,
               name: cue.name || null,
               display_name: cue.displayName || null,
-              status: cue.status || "in-review",
+              status: cue.status || "in_review",
+              max_revisions: typeof cue.maxRevisions === "number" ? cue.maxRevisions : null,
             },
             { onConflict: "id" }
           );
@@ -69,7 +70,7 @@ export default function SupabaseSyncBridge() {
               id: version.id,
               cue_id: cueId,
               index_in_cue: version.index || version.indexInCue || 0,
-              status: version.status || "in-review",
+              status: version.status || "in_review",
               media_type: version.media?.type || null,
               media_storage_path: version.media?.storagePath || null,
               media_url: version.media?.url || null,

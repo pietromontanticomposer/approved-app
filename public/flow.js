@@ -13,13 +13,20 @@ let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
 const miniWaves = {};
+const waveformParseCache = new Map();
+const staticWaveformCache = new Map(); // Cache for static waveform canvases
+let currentPlayerCueId = null;
 
 // Player cache to avoid flicker
 let currentPlayerVersionId = null;
 let currentPlayerMediaType = null;
 
+// Notes cache keyed by project id
+const projectNotesStore = Object.create(null);
+
 // UI state for reference panel
 let referencesCollapsed = false;
+let cuesCollapsed = false;
 let hasInitializedFromSupabase = false; // Prevent double init when fallback kicks in
 
 // Global fetch wrapper: automatically attach auth headers (Authorization / x-actor-id)
@@ -87,8 +94,12 @@ let hasInitializedFromSupabase = false; // Prevent double init when fallback kic
 })();
 
 // Upload progress tracking
-let uploadProgressBar = null;
+let uploadProgressPanel = null;
+let uploadProgressList = null;
+const uploadJobRows = new Map();
+let uploadHideTimer = null;
 let activeUploads = 0;
+let hasAutoSelectedProject = false;
 
 // =======================
 // DOM
@@ -104,24 +115,26 @@ if (!projectMetaEl) console.error('[FlowPreview] projectMetaEl not found in DOM'
 const projectMenuBtn = document.getElementById("projectMenuBtn");
 if (!projectMenuBtn) console.error('[FlowPreview] projectMenuBtn not found in DOM');
 
-const uploadStripEl = document.querySelector(".upload-strip");
+const sidebarEl = document.querySelector(".sidebar");
+if (!sidebarEl) console.error('[FlowPreview] sidebarEl not found in DOM');
 const contentEl = document.querySelector(".content");
 const rightColEl = document.querySelector(".right-column");
+const cuesDropzoneEl = document.getElementById("cuesDropzone");
+const refsDropzoneEl = document.getElementById("refsDropzone");
 
-const dropzoneEl = document.getElementById("globalDropzone");
-if (!dropzoneEl) console.error('[FlowPreview] dropzoneEl not found in DOM');
+// Add buttons for cues and references
+const addCueBtn = document.getElementById("addCueBtn");
+const addReferenceBtn = document.getElementById("addReferenceBtn");
+
+// Auto-rename controls
+const autoRenameToggle = document.getElementById("autoRenameToggle");
+const namingControlsWrapper = document.querySelector(".naming-presets-container");
+const namingSchemeButtons = document.querySelectorAll("[data-naming-scheme]");
 
 const cueListEl = document.getElementById("cueList");
 if (!cueListEl) console.error('[FlowPreview] cueListEl not found in DOM');
 const cueListSubtitleEl = document.getElementById("cueListSubtitle");
 if (!cueListSubtitleEl) console.error('[FlowPreview] cueListSubtitleEl not found in DOM');
-
-const autoRenameToggle = document.getElementById("autoRenameToggle");
-if (!autoRenameToggle) console.error('[FlowPreview] autoRenameToggle not found in DOM');
-const namingLevelRadios = document.querySelectorAll(
-  "input[name='namingLevel']"
-);
-const namingLevelsEl = document.querySelector(".naming-levels");
 
 const commentsListEl = document.getElementById("commentsList");
 if (!commentsListEl) console.error('[FlowPreview] commentsListEl not found in DOM');
@@ -146,35 +159,309 @@ const volumeSlider = document.getElementById("volumeSlider");
 if (!volumeSlider) console.error('[FlowPreview] volumeSlider not found in DOM');
 const statusInReviewBtn = document.getElementById("statusInReviewBtn");
 if (!statusInReviewBtn) console.error('[FlowPreview] statusInReviewBtn not found in DOM');
+const statusInRevisionBtn = document.getElementById("statusInRevisionBtn");
 const statusApprovedBtn = document.getElementById("statusApprovedBtn");
 if (!statusApprovedBtn) console.error('[FlowPreview] statusApprovedBtn not found in DOM');
-const statusChangesBtn = document.getElementById("statusChangesBtn");
-if (!statusChangesBtn) console.error('[FlowPreview] statusChangesBtn not found in DOM');
+
+const reviewStatusMessageEl = document.getElementById("reviewStatusMessage");
+const reviewCompleteBtn = document.getElementById("reviewCompleteBtn");
+const startRevisionBtn = document.getElementById("startRevisionBtn");
+const approveVersionBtn = document.getElementById("approveVersionBtn");
+const requestChangesBtn = document.getElementById("requestChangesBtn");
+const reviewActionsEl = document.querySelector(".review-actions");
+const decisionActionsEl = document.querySelector(".decision-actions");
 
 const shareBtn = document.getElementById("shareBtn");
-if (!shareBtn) console.error('[FlowPreview] shareBtn not found in DOM');
+// shareBtn and deliverBtn are optional - not all pages have them
 const deliverBtn = document.getElementById("deliverBtn");
-if (!deliverBtn) console.error('[FlowPreview] deliverBtn not found in DOM');
 const copyLinkBtn = document.getElementById("copyLinkBtn");
 if (!copyLinkBtn) console.error('[FlowPreview] copyLinkBtn not found in DOM');
 
-// Player mode buttons
-const modeReviewBtn = document.getElementById("modeReviewBtn");
-if (!modeReviewBtn) console.error('[FlowPreview] modeReviewBtn not found in DOM');
-const modeRefsBtn = document.getElementById("modeRefsBtn");
-if (!modeRefsBtn) console.error('[FlowPreview] modeRefsBtn not found in DOM');
 
 // Project References DOM
 const refsBodyEl = document.getElementById("refsBody");
 if (!refsBodyEl) console.error('[FlowPreview] refsBodyEl not found in DOM');
-const refsDropzoneEl = document.getElementById("refsDropzone");
-if (!refsDropzoneEl) console.error('[FlowPreview] refsDropzoneEl not found in DOM');
 const refsListEl = document.getElementById("refsList");
 if (!refsListEl) console.error('[FlowPreview] refsListEl not found in DOM');
 const refsSubtitleEl = document.getElementById("refsSubtitle");
 if (!refsSubtitleEl) console.error('[FlowPreview] refsSubtitleEl not found in DOM');
 const refsToggleBtn = document.getElementById("refsToggleBtn");
 if (!refsToggleBtn) console.error('[FlowPreview] refsToggleBtn not found in DOM');
+const cuesToggleBtn = document.getElementById("cuesToggleBtn");
+if (!cuesToggleBtn) console.error('[FlowPreview] cuesToggleBtn not found in DOM');
+const refsCountBadgeEl = document.getElementById("refsCountBadge");
+const cuesCountBadgeEl = document.getElementById("cuesCountBadge");
+const refsSubtitleKey =
+  (refsSubtitleEl && refsSubtitleEl.getAttribute("data-i18n")) || "refs.subtitle";
+const cuesSubtitleKey =
+  (cueListSubtitleEl && cueListSubtitleEl.getAttribute("data-i18n")) || "cues.subtitle";
+const refsSubtitleFallback = refsSubtitleEl ? refsSubtitleEl.textContent : "";
+const cuesSubtitleFallback = cueListSubtitleEl ? cueListSubtitleEl.textContent : "";
+
+// Notes panel elements (removed from UI - keeping refs for backwards compatibility)
+const generalNotesListEl = document.getElementById("generalNotesList");
+const cueNotesListEl = document.getElementById("cueNotesList");
+const generalNoteForm = document.getElementById("generalNoteForm");
+const cueNoteForm = document.getElementById("cueNoteForm");
+
+// =======================
+// UI HELPERS
+// =======================
+function tr(key, params, fallback) {
+  const t = window.i18n && typeof window.i18n.t === "function" ? window.i18n.t : null;
+  if (t) return t(key, params || {});
+  if (fallback !== undefined) return fallback;
+  return key;
+}
+
+function showConfirmDialog(options = {}) {
+  const {
+    title = tr("action.confirmDefaultTitle", {}, "Sei sicuro?"),
+    message = tr("action.confirmDefaultMessage", {}, "Confermi questa azione?"),
+    confirmLabel = tr("action.confirm", {}, "Conferma"),
+    cancelLabel = tr("action.cancel", {}, "Annulla")
+  } = options || {};
+
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.setAttribute("role", "presentation");
+
+    const dialog = document.createElement("div");
+    dialog.className = "confirm-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "confirm-title";
+    titleEl.textContent = title;
+
+    const messageEl = document.createElement("div");
+    messageEl.className = "confirm-message";
+    messageEl.textContent = message;
+
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "confirm-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost-btn tiny confirm-cancel";
+    cancelBtn.textContent = cancelLabel;
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "danger-btn tiny confirm-confirm";
+    confirmBtn.textContent = confirmLabel;
+
+    actionsEl.appendChild(cancelBtn);
+    actionsEl.appendChild(confirmBtn);
+
+    dialog.appendChild(titleEl);
+    dialog.appendChild(messageEl);
+    dialog.appendChild(actionsEl);
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const previousActive = document.activeElement;
+    const cleanup = result => {
+      overlay.classList.remove("visible");
+      const removeOverlay = () => overlay.remove();
+      overlay.addEventListener("transitionend", removeOverlay, { once: true });
+      setTimeout(removeOverlay, 200);
+      document.removeEventListener("keydown", handleKey);
+      if (previousActive && typeof previousActive.focus === "function") {
+        try {
+          previousActive.focus();
+        } catch (_) {}
+      }
+      resolve(result);
+    };
+
+    const handleKey = e => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cleanup(false);
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        cleanup(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKey);
+
+    cancelBtn.addEventListener("click", e => {
+      e.preventDefault();
+      cleanup(false);
+    });
+
+    confirmBtn.addEventListener("click", e => {
+      e.preventDefault();
+      cleanup(true);
+    });
+
+    overlay.addEventListener("click", e => {
+      if (e.target === overlay) {
+        cleanup(false);
+      }
+    });
+
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+      setTimeout(() => {
+        try {
+          confirmBtn.focus();
+        } catch (_) {}
+      }, 30);
+    });
+  });
+}
+
+function showPromptDialog(options = {}) {
+  const {
+    title = tr("action.confirmDefaultTitle"),
+    message = "",
+    confirmLabel = tr("action.confirm"),
+    cancelLabel = tr("action.cancel"),
+    defaultValue = "",
+    placeholder = "",
+    inputType = "text"
+  } = options || {};
+
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.setAttribute("role", "presentation");
+
+    const dialog = document.createElement("div");
+    dialog.className = "confirm-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "confirm-title";
+    titleEl.textContent = title;
+
+    const messageEl = document.createElement("div");
+    messageEl.className = "confirm-message";
+    messageEl.textContent = message || "";
+
+    const input = document.createElement("input");
+    input.type = inputType;
+    input.className = "confirm-input";
+    input.value = defaultValue || "";
+    input.placeholder = placeholder || "";
+
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "confirm-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost-btn tiny confirm-cancel";
+    cancelBtn.textContent = cancelLabel;
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary-btn tiny confirm-confirm";
+    confirmBtn.textContent = confirmLabel;
+
+    actionsEl.appendChild(cancelBtn);
+    actionsEl.appendChild(confirmBtn);
+
+    dialog.appendChild(titleEl);
+    if (message) dialog.appendChild(messageEl);
+    dialog.appendChild(input);
+    dialog.appendChild(actionsEl);
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const previousActive = document.activeElement;
+    const cleanup = result => {
+      overlay.classList.remove("visible");
+      const removeOverlay = () => overlay.remove();
+      overlay.addEventListener("transitionend", removeOverlay, { once: true });
+      setTimeout(removeOverlay, 200);
+      document.removeEventListener("keydown", handleKey);
+      if (previousActive && typeof previousActive.focus === "function") {
+        try {
+          previousActive.focus();
+        } catch (_) {}
+      }
+      resolve(result);
+    };
+
+    const handleKey = e => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cleanup(null);
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        cleanup(input.value);
+      }
+    };
+
+    document.addEventListener("keydown", handleKey);
+
+    cancelBtn.addEventListener("click", e => {
+      e.preventDefault();
+      cleanup(null);
+    });
+
+    confirmBtn.addEventListener("click", e => {
+      e.preventDefault();
+      cleanup(input.value);
+    });
+
+    overlay.addEventListener("click", e => {
+      if (e.target === overlay) {
+        cleanup(null);
+      }
+    });
+
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+      setTimeout(() => {
+        try {
+          input.focus();
+          input.select();
+        } catch (_) {}
+      }, 30);
+    });
+  });
+}
+const generalNoteInput = document.getElementById("generalNoteInput");
+const cueNoteInput = document.getElementById("cueNoteInput");
+const generalNoteSubmitBtn = document.getElementById("generalNoteSubmit");
+const cueNoteSubmitBtn = document.getElementById("cueNoteSubmit");
+const cueNotesHeadingEl = document.getElementById("cueNotesHeading");
+
+if (generalNoteForm) {
+  generalNoteForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const text = generalNoteInput?.value?.trim();
+    if (!text) return;
+    await saveProjectNote(text);
+    if (generalNoteInput) generalNoteInput.value = "";
+    renderNotesPanel();
+  });
+}
+
+if (cueNoteForm) {
+  cueNoteForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const text = cueNoteInput?.value?.trim();
+    if (!text) return;
+    const project = getActiveProject();
+    const cueId = project?.activeCueId;
+    if (!cueId) return;
+    await saveCueNote(cueId, text);
+    if (cueNoteInput) cueNoteInput.value = "";
+    renderNotesPanel();
+  });
+}
 
 if (volumeSlider) {
   volumeSlider.style.display = "none";
@@ -208,7 +495,34 @@ function activateVersionPreview(version) {
 // HELPERS
 // =======================
 function uid() {
-  return Math.random().toString(36).slice(2);
+  try {
+    if (typeof crypto !== "undefined") {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      if (crypto.getRandomValues) {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
+        const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, "0"));
+        return (
+          hex.slice(0, 4).join("") + "-" +
+          hex.slice(4, 6).join("") + "-" +
+          hex.slice(6, 8).join("") + "-" +
+          hex.slice(8, 10).join("") + "-" +
+          hex.slice(10).join("")
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("uid(): crypto unavailable, falling back to pseudo-random id", err);
+  }
+  // Fallback still returns UUID-looking string so API validators accept it
+  const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+  return template.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 function pad2(n) {
@@ -228,6 +542,48 @@ function cleanFileName(name) {
   return base.replace(/[_\-]+/g, " ").trim() || "Untitled";
 }
 
+function storeCueMaxRevisions(cueId, value) {
+  if (!cueId || typeof value !== "number" || !Number.isFinite(value)) return;
+  localStorage.setItem(`cue-max-revisions:${cueId}`, String(value));
+}
+
+function loadCueMaxRevisions(cueId) {
+  if (!cueId) return null;
+  const raw = localStorage.getItem(`cue-max-revisions:${cueId}`);
+  if (!raw) return null;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function migrateCueMaxRevisionsKey(oldId, newId) {
+  if (!oldId || !newId || oldId === newId) return;
+  const raw = localStorage.getItem(`cue-max-revisions:${oldId}`);
+  if (raw) {
+    localStorage.setItem(`cue-max-revisions:${newId}`, raw);
+    localStorage.removeItem(`cue-max-revisions:${oldId}`);
+  }
+}
+
+async function promptForMaxRevisions() {
+  const stored = localStorage.getItem("cue-max-revisions");
+  const fallback = stored && !Number.isNaN(parseInt(stored, 10)) ? stored : "5";
+  while (true) {
+    const input = await showPromptDialog({
+      title: tr("cues.maxRevisionsPrompt", {}, "Numero massimo revisioni per questa cue"),
+      defaultValue: fallback,
+      inputType: "number"
+    });
+    if (input === null) return null;
+    const value = parseInt(String(input).trim(), 10);
+    if (Number.isFinite(value) && value > 0) {
+      localStorage.setItem("cue-max-revisions", String(value));
+      return value;
+    }
+    showAlert("Inserisci un numero valido (minimo 1).");
+  }
+}
+
 function detectRawType(fileName) {
   const n = fileName.toLowerCase();
   if (n.match(/\.(mp4|mov|mkv|avi|webm)$/)) return "video";
@@ -238,9 +594,42 @@ function detectRawType(fileName) {
   return "other";
 }
 
+function getFileExtension(fileName) {
+  if (!fileName) return ".wav";
+  const idx = fileName.lastIndexOf(".");
+  if (idx === -1) return ".wav";
+  return fileName.substring(idx).toLowerCase() || ".wav";
+}
+
+function deriveCueIndex(project, cue) {
+  if (typeof cue?.index === "number") return cue.index + 1;
+  if (!project || !project.cues) return 1;
+  const idx = project.cues.findIndex(c => c.id === cue?.id);
+  return idx >= 0 ? idx + 1 : 1;
+}
+function buildComposerName(project, cue, version, ext) {
+  const projectName = project?.name || "Project";
+  const title =
+    projectName.toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 12) ||
+    "PROJECT";
+  const cueIndex = deriveCueIndex(project, cue);
+  const code =
+    state.namingMode === "cinema"
+      ? `1m${pad2(cueIndex)}`
+      : `Cue_${pad2(cueIndex)}`;
+  const ver = pad2((version?.index || 0) + 1);
+  let type = "MIX";
+  const lowerExt = (ext || "").toLowerCase();
+  if (lowerExt.match(/\.(mp3|m4a|ogg|aac)$/)) type = "PREVIEW";
+  return `${title}_${code}_v${ver}_${type}${ext}`;
+}
+
 // Return a proxied URL on our domain when media comes from Supabase/storage
 function getProxiedUrl(raw) {
   if (!raw) return raw;
+  if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
+    return raw;
+  }
   try {
     const u = new URL(raw);
     const host = u.hostname || "";
@@ -265,6 +654,7 @@ function getProxiedUrl(raw) {
       } catch (e) {
         // fall back to proxy by full url
       }
+      // Fall back to proxying the whole signed URL so we keep a same-origin request
       return `/api/media/stream?url=${encodeURIComponent(raw)}`;
     }
     // Otherwise return original
@@ -273,6 +663,132 @@ function getProxiedUrl(raw) {
     // Likely a storage path like "projects/..." → proxy by path
     return `/api/media/stream?path=${encodeURIComponent(raw)}`;
   }
+}
+
+function getWaveformPeaks(raw) {
+  if (!raw) return null;
+  let data = raw;
+  if (typeof raw === "string") {
+    if (waveformParseCache.has(raw)) {
+      data = waveformParseCache.get(raw);
+    } else {
+      try {
+        data = JSON.parse(raw);
+        waveformParseCache.set(raw, data);
+      } catch (e) {
+        return null;
+      }
+    }
+  }
+  if (Array.isArray(data)) return data;
+  if (typeof data === "object") {
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.samples)) return data.samples;
+    if (Array.isArray(data.peaks)) return data.peaks;
+    if (Array.isArray(data.left) && Array.isArray(data.right)) {
+      return [data.left, data.right];
+    }
+  }
+  return null;
+}
+
+function renderStaticWaveform(container, peaks, opts = {}) {
+  const versionId = opts.versionId;
+  const height = opts.height || 36;
+  const color = opts.color || "rgba(148,163,184,0.9)";
+  const bg = opts.background || "rgba(15,23,42,0.4)";
+  const width = Math.max(1, container.clientWidth || container.offsetWidth || 240);
+
+  // Check if we have a cached canvas for this version
+  if (versionId && staticWaveformCache.has(versionId)) {
+    const cached = staticWaveformCache.get(versionId);
+    const cachedCanvas = cached && cached.canvas ? cached.canvas : cached;
+    const cachedWidth = cached && cached.width ? cached.width : cachedCanvas?.width;
+    const cachedHeight = cached && cached.height ? cached.height : cachedCanvas?.height;
+    if (cachedCanvas && cachedWidth === width && cachedHeight === height) {
+      container.innerHTML = "";
+      container.appendChild(cachedCanvas.cloneNode(true));
+      return;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.className = "waveform-canvas";
+  container.innerHTML = "";
+  container.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  const normalized =
+    Array.isArray(peaks[0]) && Array.isArray(peaks[1])
+      ? peaks.map(arr => (Array.isArray(arr) ? arr : []))
+      : [Array.isArray(peaks) ? peaks : []];
+
+  const combined = normalized.length === 1 ? normalized[0] : normalized[0].map((val, idx) => {
+    const left = Math.abs(val || 0);
+    const right = Math.abs(normalized[1][idx] || 0);
+    return Math.max(left, right);
+  });
+
+  const samples = combined.length;
+  const step = Math.max(1, Math.floor(samples / width));
+
+  ctx.fillStyle = color;
+  for (let x = 0; x < width; x++) {
+    const idx = Math.min(samples - 1, x * step);
+    const amp = Math.max(0, Math.min(1, Math.abs(combined[idx] || 0)));
+    const barHeight = Math.max(1, amp * (height - 4));
+    const y = (height - barHeight) / 2;
+    ctx.fillRect(x, y, 1, barHeight);
+  }
+
+  // Cache the canvas for future use
+  if (versionId) {
+    staticWaveformCache.set(versionId, {
+      canvas: canvas.cloneNode(true),
+      width,
+      height
+    });
+  }
+}
+
+function renderWavePlaceholder(container, waveformData, opts = {}) {
+  if (!container) return false;
+  const peaks = getWaveformPeaks(waveformData);
+  if (!peaks) {
+    container.innerHTML = "";
+    return false;
+  }
+  renderStaticWaveform(container, peaks, opts);
+  const canvas = container.querySelector(".waveform-canvas");
+  if (canvas) {
+    canvas.dataset.wavePlaceholder = "1";
+  }
+  return true;
+}
+
+function removeWavePlaceholder(container) {
+  if (!container) return;
+  const placeholder = container.querySelector('.waveform-canvas[data-wave-placeholder="1"]');
+  if (placeholder) {
+    placeholder.remove();
+  }
+}
+
+function updateActiveVersionRowStyles() {
+  const project = getActiveProject();
+  if (!project) return;
+  const activeCueId = project.activeCueId;
+  const activeVersionId = project.activeVersionId;
+  document.querySelectorAll(".version-row").forEach(row => {
+    const isActive =
+      row.dataset.cueId === (activeCueId || "") &&
+      row.dataset.versionId === (activeVersionId || "");
+    row.classList.toggle("active", !!isActive);
+  });
 }
 
 function isFileDragEvent(e) {
@@ -300,51 +816,204 @@ function formatFileSize(bytes) {
   return `${mb.toFixed(1)} MB`;
 }
 
+function getVersionMetaText(version) {
+  if (!version) return "";
+  if (version.media) {
+    const d = version.media.duration
+      ? formatTime(version.media.duration)
+      : "--:--";
+    const typeLabel =
+      version.media.type === "audio"
+        ? tr("media.audio")
+        : version.media.type === "video"
+        ? tr("media.video")
+        : tr("media.file");
+    let text = `${typeLabel} · ${d}`;
+    if (version.deliverables?.length) {
+      text += ` · ${tr("media.techFiles", { n: version.deliverables.length })}`;
+    }
+    return text;
+  }
+  if (version.deliverables?.length) {
+    return tr("media.techFiles", { n: version.deliverables.length });
+  }
+  return tr("media.onlyDeliverables");
+}
+
 // =======================
 // VERSION / CUE STATUS
 // =======================
-const VERSION_STATUSES = {
-  "in-review": "In review",
-  approved: "Approved",
-  "changes-requested": "Changes requested"
+const STATUS_LABEL_KEYS = {
+  in_review: "player.inReview",
+  review_completed: "status.reviewCompleted",
+  in_revision: "status.inRevision",
+  approved: "player.approved",
+  changes_requested: "player.changesRequested",
+  "in-review": "player.inReview",
+  "changes-requested": "player.changesRequested"
 };
 
+function getStatusLabel(status) {
+  const key = STATUS_LABEL_KEYS[status] || STATUS_LABEL_KEYS.in_review;
+  return tr(key);
+}
+
+const REVIEW_CLOSED_MESSAGE = () =>
+  tr(
+    "comments.closedMessage",
+    {},
+    "Questa versione è chiusa. I nuovi commenti andranno sulla prossima versione."
+  );
+
+function normalizeVersionStatus(status) {
+  if (!status) return "in_review";
+  if (status === "in-review") return "in_review";
+  if (status === "changes-requested") return "changes_requested";
+  return status;
+}
+
+function getStatusClassKey(status) {
+  return normalizeVersionStatus(status).replace(/_/g, "-");
+}
+
+function isOwnerOfProject(project) {
+  const user = window.flowAuth && typeof window.flowAuth.getUser === "function"
+    ? window.flowAuth.getUser()
+    : null;
+  if (!user || !project || !project.owner_id) return false;
+  return user.id === project.owner_id;
+}
+
+function canAddCommentsForVersion(status) {
+  return normalizeVersionStatus(status) === "in_review";
+}
+
+function toggleActionContainer(container, buttons) {
+  if (!container) return;
+  const hasVisible = buttons.some(btn => btn && btn.style.display !== "none");
+  container.style.display = hasVisible ? "inline-flex" : "none";
+}
+
+function updateReviewUI(project, version) {
+  const status = normalizeVersionStatus(version.status);
+  const isOwner = isOwnerOfProject(project);
+  const canComment = canAddCommentsForVersion(status);
+  const canDecide =
+    !isOwner &&
+    (status === "in_review" || status === "review_completed");
+
+  if (reviewCompleteBtn) {
+    reviewCompleteBtn.style.display = !isOwner && status === "in_review" ? "inline-flex" : "none";
+  }
+
+  if (startRevisionBtn) {
+    startRevisionBtn.style.display = isOwner && status === "review_completed" ? "inline-flex" : "none";
+  }
+
+  if (statusInReviewBtn) {
+    statusInReviewBtn.style.display = isOwner ? "inline-flex" : "none";
+  }
+  if (statusApprovedBtn) {
+    statusApprovedBtn.style.display = isOwner ? "inline-flex" : "none";
+  }
+
+  if (approveVersionBtn) {
+    approveVersionBtn.style.display = canDecide ? "inline-flex" : "none";
+    approveVersionBtn.disabled = !canDecide;
+  }
+  if (requestChangesBtn) {
+    requestChangesBtn.style.display = canDecide ? "inline-flex" : "none";
+    requestChangesBtn.disabled = !canDecide;
+  }
+
+  toggleActionContainer(reviewActionsEl, [reviewCompleteBtn, startRevisionBtn]);
+  toggleActionContainer(decisionActionsEl, [approveVersionBtn, requestChangesBtn]);
+
+  setCommentsEnabled(canComment);
+  if (commentInputEl) {
+    if (canComment) {
+      commentInputEl.placeholder = tr("comments.addPlaceholder");
+    } else {
+      commentInputEl.placeholder = tr("comments.closedPlaceholder");
+    }
+  }
+
+  if (reviewStatusMessageEl) {
+    let message = "";
+    if (status === "in_review") {
+      message = isOwner
+        ? tr("review.messageInReviewOwner")
+        : tr("review.messageInReviewClient");
+    } else if (status === "review_completed") {
+      message = tr("review.messageCompleted");
+    } else if (status === "in_revision") {
+      message = tr("review.messageInRevision");
+    } else if (status === "changes_requested") {
+      message = tr("review.messageChangesRequested");
+    } else if (status === "approved") {
+      message = tr("review.messageApproved");
+    }
+    reviewStatusMessageEl.textContent = message;
+    reviewStatusMessageEl.style.display = message ? "block" : "none";
+  }
+}
+
+function resetReviewUI() {
+  if (reviewCompleteBtn) reviewCompleteBtn.style.display = "none";
+  if (startRevisionBtn) startRevisionBtn.style.display = "none";
+  if (approveVersionBtn) approveVersionBtn.style.display = "none";
+  if (requestChangesBtn) requestChangesBtn.style.display = "none";
+  if (statusInReviewBtn) statusInReviewBtn.style.display = "none";
+  if (statusApprovedBtn) statusApprovedBtn.style.display = "none";
+  if (reviewActionsEl) reviewActionsEl.style.display = "none";
+  if (decisionActionsEl) decisionActionsEl.style.display = "none";
+  if (reviewStatusMessageEl) {
+    reviewStatusMessageEl.textContent = "";
+    reviewStatusMessageEl.style.display = "none";
+  }
+  setCommentsEnabled(false);
+}
+
 function computeCueStatus(cue) {
-  if (!cue.versions.length) return "in-review";
-  if (cue.versions.some(v => v.status === "changes-requested")) {
-    return "changes-requested";
-  }
-  if (cue.versions.some(v => v.status === "approved")) {
-    return "approved";
-  }
-  return "in-review";
+  if (!cue.versions.length) return "in_review";
+  const statuses = cue.versions.map(v => normalizeVersionStatus(v.status));
+  if (statuses.includes("in_revision")) return "in_revision";
+  if (statuses.includes("changes_requested")) return "changes_requested";
+  if (statuses.includes("review_completed")) return "review_completed";
+  if (statuses.includes("approved")) return "approved";
+  return "in_review";
 }
 
 async function setVersionStatus(project, cue, version, status) {
-  if (!VERSION_STATUSES[status]) return;
+  if (!STATUS_LABEL_KEYS[status]) return;
 
   try {
-    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
     const res = await fetch('/api/versions/update', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         versionId: version.id,
-        projectId: state.activeProjectId,
+        projectId: project.id,
         updates: { status: status }
       })
     });
+    const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      console.error('[FlowPreview] Failed to update version status', await res.text());
-      alert('Errore nell\'aggiornare lo stato della versione');
+      const msg = payload?.error || 'Errore nell\'aggiornare lo stato della versione';
+      console.error('[FlowPreview] Failed to update version status', msg);
+    showAlert(msg);
       return;
     }
-    version.status = status;
+    version.status = payload?.version?.status || status;
     cue.status = computeCueStatus(cue);
-    renderAll();
+    renderCueList();
+    renderVersionPreviews();
+    renderPlayer();
   } catch (err) {
     console.error('[FlowPreview] Exception updating version status', err);
-    alert('Errore nell\'aggiornare lo stato della versione');
+    showAlert('Errore nell\'aggiornare lo stato della versione');
   }
 }
 
@@ -357,6 +1026,24 @@ function getActiveProject() {
 
 function getProjectById(id) {
   return state.projects.find(x => x.id === id) || null;
+}
+
+async function selectProject(projectId) {
+  const project = getProjectById(projectId);
+  if (!project) return;
+
+  state.activeProjectId = projectId;
+
+  // If project cues are not loaded yet (shouldn't happen with /api/projects/full)
+  // load them now
+  if (!project.cues || project.cues.length === 0) {
+    await loadProjectCues(projectId);
+  }
+
+  renderAll();
+  loadProjectNotes(projectId).catch(err => {
+    console.warn('[Flow] Failed to load notes for project selection', err);
+  });
 }
 
 function getCue(project, cueId) {
@@ -407,27 +1094,9 @@ function computeVersionLabel(i) {
 
 function computeMediaDisplayName(project, cue, version, fileName) {
   if (!state.autoRename) return fileName;
+  const ext = getFileExtension(fileName);
 
-  const title =
-    project.name.toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 12) ||
-    "PROJECT";
-
-  const ext = fileName.includes(".")
-    ? fileName.substring(fileName.lastIndexOf(".")).toLowerCase()
-    : "";
-
-  const cueIndex = project.cues.findIndex(c => c.id === cue.id) + 1;
-  const code =
-    state.namingMode === "cinema"
-      ? `1m${pad2(cueIndex)}`
-      : `Cue_${pad2(cueIndex)}`;
-
-  const ver = pad2(version.index + 1);
-
-  let type = "MIX";
-  if (ext.match(/mp3|m4a|ogg|aac/)) type = "PREVIEW";
-
-  return `${title}_${code}_v${ver}_${type}${ext}`;
+  return buildComposerName(project, cue, version, ext);
 }
 
 function refreshAllNames() {
@@ -493,7 +1162,10 @@ function updateNamesInDOM() {
 async function createNewProject() {
   console.log("[FlowPreview] createNewProject");
   const defaultName = "New project";
-  const name = prompt("Project name", defaultName);
+  const name = await showPromptDialog({
+    title: tr("project.createPrompt", {}, "Project name"),
+    defaultValue: defaultName
+  });
   if (name === null) return;
 
   const finalName = name.trim() || defaultName;
@@ -509,7 +1181,7 @@ async function createNewProject() {
       const text = await res.text().catch(() => '<non-text-response>');
       console.error('[FlowPreview] Failed to create project', res.status, text);
       try {
-        alert('Errore nella creazione del progetto:\n' + (text || 'unknown'));
+        showAlert('Errore nella creazione del progetto:\n' + (text || 'unknown'));
       } catch (e) {
         // ignore alert failures
       }
@@ -547,12 +1219,15 @@ async function createNewProject() {
     renderAll();
   } catch (err) {
     console.error('[FlowPreview] Exception creating project', err);
-    alert('Errore nella creazione del progetto');
+    showAlert('Errore nella creazione del progetto');
   }
 }
 
 async function renameProject(project) {
-  const name = prompt("Rename project", project.name);
+  const name = await showPromptDialog({
+    title: tr("project.renamePrompt", {}, "Rename project"),
+    defaultValue: project.name
+  });
   if (name === null) return;
   if (!name.trim()) return;
 
@@ -567,21 +1242,26 @@ async function renameProject(project) {
     });
     if (!res.ok) {
       console.error('[FlowPreview] Failed to rename project', await res.text());
-      alert('Errore nel rinominare il progetto');
+      showAlert('Errore nel rinominare il progetto');
       return;
     }
     project.name = newName;
     renderAll();
   } catch (err) {
     console.error('[FlowPreview] Exception renaming project', err);
-    alert('Errore nel rinominare il progetto');
+    showAlert('Errore nel rinominare il progetto');
   }
 }
 
 async function deleteProject(id) {
   const p = getProjectById(id);
   if (!p) return;
-  const ok = confirm(`Delete project "${p.name}"?`);
+  const ok = await showConfirmDialog({
+    title: tr("action.delete"),
+    message: `Delete project "${p.name}"?`,
+    confirmLabel: tr("action.delete"),
+    cancelLabel: tr("action.cancel")
+  });
   if (!ok) return;
 
   try {
@@ -593,12 +1273,12 @@ async function deleteProject(id) {
     });
     if (!res.ok) {
       console.error('[FlowPreview] Failed to delete project', await res.text());
-      alert('Errore nella cancellazione del progetto');
+      showAlert('Errore nella cancellazione del progetto');
       return;
     }
   } catch (err) {
     console.error('[FlowPreview] Exception deleting project', err);
-    alert('Errore nella cancellazione del progetto');
+    showAlert('Errore nella cancellazione del progetto');
     return;
   }
 
@@ -608,6 +1288,7 @@ async function deleteProject(id) {
 
   currentPlayerVersionId = null;
   currentPlayerMediaType = null;
+  currentPlayerCueId = null;
   state.playerMode = "review";
 
   renderAll();
@@ -620,17 +1301,23 @@ async function createCueFromFile(file) {
   const project = getActiveProject();
   if (!project) return;
 
+  const maxRevisions = await promptForMaxRevisions();
+  if (maxRevisions === null) return;
+
   const cue = {
     id: uid(),
     index: project.cues.length,
     originalName: file.name,
     name: cleanFileName(file.name),
     displayName: "",
-    status: "in-review",
+    maxRevisions,
+    max_revisions: maxRevisions,
+    status: "in_review",
     versions: [],
     isOpen: true
   };
 
+  storeCueMaxRevisions(cue.id, maxRevisions);
   project.cues.push(cue);
 
   // Save cue to database
@@ -645,13 +1332,19 @@ async function createCueFromFile(file) {
           id: cue.id,
           name: cue.name,
           index: cue.index,
-          status: cue.status
+          status: cue.status,
+          max_revisions: cue.maxRevisions
         }
       })
     });
     
     if (!res.ok) {
       console.error('[Flow] Failed to save cue to database', await res.text());
+      showAlert('Errore nel salvataggio della cue. Riprova.');
+      project.cues = project.cues.filter(c => c.id !== cue.id);
+      localStorage.removeItem(`cue-max-revisions:${cue.id}`);
+      renderCueList();
+      return;
     } else {
       const payload = await res.json().catch(() => null);
       const serverCueId = payload && (payload.cueId || (payload.cue && payload.cue.id));
@@ -661,6 +1354,7 @@ async function createCueFromFile(file) {
         // Update cue object and project references
         const oldId = cue.id;
         cue.id = serverCueId;
+        migrateCueMaxRevisionsKey(oldId, serverCueId);
         const ci = project.cues.findIndex(c => c.id === oldId);
         if (ci >= 0) project.cues[ci].id = serverCueId;
       } else {
@@ -669,6 +1363,11 @@ async function createCueFromFile(file) {
     }
   } catch (err) {
     console.error('[Flow] Exception saving cue:', err);
+    showAlert('Errore nel salvataggio della cue. Riprova.');
+    project.cues = project.cues.filter(c => c.id !== cue.id);
+    localStorage.removeItem(`cue-max-revisions:${cue.id}`);
+    renderCueList();
+    return;
   }
 
   const version = createVersionForCue(project, cue, file);
@@ -684,42 +1383,194 @@ async function createCueFromFile(file) {
 // =======================
 // UPLOAD TO SUPABASE
 // =======================
-function ensureProgressBar() {
-  if (uploadProgressBar) return;
-  
-  uploadProgressBar = document.createElement("div");
-  uploadProgressBar.id = "upload-progress-bar";
-  uploadProgressBar.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #38bdf8, #0ea5e9);
-    width: 0%;
-    transition: width 0.3s ease;
-    z-index: 9999;
-    display: none;
-  `;
-  document.body.appendChild(uploadProgressBar);
+function ensureUploadProgressPanel() {
+  if (uploadProgressPanel) return;
+
+  uploadProgressPanel = document.createElement("div");
+  uploadProgressPanel.id = "uploadProgressPanel";
+  uploadProgressPanel.className = "upload-progress-panel";
+
+  const header = document.createElement("div");
+  header.className = "upload-progress-header";
+
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "upload-progress-title";
+  titleWrap.innerHTML = `<strong>${tr("upload.panelTitle")}</strong><small id="uploadProgressCount"></small>`;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "upload-progress-close";
+  closeBtn.innerHTML = "×";
+  closeBtn.addEventListener("click", () => {
+    if (uploadProgressPanel) uploadProgressPanel.style.display = "none";
+  });
+
+  header.appendChild(titleWrap);
+  header.appendChild(closeBtn);
+
+  uploadProgressList = document.createElement("div");
+  uploadProgressList.className = "upload-progress-list";
+
+  uploadProgressPanel.appendChild(header);
+  uploadProgressPanel.appendChild(uploadProgressList);
+  document.body.appendChild(uploadProgressPanel);
 }
 
-function updateProgressBar(percent) {
-  ensureProgressBar();
-  uploadProgressBar.style.display = "block";
-  uploadProgressBar.style.width = percent + "%";
+function showUploadProgressPanel() {
+  ensureUploadProgressPanel();
+  if (uploadProgressPanel) {
+    uploadProgressPanel.style.display = "flex";
+  }
+  if (uploadHideTimer) {
+    clearTimeout(uploadHideTimer);
+    uploadHideTimer = null;
+  }
+  updateUploadCountLabel();
 }
 
-function hideProgressBar() {
-  if (uploadProgressBar) {
-    uploadProgressBar.style.display = "none";
-    uploadProgressBar.style.width = "0%";
+function updateUploadCountLabel() {
+  const countEl = document.getElementById("uploadProgressCount");
+  if (!countEl) return;
+  const count = uploadJobRows.size;
+  countEl.textContent = count > 0 ? tr("upload.countLabel", { n: count }) : "";
+}
+
+function scheduleHideUploadPanel() {
+  if (uploadJobRows.size > 0 || activeUploads > 0) return;
+  if (uploadHideTimer) clearTimeout(uploadHideTimer);
+  uploadHideTimer = setTimeout(() => {
+    if (uploadJobRows.size === 0 && activeUploads === 0 && uploadProgressPanel) {
+      uploadProgressPanel.style.display = "none";
+    }
+  }, 1200);
+}
+
+function registerUploadJob(jobId, fileName, fileSize) {
+  showUploadProgressPanel();
+  if (!uploadProgressList) return;
+
+  if (uploadJobRows.has(jobId)) {
+    updateUploadCountLabel();
+    return uploadJobRows.get(jobId);
+  }
+
+  const row = document.createElement("div");
+  row.className = "upload-progress-item";
+
+  const top = document.createElement("div");
+  top.className = "upload-progress-top";
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "upload-progress-name";
+  nameEl.textContent = fileName || tr("upload.fileLabel");
+
+  const percentEl = document.createElement("span");
+  percentEl.className = "upload-progress-percent";
+  percentEl.textContent = "0%";
+
+  top.appendChild(nameEl);
+  top.appendChild(percentEl);
+
+  const sizeEl = document.createElement("div");
+  sizeEl.className = "upload-progress-size";
+  sizeEl.textContent = formatFileSize(fileSize);
+
+  const bar = document.createElement("div");
+  bar.className = "upload-progress-bar";
+  const fill = document.createElement("span");
+  bar.appendChild(fill);
+
+  const statusEl = document.createElement("div");
+  statusEl.className = "upload-progress-status";
+  statusEl.textContent = tr("upload.preparing");
+
+  row.appendChild(top);
+  row.appendChild(sizeEl);
+  row.appendChild(bar);
+  row.appendChild(statusEl);
+
+  uploadProgressList.appendChild(row);
+
+  const job = {
+    row,
+    fill,
+    percentEl,
+    statusEl,
+    percent: 0
+  };
+
+  uploadJobRows.set(jobId, job);
+  updateUploadCountLabel();
+  return job;
+}
+
+function updateUploadJob(jobId, percent, status) {
+  const job = uploadJobRows.get(jobId);
+  if (!job) return;
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent || 0)));
+  job.percent = safePercent;
+  if (job.fill) {
+    job.fill.style.width = safePercent + "%";
+  }
+  if (job.percentEl) {
+    job.percentEl.textContent = `${safePercent}%`;
+  }
+  if (status && job.statusEl) {
+    job.statusEl.textContent = status;
   }
 }
 
-async function uploadFileToSupabase(file, projectId, cueId, versionId) {
+function gentlyAdvanceUpload(jobId, targetPercent, status) {
+  const job = uploadJobRows.get(jobId);
+  if (!job) return;
+  const capped = Math.min(90, Math.max(0, Math.round(targetPercent || 0)));
+  const prev = job.percent || 0;
+  if (capped <= prev) return;
+  const delta = capped - prev;
+  const easing = Math.max(1, Math.round(delta * 0.35));
+  const next = Math.min(capped, prev + easing);
+  updateUploadJob(jobId, next, status);
+}
+
+function markUploadJobComplete(jobId, message) {
+  const job = uploadJobRows.get(jobId);
+  if (!job) return;
+  job.row.classList.remove("is-error");
+  job.row.classList.add("is-complete");
+  updateUploadJob(jobId, 100, message || tr("upload.completed"));
+  removeUploadJob(jobId, 1200);
+}
+
+function markUploadJobError(jobId, message) {
+  const job = uploadJobRows.get(jobId);
+  if (!job) return;
+  job.row.classList.remove("is-complete");
+  job.row.classList.add("is-error");
+  updateUploadJob(jobId, job.percent || 0, message || tr("upload.error"));
+  removeUploadJob(jobId, 5000);
+}
+
+function removeUploadJob(jobId, delay = 1000) {
+  const job = uploadJobRows.get(jobId);
+  if (!job) {
+    scheduleHideUploadPanel();
+    return;
+  }
+  setTimeout(() => {
+    if (uploadProgressList && job.row.parentElement === uploadProgressList) {
+      uploadProgressList.removeChild(job.row);
+    }
+    uploadJobRows.delete(jobId);
+    updateUploadCountLabel();
+    scheduleHideUploadPanel();
+  }, delay);
+}
+
+async function uploadFileToSupabase(file, projectId, cueId, versionId, options = {}) {
+  const jobId = options.jobId || options.deliverableId || versionId;
   activeUploads++;
-  updateProgressBar(0);
+  registerUploadJob(jobId, file.name, file.size);
+  updateUploadJob(jobId, 0, tr("upload.preparing"));
   
   try {
     const formData = new FormData();
@@ -735,79 +1586,124 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId) {
       if (e.lengthComputable) {
         // Real progress from 0 to 95% during upload
         const percent = Math.round((e.loaded / e.total) * 95);
-        updateProgressBar(percent);
+        gentlyAdvanceUpload(jobId, percent, tr("upload.uploading"));
         console.log(`[Upload] Progress: ${percent}%`);
       }
     });
     
-    xhr.addEventListener("load", () => {
+    xhr.addEventListener("load", async () => {
       console.log("[Upload] HTTP transfer complete, processing response");
-      
-      if (xhr.status === 200 || xhr.status === 201) {
-        try {
-          const result = JSON.parse(xhr.responseText);
+      try {
+        if (xhr.status === 200 || xhr.status === 201) {
+          const result = JSON.parse(xhr.responseText || "{}");
           console.log("[Upload] Server response received:", result);
-          
-          // Show 100% when server confirms
-          updateProgressBar(100);
-          
+          updateUploadJob(jobId, 98, tr("upload.finalizing"));
+
           // Update version with the signed URL from server
           const project = getProjectById(projectId);
           if (project) {
             const cue = project.cues.find(c => c.id === cueId);
             if (cue) {
               const version = cue.versions.find(v => v.id === versionId);
-              if (version && version.media) {
-                version.media.url = result.mediaUrl || version.media.url;
-                version.isUploading = false;
-                version.uploadProgress = 100;
-                console.log("[Upload] Version updated with URL:", version.media.url);
-                
-                // Save version to database after upload completes
-                saveVersionToDatabase(project.id, cue.id, version, result.path);
-                
-                renderVersionPreviews();
-                renderPlayer();
+              if (version) {
+                if (options.deliverableId) {
+                  const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
+                  if (!deliverable) {
+                    markUploadJobError(jobId, "File tecnico non trovato");
+                  } else {
+                    const storagePath = result.path || null;
+                    if (storagePath) {
+                      deliverable.url = getProxiedUrl(storagePath);
+                    } else if (result.mediaUrl) {
+                      deliverable.url = getProxiedUrl(result.mediaUrl);
+                    }
+                    try {
+                      await saveDeliverableToDatabase(project.id, version.id, deliverable, storagePath || result.mediaUrl || deliverable.url);
+                      markUploadJobComplete(jobId, tr("upload.completed"));
+                      renderVersionPreviews();
+                    } catch (err) {
+                      markUploadJobError(jobId, tr("upload.error"));
+                    }
+                  }
+                } else if (version.media) {
+                  version.media.url = result.mediaUrl || version.media.url;
+                  version.isUploading = false;
+                  version.uploadProgress = 100;
+                  console.log("[Upload] Version updated with URL:", version.media.url);
+
+                  const saved = await saveVersionToDatabase(project.id, cue.id, version, result.path);
+                  if (saved) {
+                    markUploadJobComplete(jobId, tr("upload.completed"));
+                  } else {
+                    markUploadJobError(jobId, tr("upload.error"));
+                  }
+
+                  renderVersionPreviews();
+                  renderPlayer();
+                } else {
+                  markUploadJobError(jobId, tr("upload.error"));
+                }
+              } else {
+                markUploadJobError(jobId, tr("upload.error"));
               }
+            } else {
+              markUploadJobError(jobId, tr("upload.error"));
             }
+          } else {
+            markUploadJobError(jobId, tr("upload.error"));
           }
-          
-          activeUploads--;
-          if (activeUploads === 0) {
-            setTimeout(hideProgressBar, 800);
-          }
-        } catch (parseErr) {
-          console.error("[Upload] Failed to parse response:", parseErr);
-          activeUploads--;
-          if (activeUploads === 0) hideProgressBar();
+        } else {
+          console.error("[Upload] Server error:", xhr.status, xhr.statusText);
+          markUploadJobError(jobId, tr("upload.serverError", { code: xhr.status }));
         }
-      } else {
-        console.error("[Upload] Server error:", xhr.status, xhr.statusText);
-        activeUploads--;
-        if (activeUploads === 0) hideProgressBar();
+      } catch (parseErr) {
+        console.error("[Upload] Failed to process response:", parseErr);
+        markUploadJobError(jobId, tr("upload.invalidResponse"));
+      } finally {
+        activeUploads = Math.max(0, activeUploads - 1);
+        scheduleHideUploadPanel();
       }
     });
     
     xhr.addEventListener("error", () => {
       console.error("[Upload] Network error during upload");
-      activeUploads--;
-      if (activeUploads === 0) hideProgressBar();
+      markUploadJobError(jobId, tr("upload.networkError"));
+      activeUploads = Math.max(0, activeUploads - 1);
+      scheduleHideUploadPanel();
     });
     
     xhr.addEventListener("abort", () => {
       console.warn("[Upload] Upload aborted");
-      activeUploads--;
-      if (activeUploads === 0) hideProgressBar();
+      markUploadJobError(jobId, tr("upload.cancelled"));
+      activeUploads = Math.max(0, activeUploads - 1);
+      scheduleHideUploadPanel();
     });
     
     xhr.open("POST", "/api/upload");
+
+    // Add authentication headers
+    try {
+      if (window.supabaseClient) {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (session && session.access_token) {
+          xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
+        }
+        if (session && session.user && session.user.id) {
+          xhr.setRequestHeader('x-actor-id', session.user.id);
+        }
+      }
+    } catch (e) {
+      console.warn('[Upload] Failed to get auth session:', e);
+    }
+
     console.log("[Upload] Starting upload:", file.name, `(${Math.round(file.size / 1024)} KB)`);
     xhr.send(formData);
     
   } catch (err) {
     console.error("[Upload] Exception:", err);
-    activeUploads--;
-    if (activeUploads === 0) hideProgressBar();
+    markUploadJobError(jobId, tr("upload.unexpectedError"));
+    activeUploads = Math.max(0, activeUploads - 1);
+    scheduleHideUploadPanel();
   }
 }
 
@@ -827,24 +1723,67 @@ async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
       media_thumbnail_url: version.media && version.media.thumbnailUrl ? version.media.thumbnailUrl : null
     };
 
-    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
     const res = await fetch('/api/versions', {
       method: 'POST',
       headers,
       body: JSON.stringify({
         cue_id: cueId,
         version: versionData,
-        projectId: state.activeProjectId
+        projectId
       })
     });
 
     if (!res.ok) {
       console.error('[Flow] Failed to save version to database', await res.text());
-    } else {
-      console.log('[Flow] Version saved to database:', version.id);
+      return false;
     }
+
+    console.log('[Flow] Version saved to database:', version.id);
+    return true;
   } catch (err) {
     console.error('[Flow] Exception saving version:', err);
+    return false;
+  }
+}
+
+async function saveDeliverableToDatabase(projectId, versionId, deliverable, storageOrPublicUrl) {
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    const res = await fetch('/api/versions/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        versionId,
+        projectId,
+        updates: {},
+        versionFiles: [{
+          name: deliverable.name,
+          type: deliverable.type || null,
+          size: deliverable.size || null,
+          url: storageOrPublicUrl || null
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      console.error('[Deliverables] Failed to persist file', await res.text());
+      throw new Error('Salvataggio deliverable non riuscito');
+    }
+
+    const data = await res.json().catch(() => null);
+    const inserted = data?.files?.[0];
+    if (inserted?.id) {
+      deliverable.id = inserted.id;
+      deliverable.url = inserted.url || publicUrl || deliverable.url;
+    }
+    return inserted;
+  } catch (err) {
+    console.error('[Deliverables] Exception saving file', err);
+    throw err;
   }
 }
 
@@ -855,7 +1794,7 @@ function createVersionForCue(project, cue, file) {
     media: null,
     comments: [],
     deliverables: [],
-    status: "in-review",
+    status: "in_review",
     uploadProgress: 0,
     isUploading: true
   };
@@ -874,20 +1813,31 @@ function createVersionForCue(project, cue, file) {
       peaks: null
     };
   } else {
+    const deliverableId = uid();
     version.deliverables.push({
-      id: uid(),
+      id: deliverableId,
       name: file.name,
       size: file.size,
       type,
       url
     });
+    (async () => {
+      const saved = await saveVersionToDatabase(project.id, cue.id, version, null);
+      if (!saved) {
+        console.error('[Flow] Failed to save version metadata for deliverable file');
+        return;
+      }
+      uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId });
+    })();
   }
 
   cue.versions.push(version);
   cue.status = computeCueStatus(cue);
   
-  // Start async upload to Supabase
-  uploadFileToSupabase(file, project.id, cue.id, version.id);
+  // Start async upload to Supabase for media files
+  if (version.media) {
+    uploadFileToSupabase(file, project.id, cue.id, version.id);
+  }
   
   return version;
 }
@@ -945,28 +1895,42 @@ function getReferenceIcon(type) {
 function getReferenceLabel(type) {
   switch (type) {
     case "pdf":
-      return "PDF";
+      return tr("refs.labelPdf");
     case "image":
-      return "Image";
+      return tr("refs.labelImage");
     case "audio":
-      return "Audio";
+      return tr("refs.labelAudio");
     case "video":
-      return "Video";
+      return tr("refs.labelVideo");
     case "zip":
-      return "Archive";
+      return tr("refs.labelArchive");
     default:
-      return "File";
+      return tr("refs.labelFile");
   }
 }
 
 function applyReferencesCollapsedState() {
   if (!refsBodyEl || !refsToggleBtn) return;
+  var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
   if (referencesCollapsed) {
     refsBodyEl.classList.add("collapsed");
-    refsToggleBtn.textContent = "Show";
+    refsToggleBtn.textContent = t('refs.show');
   } else {
     refsBodyEl.classList.remove("collapsed");
-    refsToggleBtn.textContent = "Hide";
+    refsToggleBtn.textContent = t('refs.hide');
+  }
+}
+
+function applyCuesCollapsedState() {
+  const cuesBodyEl = document.getElementById('cuesBody');
+  if (!cuesBodyEl || !cuesToggleBtn) return;
+  var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+  if (cuesCollapsed) {
+    cuesBodyEl.classList.add("collapsed");
+    cuesToggleBtn.textContent = t('cues.show');
+  } else {
+    cuesBodyEl.classList.remove("collapsed");
+    cuesToggleBtn.textContent = t('cues.hide');
   }
 }
 
@@ -974,18 +1938,56 @@ function applyReferencesCollapsedState() {
 // MINI WAVEFORM (CUE VERSIONS)
 // =======================
 function createMiniWave(version, container) {
-  if (!version.media || version.media.type !== "audio" || !version.media.url)
+  if (!version.media || version.media.type !== "audio") return;
+  if (!version.media.url) {
+    container.classList.add("is-placeholder");
+    container.innerHTML = `<span class="preview-label uploading">Upload…</span>`;
     return;
+  }
 
-  container.innerHTML = "";
   container.style.position = "relative";
   container.style.overflow = "hidden";
 
+  // First check if we have peaks in version.media.waveform
+  let peaks = getWaveformPeaks(version.media.waveform);
+
+  // Also check if peaks were extracted by WaveSurfer and cached
+  if (!peaks && waveformParseCache.has(version.id)) {
+    peaks = waveformParseCache.get(version.id);
+  }
+
+  // If we have peaks (from any source), use static canvas rendering
+  if (peaks) {
+    container.innerHTML = "";
+    renderStaticWaveform(container, peaks, { height: 36, versionId: version.id });
+    // Destroy any existing WaveSurfer instance since we don't need it
+    if (miniWaves[version.id]) {
+      try {
+        miniWaves[version.id].destroy();
+      } catch (e) {}
+      delete miniWaves[version.id];
+    }
+    return;
+  }
+
+  // No peaks available - need WaveSurfer to generate them
+  // But first check if we already have a WaveSurfer instance loading/ready
   if (miniWaves[version.id]) {
+    // Already have a WaveSurfer instance - don't recreate
+    // If the container was replaced, destroy and recreate
+    if (container.querySelector("canvas")) return;
     try {
       miniWaves[version.id].destroy();
     } catch (e) {}
     delete miniWaves[version.id];
+  }
+
+  container.innerHTML = "";
+
+  // Check if WaveSurfer is available
+  if (typeof WaveSurfer === 'undefined') {
+    console.warn('[createMiniWave] WaveSurfer not loaded yet');
+    return;
   }
 
   const ws = WaveSurfer.create({
@@ -1003,29 +2005,39 @@ function createMiniWave(version, container) {
 
   miniWaves[version.id] = ws;
 
-  ws.load(getProxiedUrl(version.media.url));
+  const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
+  ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
 
   ws.on("ready", () => {
     if (!version.media.duration) {
       version.media.duration = ws.getDuration();
     }
 
-    const metaEl = document.querySelector(
-      `.version-row[data-version-id="${version.id}"] .version-meta`
-    );
+      const metaEl = document.querySelector(
+        `.version-row[data-version-id="${version.id}"] .version-meta`
+      );
 
-    if (metaEl) {
-      const dur = version.media.duration
-        ? formatTime(version.media.duration)
-        : "--:--";
-      let txt = `Audio · ${dur}`;
-      if (version.deliverables?.length) {
-        txt += ` · ${version.deliverables.length} tech files`;
+      if (metaEl) {
+        metaEl.textContent = getVersionMetaText(version);
       }
-      metaEl.textContent = txt;
-    }
 
     ws.drawBuffer();
+
+    // Extract peaks and cache them so we don't need to reload audio next time
+    try {
+      const backend = ws.backend;
+      if (backend && backend.getPeaks) {
+        const extractedPeaks = backend.getPeaks(256);
+        if (extractedPeaks && extractedPeaks.length) {
+          // Store peaks on the version object for future use
+          version.media.waveform = extractedPeaks;
+          // Also cache the peaks in parse cache
+          waveformParseCache.set(version.id, extractedPeaks);
+        }
+      }
+    } catch (e) {
+      console.warn('[MiniWave] Could not extract peaks', e);
+    }
   });
 }
 
@@ -1039,11 +2051,29 @@ function createRefMiniWave(refVersion, container) {
   container.style.position = "relative";
   container.style.overflow = "hidden";
 
+  const refPeaks = getWaveformPeaks(refVersion.waveform);
+  if (refPeaks) {
+    renderStaticWaveform(container, refPeaks, { height: 32 });
+    if (miniWaves[refVersion.id]) {
+      try {
+        miniWaves[refVersion.id].destroy();
+      } catch (e) {}
+      delete miniWaves[refVersion.id];
+    }
+    return;
+  }
+
   if (miniWaves[refVersion.id]) {
     try {
       miniWaves[refVersion.id].destroy();
     } catch (e) {}
     delete miniWaves[refVersion.id];
+  }
+
+  // Check if WaveSurfer is available
+  if (typeof WaveSurfer === 'undefined') {
+    console.warn('[createRefMiniWave] WaveSurfer not loaded yet');
+    return;
   }
 
   const ws = WaveSurfer.create({
@@ -1061,7 +2091,8 @@ function createRefMiniWave(refVersion, container) {
 
   miniWaves[refVersion.id] = ws;
 
-  ws.load(getProxiedUrl(refVersion.url));
+  const durationHint = typeof refVersion.duration === "number" ? refVersion.duration : undefined;
+  ws.load(getProxiedUrl(refVersion.url), undefined, durationHint);
 
   ws.on("ready", () => {
     if (!refVersion.duration) {
@@ -1191,7 +2222,7 @@ function generateVideoThumbnailRaw(url) {
 // Existing version video thumbs
 function generateVideoThumbnailFromUrl(version) {
   const url = version.media?.url;
-  return generateVideoThumbnailRaw(getProxiedUrl(url));
+  return generateVideoThumbnailRaw(url);
 }
 
 // =======================
@@ -1201,7 +2232,9 @@ function destroyMainWave() {
   if (mainWave) {
     try {
       mainWave.destroy();
-    } catch {}
+    } catch (e) {
+      console.warn('[Flow] Failed to destroy mainWave:', e);
+    }
     mainWave = null;
   }
   if (activeAudioEl) {
@@ -1210,7 +2243,9 @@ function destroyMainWave() {
       activeAudioEl.removeAttribute('src');
       activeAudioEl.load();
       activeAudioEl.remove();
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[Flow] Failed to cleanup activeAudioEl:', e);
+    }
     activeAudioEl = null;
   }
 }
@@ -1219,7 +2254,9 @@ function stopVideo() {
   if (activeVideoEl) {
     try {
       activeVideoEl.pause();
-    } catch {}
+    } catch (e) {
+      console.warn('[Flow] Failed to pause video:', e);
+    }
     activeVideoEl = null;
   }
 }
@@ -1241,18 +2278,28 @@ function loadAudioPlayer(project, cue, version) {
   stopVideo();
   
   playerMediaEl.innerHTML = '<div id="waveform"></div>';
+  const placeholderEl = document.getElementById("waveform");
+  if (placeholderEl) {
+    renderWavePlaceholder(placeholderEl, version.media.waveform, { height: 80 });
+  }
   
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
   playPauseBtn.disabled = true;
   timeLabelEl.textContent = "00:00 / 00:00";
 
-  // Use WebAudio backend to fetch and decode audio (better handling of CORS
-  // and avoids MediaElement crossOrigin pitfalls). WaveSurfer will fetch the
-  // proxied URL which already returns proper CORS headers.
+  const hasWaveform = !!getWaveformPeaks(version.media.waveform);
+  const waveBackend = hasWaveform ? "MediaElement" : "WebAudio";
+
+  // Check if WaveSurfer is available
+  if (typeof WaveSurfer === 'undefined') {
+    console.warn('[loadAudioPlayer] WaveSurfer not loaded yet');
+    return;
+  }
+
   mainWave = WaveSurfer.create({
     container: "#waveform",
-    backend: 'WebAudio',
+    backend: waveBackend,
     mediaControls: false,
     height: 80,
     waveColor: "rgba(148,163,184,0.8)",
@@ -1265,7 +2312,9 @@ function loadAudioPlayer(project, cue, version) {
   });
 
   try {
-    mainWave.load(getProxiedUrl(version.media.url));
+    const peaks = getWaveformPeaks(version.media.waveform);
+    const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
+    mainWave.load(getProxiedUrl(version.media.url), peaks || undefined, durationHint);
   } catch (e) {
     console.warn('loadAudioPlayer: WaveSurfer load failed', e);
   }
@@ -1276,13 +2325,12 @@ function loadAudioPlayer(project, cue, version) {
     } catch (e) {}
   });
 
-  setCommentsEnabled(true);
-
   mainWave.on("ready", () => {
     const dur = mainWave.getDuration();
     version.media.duration = dur;
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
+    removeWavePlaceholder(placeholderEl);
 
     if (volumeSlider) {
       const vol = parseFloat(volumeSlider.value || "1");
@@ -1345,8 +2393,6 @@ function loadVideoPlayer(project, cue, version) {
   inner.appendChild(thumb);
   playerMediaEl.appendChild(shell);
 
-  setCommentsEnabled(true);
-
   playBtn.addEventListener("click", () => {
     inner.innerHTML = "";
 
@@ -1380,17 +2426,19 @@ function renderReferencePlayer(project) {
   const refs = project.references || [];
 
   if (!refs.length) {
-    playerTitleEl.textContent = "No reference selected";
+    var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    playerTitleEl.textContent = t('player.noVersion');
     playerBadgeEl.textContent = "";
     playerBadgeEl.dataset.status = "";
     playerMediaEl.innerHTML =
-      '<div class="player-placeholder">No reference files.</div>';
+      '<div class="player-placeholder">' + t('refs.noFiles') + '</div>';
     playPauseBtn.style.display = "none";
     timeLabelEl.style.display = "none";
     if (volumeSlider) volumeSlider.style.display = "none";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = t('comments.noComments');
+    resetReviewUI();
     return;
   }
 
@@ -1405,14 +2453,15 @@ function renderReferencePlayer(project) {
   const active = root.versions[activeIndex];
 
   playerTitleEl.textContent = active.name;
-  playerBadgeEl.textContent = "Reference";
+  playerBadgeEl.textContent = tr("player.referenceBadge");
   playerBadgeEl.dataset.status = "reference";
 
   // Comments OFF for references
   setCommentsEnabled(false);
   commentsListEl.innerHTML = "";
   commentsSummaryEl.textContent =
-    "Comments only available on review versions";
+    tr("comments.referencesOnly");
+  resetReviewUI();
 
   const type = active.type;
 
@@ -1422,11 +2471,21 @@ function renderReferencePlayer(project) {
     stopVideo();
 
     playerMediaEl.innerHTML = '<div id="waveform"></div>';
+    const refPlaceholderEl = document.getElementById("waveform");
+    if (refPlaceholderEl) {
+      renderWavePlaceholder(refPlaceholderEl, active.waveform, { height: 80 });
+    }
 
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     playPauseBtn.disabled = true;
     timeLabelEl.textContent = "00:00 / 00:00";
+
+    // Check if WaveSurfer is available
+    if (typeof WaveSurfer === 'undefined') {
+      console.warn('[showReferenceInPlayer] WaveSurfer not loaded yet');
+      return;
+    }
 
     mainWave = WaveSurfer.create({
       container: "#waveform",
@@ -1447,6 +2506,7 @@ function renderReferencePlayer(project) {
       active.duration = dur;
       timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
       playPauseBtn.disabled = false;
+      removeWavePlaceholder(refPlaceholderEl);
 
       if (volumeSlider) {
         const vol = parseFloat(volumeSlider.value || "1");
@@ -1553,7 +2613,7 @@ function renderReferencePlayer(project) {
   if (volumeSlider) volumeSlider.style.display = "none";
 
   playerMediaEl.innerHTML =
-    '<div class="player-placeholder">Reference file. Use the "Download" button in the left panel.</div>';
+    '<div class="player-placeholder">' + tr("refs.referenceDownloadHint") + '</div>';
 }
 
 // =======================
@@ -1575,44 +2635,62 @@ if (volumeSlider) {
 function showAlert(message) {
   return new Promise((resolve) => {
     try {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'ap-overlay-alert';
-      Object.assign(wrapper.style, {
-        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: '9999', background: 'rgba(0,0,0,0.45)'
-      });
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.setAttribute('role', 'presentation');
 
-      const box = document.createElement('div');
-      Object.assign(box.style, {
-        background: '#020617', color: '#e5e7eb', padding: '12px 16px',
-        borderRadius: '8px', boxShadow: '0 6px 18px rgba(0,0,0,0.6)',
-        maxWidth: '90%', textAlign: 'center', border: '1px solid #1f2937'
-      });
+      const dialog = document.createElement('div');
+      dialog.className = 'confirm-dialog';
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+
+      const title = document.createElement('div');
+      title.className = 'confirm-title';
+      title.textContent = tr('modal.alertTitle', {}, 'Notice');
 
       const txt = document.createElement('div');
-      txt.style.marginBottom = '12px';
+      txt.className = 'confirm-message';
       txt.textContent = message || '';
 
-      const ok = document.createElement('button');
-      ok.className = 'primary-btn tiny';
-      ok.textContent = 'OK';
+      const actions = document.createElement('div');
+      actions.className = 'confirm-actions center';
 
-      // close on OK, click outside, or ESC
+      const ok = document.createElement('button');
+      ok.className = 'primary-btn small';
+      ok.textContent = tr('action.ok', {}, 'OK');
+
+      actions.appendChild(ok);
+      dialog.appendChild(title);
+      dialog.appendChild(txt);
+      dialog.appendChild(actions);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
       const cleanup = () => {
-        try { document.body.removeChild(wrapper); } catch (e) {}
+        overlay.classList.remove('visible');
+        const removeOverlay = () => overlay.remove();
+        overlay.addEventListener('transitionend', removeOverlay, { once: true });
+        setTimeout(removeOverlay, 200);
         document.removeEventListener('keydown', onKey);
       };
-      const onKey = (ev) => { if (ev.key === 'Escape') { cleanup(); resolve(); } };
+
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') {
+          cleanup();
+          resolve();
+        }
+      };
 
       ok.addEventListener('click', () => { cleanup(); resolve(); });
-      wrapper.addEventListener('click', (ev) => { if (ev.target === wrapper) { cleanup(); resolve(); } });
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) { cleanup(); resolve(); } });
       document.addEventListener('keydown', onKey);
 
-      box.appendChild(txt);
-      box.appendChild(ok);
-      wrapper.appendChild(box);
-      document.body.appendChild(wrapper);
+      requestAnimationFrame(() => {
+        overlay.classList.add('visible');
+        setTimeout(() => {
+          try { ok.focus(); } catch (_) {}
+        }, 30);
+      });
     } catch (e) {
       // fallback to native alert if something goes wrong
       try { alert(message); } catch (e2) {}
@@ -1624,35 +2702,46 @@ function showAlert(message) {
 function showConfirm(message) {
   return new Promise((resolve) => {
     try {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'ap-overlay-confirm';
-      Object.assign(wrapper.style, {
-        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: '9999', background: 'rgba(0,0,0,0.45)'
-      });
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.setAttribute('role', 'presentation');
 
-      const box = document.createElement('div');
-      Object.assign(box.style, {
-        background: '#020617', color: '#e5e7eb', padding: '14px 18px',
-        borderRadius: '8px', boxShadow: '0 6px 18px rgba(0,0,0,0.6)',
-        maxWidth: '90%', textAlign: 'center', border: '1px solid #1f2937'
-      });
+      const dialog = document.createElement('div');
+      dialog.className = 'confirm-dialog';
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+
+      const title = document.createElement('div');
+      title.className = 'confirm-title';
+      title.textContent = tr('action.confirmDefaultTitle', {}, 'Are you sure?');
 
       const txt = document.createElement('div');
-      txt.style.marginBottom = '12px';
+      txt.className = 'confirm-message';
       txt.textContent = message || '';
 
+      const actions = document.createElement('div');
+      actions.className = 'confirm-actions center';
+
       const yes = document.createElement('button');
-      yes.className = 'primary-btn tiny';
-      yes.textContent = 'Yes';
+      yes.className = 'primary-btn small';
+      yes.textContent = tr("action.yes", {}, "Yes");
       const no = document.createElement('button');
-      no.className = 'ghost-btn tiny';
-      no.style.marginLeft = '8px';
-      no.textContent = 'No';
+      no.className = 'ghost-btn small';
+      no.textContent = tr("action.no", {}, "No");
+
+      actions.appendChild(yes);
+      actions.appendChild(no);
+      dialog.appendChild(title);
+      dialog.appendChild(txt);
+      dialog.appendChild(actions);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
 
       const cleanup = (val) => {
-        try { document.body.removeChild(wrapper); } catch (e) {}
+        overlay.classList.remove('visible');
+        const removeOverlay = () => overlay.remove();
+        overlay.addEventListener('transitionend', removeOverlay, { once: true });
+        setTimeout(removeOverlay, 200);
         document.removeEventListener('keydown', onKey);
         resolve(val);
       };
@@ -1660,20 +2749,15 @@ function showConfirm(message) {
 
       yes.addEventListener('click', () => cleanup(true));
       no.addEventListener('click', () => cleanup(false));
-      wrapper.addEventListener('click', (ev) => { if (ev.target === wrapper) cleanup(false); });
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) cleanup(false); });
       document.addEventListener('keydown', onKey);
 
-      box.appendChild(txt);
-      // action row container for consistent spacing
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.justifyContent = 'center';
-      row.style.gap = '8px';
-      row.appendChild(yes);
-      row.appendChild(no);
-      box.appendChild(row);
-      wrapper.appendChild(box);
-      document.body.appendChild(wrapper);
+      requestAnimationFrame(() => {
+        overlay.classList.add('visible');
+        setTimeout(() => {
+          try { yes.focus(); } catch (_) {}
+        }, 30);
+      });
     } catch (e) {
       // fallback to native confirm
       try { resolve(confirm(message)); } catch (e2) { resolve(false); }
@@ -1685,7 +2769,7 @@ function renderComments() {
   const ctx = getActiveContext();
   if (!ctx || !ctx.version.media) {
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     setCommentsEnabled(false);
     return;
   }
@@ -1696,11 +2780,11 @@ function renderComments() {
   commentsListEl.innerHTML = "";
 
   if (!arr.length) {
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     return;
   }
 
-  commentsSummaryEl.textContent = `${arr.length} comments`;
+  commentsSummaryEl.textContent = tr("comments.count", { n: arr.length });
 
   arr.forEach(c => {
     const li = document.createElement("li");
@@ -1712,7 +2796,7 @@ function renderComments() {
 
     const author = document.createElement("span");
     author.className = "author";
-    author.textContent = c.author || "Client";
+    author.textContent = c.author || tr("misc.client", {}, "Client");
 
     const text = document.createElement("p");
     text.textContent = c.text;
@@ -1776,7 +2860,7 @@ function renderComments() {
             save.textContent = 'Save';
             const cancel = document.createElement('button');
             cancel.className = 'ghost-btn tiny';
-            cancel.textContent = 'Cancel';
+            cancel.textContent = tr("action.cancel");
 
             // swap nodes
             li.replaceChild(input, text);
@@ -1788,7 +2872,7 @@ function renderComments() {
               e.stopPropagation();
               const newText = input.value.trim();
               if (!newText) {
-                await showAlert('Comment text cannot be empty');
+                await showAlert(tr('comments.emptyError'));
                 return;
               }
               try {
@@ -1800,7 +2884,7 @@ function renderComments() {
                 });
                 const j = await r.json();
                 if (!r.ok || j.error) {
-                  await showAlert('Errore aggiornamento commento: ' + (j.error || r.statusText));
+                  await showAlert(tr('comments.updateError', { error: (j.error || r.statusText) }));
                   return;
                 }
                 // update local model
@@ -1811,7 +2895,7 @@ function renderComments() {
                 renderOwnerActions();
               } catch (err) {
                 console.error('Error updating comment', err);
-                alert('Eccezione durante aggiornamento commento');
+              showAlert('Eccezione durante aggiornamento commento');
               }
             });
 
@@ -1827,10 +2911,14 @@ function renderComments() {
           const doDelete = async () => {
             if (!await showConfirm('Delete this comment?')) return;
             try {
-              const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}&projectId=${state.activeProjectId}`, { method: 'DELETE' });
+              const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+              const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}&projectId=${state.activeProjectId}`, {
+                method: 'DELETE',
+                headers
+              });
               const j = await r.json();
               if (!r.ok || j.error) {
-                await showAlert('Errore cancellazione commento: ' + (j.error || r.statusText));
+                await showAlert(tr('comments.deleteError', { error: (j.error || r.statusText) }));
                 return;
               }
               // remove from local array
@@ -1839,7 +2927,7 @@ function renderComments() {
               renderComments();
             } catch (err) {
               console.error('Error deleting comment', err);
-              alert('Eccezione durante cancellazione commento');
+            showAlert('Eccezione durante cancellazione commento');
             }
           };
 
@@ -1914,38 +3002,135 @@ function renderComments() {
     commentsListEl.appendChild(li);
   });
 
-  setCommentsEnabled(true);
+  // comment enablement handled by review state
 }
 
 // =======================
 // LOAD PROJECT DATA FROM API
 // =======================
 async function loadProjectCues(projectId) {
+  const project = getProjectById(projectId);
+  if (!project) return;
+
+  const headers =
+    (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
+      ? window.flowAuth.getAuthHeaders()
+      : { 'Content-Type': 'application/json' };
+
   try {
-    const project = getProjectById(projectId);
-    if (!project) return;
+    console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
+    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
+    if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
-    console.log("[Flow] Loading cues for project:", projectId);
+    const payload = await response.json();
+    const projectData = (payload.projects || []).find(p => p.id === projectId);
+    if (!projectData) throw new Error('Project missing in aggregated response');
 
-    const response = await fetch(`/api/cues?projectId=${projectId}`);
+    project.cues = projectData.cues || [];
+    project.cues.forEach(cue => {
+      if (typeof cue.maxRevisions !== "number" || cue.maxRevisions <= 0) {
+        const localMax = loadCueMaxRevisions(cue.id);
+        if (localMax) cue.maxRevisions = localMax;
+      }
+    });
+    if (project.cues.length > 0) {
+      project.activeCueId = project.cues[0].id;
+      const firstVersion = project.cues[0].versions && project.cues[0].versions[0];
+      project.activeVersionId = firstVersion ? firstVersion.id : null;
+    } else {
+      project.activeCueId = null;
+      project.activeVersionId = null;
+    }
+
+    project.references = sanitizeProjectReferences(projectData.references);
+    project.cueNotes = projectData.cueNotes || {};
+    project.notes = projectData.notes || [];
+    if (!project.activeReferenceId && project.references.length) {
+      project.activeReferenceId = project.references[0].id;
+    }
+
+    refreshAllNames();
+    renderReferences();
+    renderAll();
+    console.log("[Flow] Project cues loaded successfully via /api/projects/full");
+    loadProjectNotes(projectId).catch(err => {
+      console.warn('[Flow] Failed to preload notes', err);
+    });
+    return;
+  } catch (err) {
+    console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
+  }
+
+  await loadProjectCuesLegacy(projectId, headers);
+}
+
+async function loadProjectCuesLegacy(projectId, headers) {
+  const project = getProjectById(projectId);
+  if (!project) return;
+
+  try {
+    console.log("[Flow] Legacy cue loader running for project:", projectId);
+    const response = await fetch(`/api/cues?projectId=${encodeURIComponent(projectId)}`, { headers });
     if (!response.ok) {
-      console.error("[Flow] Failed to load cues:", response.statusText);
+      console.error("[Flow] Legacy loader failed to fetch cues:", response.statusText);
       return;
     }
 
     const data = await response.json();
     const cuesFromDb = data.cues || [];
 
-    console.log("[Flow] Loaded cues:", cuesFromDb.length);
-
-    // Load versions for each cue
     const cuesWithVersions = await Promise.all(
       cuesFromDb.map(async (dbCue) => {
-        const versionResponse = await fetch(`/api/versions?cueId=${dbCue.id}&projectId=${projectId}`);
+        const versionResponse = await fetch(
+          `/api/versions?cueId=${encodeURIComponent(dbCue.id)}&projectId=${encodeURIComponent(projectId)}`,
+          { headers }
+        );
         const versionData = versionResponse.ok ? await versionResponse.json() : { versions: [] };
         const versions = versionData.versions || [];
 
-        console.log(`[Flow] Loaded ${versions.length} versions for cue ${dbCue.id}`);
+        const versionsWithComments = await Promise.all(
+          versions.map(async (v) => {
+            const ver = {
+              id: v.id,
+              index: v.index_in_cue || 0,
+              media: v.media_type
+                ? {
+                    type: v.media_type,
+                    url: v.media_url,
+                    originalName: v.media_filename || "Media",
+                    displayName: v.media_filename || "Media",
+                    duration: v.duration || v.media_duration || null,
+                    thumbnailUrl: v.thumbnail_url,
+                    waveform: v.waveform || v.media_waveform_data || null
+                  }
+                : null,
+              comments: [],
+              deliverables: [],
+              status: v.status || "in_review"
+            };
+            try {
+              const commentResp = await fetch(
+                `/api/comments?versionId=${encodeURIComponent(v.id)}&projectId=${encodeURIComponent(projectId)}`,
+                { headers }
+              );
+              if (commentResp.ok) {
+                const commentData = await commentResp.json();
+                const rows = commentData.comments || [];
+                ver.comments = rows.map(rc => ({
+                  id: rc.id,
+                  time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
+                  author: rc.author || 'Client',
+                  actorId: rc.actor_id || null,
+                  text: rc.text || '',
+                  created_at: rc.created_at
+                }));
+              }
+            } catch (e) {
+              console.warn('[Flow] Failed to load comments for version (legacy)', v.id, e);
+            }
+            return ver;
+          })
+        );
 
         return {
           id: dbCue.id,
@@ -1953,79 +3138,41 @@ async function loadProjectCues(projectId) {
           originalName: dbCue.name || "Untitled",
           name: dbCue.name || "Untitled",
           displayName: "",
-          status: dbCue.status || "in-review",
-            versions: await Promise.all(versions.map(async (v) => {
-              const ver = {
-                id: v.id,
-                index: v.index_in_cue || 0,
-                media: v.media_type ? {
-                  type: v.media_type,
-                  url: v.media_url,
-                  originalName: v.media_filename || "Media",
-                  displayName: v.media_filename || "Media",
-                  duration: v.duration,
-                  thumbnailUrl: v.thumbnail_url,
-                  peaks: null
-                } : null,
-                comments: [],
-                deliverables: [],
-                status: v.status || "in-review"
-              };
-              try {
-                const r = await fetch(`/api/comments?versionId=${encodeURIComponent(v.id)}&projectId=${projectId}`);
-                if (r.ok) {
-                  const d = await r.json();
-                  const rows = d.comments || [];
-                  ver.comments = (rows || []).map(rc => ({
-                    id: rc.id,
-                    time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
-                    author: rc.author || 'Client',
-                    actorId: rc.actor_id || null,
-                    text: rc.text || '',
-                    created_at: rc.created_at
-                  }));
-                }
-              } catch (e) {
-                console.warn('[Flow] Failed to load comments for version', v.id, e);
-                ver.comments = [];
-              }
-              return ver;
-            })),
+          maxRevisions: typeof dbCue.max_revisions === "number" ? dbCue.max_revisions : loadCueMaxRevisions(dbCue.id),
+          status: dbCue.status || "in_review",
+          versions: versionsWithComments,
           isOpen: true
         };
       })
     );
 
-    // Update project with loaded cues
     project.cues = cuesWithVersions;
-
-    console.log('[Flow] cuesWithVersions sample:', cuesWithVersions.slice(0,5).map(c => ({ id: c.id, versions: c.versions.length, isOpen: c.isOpen })));
-
-    // Set first cue/version as active if any exist
     if (cuesWithVersions.length > 0) {
-      const firstCue = cuesWithVersions[0];
-      project.activeCueId = firstCue.id;
-      if (firstCue.versions.length > 0) {
-        project.activeVersionId = firstCue.versions[0].id;
-      }
+      project.activeCueId = cuesWithVersions[0].id;
+      project.activeVersionId = cuesWithVersions[0].versions[0]?.id || null;
+    } else {
+      project.activeCueId = null;
+      project.activeVersionId = null;
     }
 
-    console.log("[Flow] Project cues loaded successfully");
+    await loadProjectReferencesLegacy(projectId, headers);
     refreshAllNames();
-    await loadProjectReferences(projectId); // load references alongside cues
     renderAll();
+    loadProjectNotes(projectId).catch(err => {
+      console.warn('[Flow] Failed to preload notes (legacy path)', err);
+    });
+    console.log("[Flow] Project cues loaded via legacy path");
   } catch (err) {
-    console.error("[Flow] Error loading project cues:", err);
+    console.error("[Flow] Legacy cue loader failed:", err);
   }
 }
 
-// Load references (roots + versions) for a project
-async function loadProjectReferences(projectId) {
+async function loadProjectReferencesLegacy(projectId, headers) {
   try {
     const project = getProjectById(projectId);
     if (!project) return;
 
-    const res = await fetch(`/api/references?projectId=${projectId}`);
+    const res = await fetch(`/api/references?projectId=${encodeURIComponent(projectId)}`, { headers });
     if (!res.ok) {
       console.error("[Flow] Failed to load references", res.statusText);
       project.references = [];
@@ -2034,33 +3181,7 @@ async function loadProjectReferences(projectId) {
     }
 
     const data = await res.json();
-    const roots = data.references || [];
-
-    // Sanitize references and versions to avoid undefined entries
-    project.references = (roots || [])
-      .filter(r => r && typeof r === 'object')
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        activeVersionIndex: typeof r.active_version_index === "number" ? r.active_version_index : 0,
-        versions: (r.versions || [])
-          .filter(v => v && typeof v === 'object')
-          .map((v) => ({
-            id: v.id,
-            name: v.name,
-            type: v.type || 'other',
-            url: v.url,
-            size: v.size,
-            duration: v.duration,
-            thumbnailUrl: v.thumbnail_url || v.thumbnail_path || null,
-          }))
-          .filter(v => !!v)
-      }))
-      // Drop empty reference groups with no versions to prevent rendering errors
-      .filter(r => Array.isArray(r.versions) && r.versions.length > 0);
-
-    console.log('[Flow] References sanitized:', project.references.length);
-
+    project.references = sanitizeProjectReferences(data.references);
     if (!project.activeReferenceId && project.references.length) {
       project.activeReferenceId = project.references[0].id;
     }
@@ -2071,12 +3192,40 @@ async function loadProjectReferences(projectId) {
   }
 }
 
+function sanitizeProjectReferences(rawReferences) {
+  return (rawReferences || [])
+    .filter(r => r && typeof r === 'object')
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      activeVersionIndex: typeof r.active_version_index === "number" ? r.active_version_index : 0,
+      versions: (r.versions || [])
+        .filter(v => v && typeof v === 'object')
+        .map((v) => ({
+          id: v.id,
+          name: v.name,
+          type: v.type || 'other',
+          url: v.url,
+          size: v.size,
+          duration: v.duration,
+          thumbnailUrl: v.thumbnail_url || v.thumbnail_path || null,
+          waveform: v.waveform || null
+        }))
+        .filter(v => !!v)
+    }))
+    .filter(r => Array.isArray(r.versions) && r.versions.length > 0);
+}
+
 function addCommentFromInput() {
   const ctx = getActiveContext();
   if (!ctx) return;
 
   const { version } = ctx;
   if (!version.media) return;
+  if (!canAddCommentsForVersion(version.status)) {
+    showAlert(REVIEW_CLOSED_MESSAGE());
+    return;
+  }
 
   const text = commentInputEl.value.trim();
   if (!text) return;
@@ -2132,7 +3281,7 @@ function addCommentFromInput() {
       console.log('[addComment] server response', resp);
       if (!resp || resp.error) {
         console.error('[addComment] failed to save', resp && resp.error);
-        try { alert('Errore salvataggio commento: ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
+        try { showAlert('Errore salvataggio commento: ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
         return;
       }
 
@@ -2153,9 +3302,18 @@ function addCommentFromInput() {
       }
     } catch (err) {
       console.error('[addComment] exception saving comment', err);
-      try { alert('Eccezione durante il salvataggio del commento: ' + String(err)); } catch(e){}
+      try { showAlert('Eccezione durante il salvataggio del commento: ' + String(err)); } catch(e){}
     }
   })();
+}
+
+const commentInputWrap = commentInputEl.closest(".comment-input");
+if (commentInputWrap) {
+  commentInputWrap.addEventListener("click", () => {
+    if (commentInputEl.disabled) {
+      showAlert(REVIEW_CLOSED_MESSAGE());
+    }
+  });
 }
 
 commentInputEl.addEventListener("focus", () => {
@@ -2183,28 +3341,71 @@ addCommentBtn.addEventListener("click", addCommentFromInput);
 // =======================
 // CUE LIST + VERSION PREVIEW
 // =======================
-function renderCueList() {
+
+// Helper to clean up old WaveSurfer instances before re-rendering
+function cleanupMiniWaves() {
+  Object.keys(miniWaves).forEach(id => {
+    try {
+      if (miniWaves[id]) {
+        miniWaves[id].destroy();
+      }
+    } catch (e) {}
+    delete miniWaves[id];
+  });
+}
+
+function renderCueList(options = {}) {
   const project = getActiveProject();
   console.log("renderCueList: project", project && project.id, "cuesCount", project && project.cues && project.cues.length);
+
+  // Clean up WaveSurfer instances since their containers will be destroyed
+  cleanupMiniWaves();
+
   if (!project) {
-    cueListEl.innerHTML = 'No project. Click "New project".';
-    cueListSubtitleEl.textContent = "No project yet.";
+    // Use i18n translations for empty state
+    var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    cueListEl.innerHTML = t('cues.noCues');
+    setSectionSubtitle(cueListSubtitleEl, cuesSubtitleKey, cuesSubtitleFallback);
+    cueListEl.classList.add("cue-list-empty");
+    updateCountBadge(
+      cuesCountBadgeEl,
+      null,
+      "cues.countSingle",
+      "cues.countPlural",
+      "cue",
+      "cues"
+    );
     if (rightColEl) rightColEl.style.display = "none";
     return;
   }
 
+  updateCountBadge(
+    cuesCountBadgeEl,
+    project.cues.length || 0,
+    "cues.countSingle",
+    "cues.countPlural",
+    "cue",
+    "cues"
+  );
+  setSectionSubtitle(cueListSubtitleEl, cuesSubtitleKey, cuesSubtitleFallback);
+
   if (!project.cues.length) {
-    cueListEl.innerHTML = "No cues yet. Drop a media file.";
-    cueListSubtitleEl.textContent = "No cues yet.";
+    var t2 = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    cueListEl.innerHTML = t2('cues.noCues');
+    setSectionSubtitle(cueListSubtitleEl, cuesSubtitleKey, cuesSubtitleFallback);
+    cueListEl.classList.add("cue-list-empty");
     const hasRefs = project.references && project.references.length;
     if (!hasRefs && rightColEl) rightColEl.style.display = "none";
     return;
   }
 
   cueListEl.innerHTML = "";
-  cueListSubtitleEl.textContent = `${project.cues.length} cues`;
+  cueListEl.classList.remove("cue-list-empty");
+  // Keep subtitle as static translated text from data-i18n attribute
+  // Badge already shows the count via updateCountBadge above
 
   project.cues.forEach(cue => {
+    console.log("[FlowPreview] Creating cue element with menu for:", cue.id, cue.name);
     const details = document.createElement("details");
     details.className = "cue-block";
     details.dataset.cueId = cue.id;
@@ -2222,7 +3423,9 @@ function renderCueList() {
 
     const metaEl = document.createElement("div");
     metaEl.className = "cue-meta";
-    metaEl.textContent = `${cue.versions.length} versions`;
+    const cueVersionsLabel =
+      cue.versions.length === 1 ? tr("misc.version") : tr("misc.versions");
+    metaEl.textContent = `${cue.versions.length} ${cueVersionsLabel}`;
 
     left.appendChild(nameEl);
     left.appendChild(metaEl);
@@ -2231,9 +3434,10 @@ function renderCueList() {
     right.className = "cue-header-right";
 
     const status = document.createElement("span");
-    const statusKey = cue.status || "in-review";
-    status.className = `cue-status ${statusKey}`;
-    status.textContent = VERSION_STATUSES[statusKey] || "In review";
+  const statusKey = normalizeVersionStatus(cue.status || "in_review");
+  const cueStatusClass = getStatusClassKey(statusKey);
+  status.className = `cue-status ${cueStatusClass}`;
+  status.textContent = getStatusLabel(statusKey);
 
     const dd = document.createElement("div");
     dd.className = "download-dropdown cue-dropdown";
@@ -2245,13 +3449,159 @@ function renderCueList() {
 
     const menu = document.createElement("div");
     menu.className = "download-menu";
+    const canOwnerActions = isOwnerOfProject(project);
     menu.innerHTML = `
-      <button data-action="rename">Rename</button>
-      <button data-action="delete">Delete</button>
+      <button data-action="rename">${tr("action.rename")}</button>
+      <button data-action="delete">${tr("action.delete")}</button>
+      ${
+        canOwnerActions
+          ? `<div class="menu-sep"></div>
+      <button data-action="set-in-review">${tr("cues.setInReview")}</button>
+      <button data-action="set-approved">${tr("cues.setApproved")}</button>`
+          : ""
+      }
     `;
 
     dd.appendChild(btn);
     dd.appendChild(menu);
+
+    // IMPORTANT: Add event listeners immediately while dd, btn, menu are in scope for this cue
+    btn.addEventListener("click", e => {
+      console.log("[FlowPreview] Cue menu button clicked for cue:", cue.id);
+      e.preventDefault();
+      e.stopPropagation();
+      const wasOpen = dd.classList.contains("open");
+      document
+        .querySelectorAll(".download-dropdown.open")
+        .forEach(x => x.classList.remove("open"));
+      if (!wasOpen) {
+        dd.classList.add("open");
+        console.log("[FlowPreview] Cue menu opened");
+      }
+    });
+
+    menu.querySelectorAll("button").forEach(b => {
+      b.addEventListener("click", async e => {
+        console.log("[FlowPreview] Cue menu action clicked:", b.dataset.action, "for cue:", cue.id);
+        e.preventDefault();
+        e.stopPropagation();
+        dd.classList.remove("open");
+        const action = b.dataset.action;
+        if (action === "rename") {
+          const name = await showPromptDialog({
+            title: tr("action.renameCue"),
+            defaultValue: cue.name
+          });
+          if (name && name.trim()) {
+            const newName = name.trim();
+            try {
+              const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+              const res = await fetch('/api/cues', {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({ id: cue.id, name: newName, projectId: state.activeProjectId })
+              });
+              if (!res.ok) {
+                console.error('[FlowPreview] Failed to rename cue', await res.text());
+                showAlert('Errore nel rinominare la cue');
+                return;
+              }
+              cue.name = newName;
+              refreshAllNames();
+              renderAll();
+            } catch (err) {
+              console.error('[FlowPreview] Exception renaming cue', err);
+              showAlert('Errore nel rinominare la cue');
+            }
+          }
+        }
+        if (action === "delete") {
+          const cueLabel = cue.displayName || cue.name || "Cue";
+          const confirmed = await showConfirmDialog({
+            title: tr("action.deleteCueTitle"),
+            message: tr("action.deleteCueMessage", { name: cueLabel }),
+            confirmLabel: tr("action.delete"),
+            cancelLabel: tr("action.cancel")
+          });
+          if (!confirmed) return;
+          console.log("[FlowPreview] Delete cue action triggered for:", cue.id);
+          try {
+            console.log("[FlowPreview] Sending DELETE request for cue:", cue.id);
+            const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+            const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}&projectId=${state.activeProjectId}`, {
+              method: 'DELETE',
+              headers
+            });
+            console.log("[FlowPreview] DELETE response status:", res.status);
+            if (!res.ok) {
+              console.error('[FlowPreview] Failed to delete cue', await res.text());
+              showAlert('Errore nella cancellazione della cue');
+              return;
+            }
+
+            const projectNow = getActiveProject();
+            if (!projectNow) return;
+
+            // Remove miniWaves for this cue's versions only
+            cue.versions.forEach(v => {
+              if (miniWaves[v.id]) {
+                try { miniWaves[v.id].destroy(); } catch(e) {}
+                delete miniWaves[v.id];
+              }
+            });
+
+            // Remove the cue element from DOM directly (no full re-render)
+            const cueElement = document.querySelector(`details[data-cue-id="${cue.id}"]`);
+            if (cueElement) {
+              cueElement.remove();
+            }
+
+            // Update state
+            projectNow.cues = projectNow.cues.filter(c => c.id !== cue.id);
+
+            // Update active cue if needed
+            if (projectNow.activeCueId === cue.id) {
+              projectNow.activeCueId = projectNow.cues[0]?.id || null;
+              projectNow.activeVersionId = projectNow.cues[0]?.versions[0]?.id || null;
+              // Only re-render player if active cue changed
+              renderPlayer();
+            }
+
+            // Update cue count badge
+            const countBadge = document.getElementById('cuesCountBadge');
+            if (countBadge) {
+              const count = projectNow.cues.length;
+              countBadge.textContent = count > 0 ? count : '--';
+            }
+
+            // Show empty state if no cues left
+            if (projectNow.cues.length === 0) {
+              const cueList = document.getElementById('cueList');
+              if (cueList) {
+                cueList.classList.add('cue-list-empty');
+                const t = window.i18n && window.i18n.t ? window.i18n.t : (k) => k;
+                cueList.innerHTML = `<div class="empty-state">${t('cues.noCues')}</div>`;
+              }
+            }
+          } catch (err) {
+            console.error('[FlowPreview] Exception deleting cue', err);
+            showAlert('Errore nella cancellazione della cue');
+          }
+        }
+        if (action === "set-in-review" || action === "set-approved") {
+          if (!isOwnerOfProject(project)) return;
+          const latestVersion = cue.versions[cue.versions.length - 1];
+          if (!latestVersion) {
+            showAlert(tr("cues.noVersionsForStatus"));
+            return;
+          }
+          const nextStatus = action === "set-approved" ? "approved" : "in_review";
+          await setVersionStatus(project, cue, latestVersion, nextStatus);
+        }
+      });
+    });
+
+    console.log("[FlowPreview] Event listeners added for cue menu:", cue.id, "btn:", btn, "menu:", menu);
 
     right.appendChild(status);
     right.appendChild(dd);
@@ -2280,8 +3630,35 @@ function renderCueList() {
     // Also listen for native toggle events to keep state in sync
     details.addEventListener('toggle', () => {
       try {
+        const wasOpen = cue.isOpen;
         cue.isOpen = !!details.open;
-        console.log('renderCueList: details.toggle', { cueId: cue.id, detailsOpen: details.open });
+        console.log('renderCueList: details.toggle', { cueId: cue.id, detailsOpen: details.open, wasOpen });
+
+        // Only auto-select first version when opening a previously closed cue
+        if (details.open && !wasOpen) {
+          state.playerMode = "review";
+          project.activeCueId = cue.id;
+          const firstVersion = cue.versions && cue.versions[0];
+          project.activeVersionId = firstVersion ? firstVersion.id : null;
+          currentPlayerVersionId = null;
+          currentPlayerMediaType = null;
+          currentPlayerCueId = null;
+          updatePlayerModeButtons();
+          updateActiveVersionRowStyles();
+          renderPlayer();
+          renderVersionPreviews();
+          renderNotesPanel();
+        } else if (!details.open) {
+          cue.versions.forEach(v => {
+            if (miniWaves[v.id]) {
+              try {
+                miniWaves[v.id].destroy();
+              } catch (e) {}
+              delete miniWaves[v.id];
+            }
+          });
+          renderNotesPanel();
+        }
       } catch (err) {
         console.error('renderCueList: toggle handler failed', err, cue && cue.id);
       }
@@ -2295,9 +3672,19 @@ function renderCueList() {
       row.dataset.cueId = cue.id;
       row.dataset.versionId = version.id;
 
-      const statusKeyV = version.status || "in-review";
-      row.dataset.status = statusKeyV;
-      row.classList.add(`status-${statusKeyV}`);
+      const statusKeyV = version.status || "in_review";
+      const normalizedStatusKey = normalizeVersionStatus(statusKeyV);
+      const statusClassKey = getStatusClassKey(normalizedStatusKey);
+      row.dataset.status = statusClassKey;
+      row.classList.add(`status-${statusClassKey}`);
+      const maxRevisions =
+        typeof cue.maxRevisions === "number"
+          ? cue.maxRevisions
+          : typeof cue.max_revisions === "number"
+          ? cue.max_revisions
+          : null;
+      const isExtraRevision =
+        maxRevisions !== null && version.index + 1 > maxRevisions;
 
       if (
         project.activeCueId === cue.id &&
@@ -2309,10 +3696,31 @@ function renderCueList() {
       const lab = document.createElement("div");
       lab.className = "version-label";
       lab.textContent = computeVersionLabel(version.index);
+      const extraSlot = document.createElement("div");
+      extraSlot.className = "revision-extra-slot";
+      if (isExtraRevision) {
+        row.classList.add("revision-extra");
+        const warn = document.createElement("span");
+        warn.className = "revision-extra-indicator";
+        warn.textContent = "▲";
+        warn.title = "Revisione extra";
+        extraSlot.appendChild(warn);
+      }
 
       const prev = document.createElement("div");
       prev.className = "version-preview";
       prev.id = `preview-${version.id}`;
+      if (version.media?.thumbnailUrl) {
+        const thumbUrl = getProxiedUrl(version.media.thumbnailUrl);
+        if (thumbUrl) {
+          prev.style.backgroundImage = `url(${thumbUrl})`;
+          prev.classList.add("has-thumbnail");
+        } else {
+          prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
+        }
+      } else {
+        prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
+      }
 
       const main = document.createElement("div");
       main.className = "version-main";
@@ -2326,19 +3734,7 @@ function renderCueList() {
 
       const meta = document.createElement("div");
       meta.className = "version-meta";
-      const d = version.media?.duration
-        ? formatTime(version.media.duration)
-        : "--:--";
-      meta.textContent = version.media
-        ? (version.media.type === "audio"
-            ? `Audio · ${d}`
-            : `Video · ${d}`) +
-          (version.deliverables.length
-            ? ` · ${version.deliverables.length} tech files`
-            : "")
-        : version.deliverables.length
-        ? `${version.deliverables.length} tech files`
-        : "Only deliverables";
+      meta.textContent = getVersionMetaText(version);
 
       main.appendChild(title);
       main.appendChild(meta);
@@ -2355,7 +3751,7 @@ function renderCueList() {
       const ddBtn = document.createElement("button");
       ddBtn.type = "button";
       ddBtn.className = "ghost-btn tiny download-toggle";
-      ddBtn.textContent = "Download ▾";
+      ddBtn.textContent = `${tr("action.download")} ▾`;
 
       const ddMenu = document.createElement("div");
       ddMenu.className = "download-menu";
@@ -2387,51 +3783,28 @@ function renderCueList() {
       dd2.appendChild(ddBtn);
       dd2.appendChild(ddMenu);
 
-      top.appendChild(dd2);
-      actions.appendChild(top);
+      const manageMenuWrap = document.createElement("div");
+      manageMenuWrap.className = "download-dropdown version-manage-dropdown";
 
-      row.appendChild(lab);
-      row.appendChild(prev);
-      row.appendChild(main);
-      row.appendChild(actions);
+      const manageMenuBtn = document.createElement("button");
+      manageMenuBtn.type = "button";
+      manageMenuBtn.className = "icon-btn tiny download-toggle";
+      manageMenuBtn.textContent = "⋯";
 
-      row.addEventListener("click", e => {
-        if (e.target.closest(".download-toggle")) return;
-        state.playerMode = "review";
-        project.activeCueId = cue.id;
-        project.activeVersionId = version.id;
-        updatePlayerModeButtons();
-        renderPlayer();
-      });
+      const manageMenu = document.createElement("div");
+      manageMenu.className = "download-menu";
+      manageMenu.innerHTML = `
+        <button data-action="rename-version">${tr("action.rename")}</button>
+        <button data-action="delete-version">${tr("action.delete")}</button>
+      `;
 
-      row.addEventListener("dragover", e => {
-        if (!isFileDragEvent(e)) return;
-        e.preventDefault();
-        row.classList.add("drag-over");
-      });
+      manageMenuWrap.appendChild(manageMenuBtn);
+      manageMenuWrap.appendChild(manageMenu);
 
-      row.addEventListener("dragleave", e => {
-        if (!row.contains(e.relatedTarget)) {
-          row.classList.remove("drag-over");
-        }
-      });
-
-      row.addEventListener("drop", e => {
-        if (!isFileDragEvent(e)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        row.classList.remove("drag-over");
-
-        const projectNow = getActiveProject();
-        if (!projectNow) return;
-
-        const files = e.dataTransfer.files;
-        if (!files || !files.length) return;
-
-        handleFileDropOnVersion(projectNow, cue, version, files[0]);
-      });
-
+      // IMPORTANT: Add event listeners immediately while variables are in scope for this version
+      // Download menu button
       ddBtn.addEventListener("click", e => {
+        e.preventDefault();
         e.stopPropagation();
         const open = dd2.classList.contains("open");
         document
@@ -2440,8 +3813,10 @@ function renderCueList() {
         if (!open) dd2.classList.add("open");
       });
 
+      // Download menu actions
       ddMenu.querySelectorAll("button").forEach(b => {
         b.addEventListener("click", e => {
+          e.preventDefault();
           e.stopPropagation();
           dd2.classList.remove("open");
           const action = b.dataset.action;
@@ -2464,10 +3839,278 @@ function renderCueList() {
         });
       });
 
+      // Manage menu button (⋯)
+      manageMenuBtn.addEventListener("click", e => {
+        console.log("[FlowPreview] Version manage menu clicked for version:", version.id);
+        e.preventDefault();
+        e.stopPropagation();
+        const wasOpen = manageMenuWrap.classList.contains("open");
+        document
+          .querySelectorAll(".download-dropdown.open")
+          .forEach(x => x.classList.remove("open"));
+        if (!wasOpen) {
+          manageMenuWrap.classList.add("open");
+          console.log("[FlowPreview] Version manage menu opened");
+        }
+      });
+
+      // Manage menu actions (rename/delete)
+      manageMenu.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", async e => {
+          console.log("[FlowPreview] Version action clicked:", btn.dataset.action, "for version:", version.id);
+          e.preventDefault();
+          e.stopPropagation();
+          manageMenuWrap.classList.remove("open");
+          const action = btn.dataset.action;
+          if (action === "rename-version") {
+            const currentName =
+              version.media?.displayName ||
+              version.media?.originalName ||
+              version.media?.name ||
+              "Version";
+            const proposed = await showPromptDialog({
+              title: tr("action.renameVersion"),
+              defaultValue: currentName
+            });
+            if (!proposed) return;
+            const trimmed = proposed.trim();
+            if (!trimmed) return;
+            try {
+              const authHeaders =
+                window.flowAuth && typeof window.flowAuth.getAuthHeaders === "function"
+                  ? window.flowAuth.getAuthHeaders()
+                  : {};
+              const headers = { ...authHeaders, "Content-Type": "application/json" };
+              const res = await fetch("/api/versions/rename", {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({
+                  versionId: version.id,
+                  media_display_name: trimmed,
+                  projectId: state.activeProjectId
+                })
+              });
+              if (!res.ok) {
+                console.error("[FlowPreview] Failed to rename version", await res.text());
+                showAlert("Errore nel rinominare la versione");
+                return;
+              }
+              version.media = version.media || {};
+              version.media.displayName = trimmed;
+              renderAll();
+            } catch (err) {
+              console.error("[FlowPreview] Exception renaming version", err);
+              showAlert("Errore nel rinominare la versione");
+            }
+          }
+          if (action === "delete-version") {
+            const nameForConfirm =
+              version.media?.displayName ||
+              version.media?.originalName ||
+              version.media?.name ||
+              "Version";
+            const confirmed = await showConfirmDialog({
+              title: tr("action.delete"),
+              message: tr("action.deleteVersionMessage", { name: nameForConfirm }),
+              confirmLabel: tr("action.delete"),
+              cancelLabel: tr("action.cancel")
+            });
+            if (!confirmed) return;
+            console.log("[FlowPreview] Delete version triggered for:", version.id);
+            try {
+              console.log("[FlowPreview] Sending DELETE request for version:", version.id);
+              const authHeaders =
+                window.flowAuth && typeof window.flowAuth.getAuthHeaders === "function"
+                  ? window.flowAuth.getAuthHeaders()
+                  : {};
+              const headers = { ...authHeaders, "Content-Type": "application/json" };
+              const res = await fetch("/api/versions/delete", {
+                method: "DELETE",
+                headers,
+                body: JSON.stringify({
+                  versionId: version.id,
+                  projectId: state.activeProjectId
+                })
+              });
+              console.log("[FlowPreview] DELETE version response status:", res.status);
+              if (!res.ok) {
+                console.error("[FlowPreview] Failed to delete version", await res.text());
+                showAlert("Errore nella cancellazione della versione");
+                return;
+              }
+              const projectNow = getActiveProject();
+              if (!projectNow) return;
+              const cueInState = projectNow.cues.find(c => c.id === cue.id);
+              if (!cueInState) return;
+
+              // Remove miniWave for this version only
+              if (miniWaves[version.id]) {
+                try { miniWaves[version.id].destroy(); } catch(e) {}
+                delete miniWaves[version.id];
+              }
+
+              // Remove the version element from DOM directly (no full re-render)
+              const versionElement = document.querySelector(`.version-row[data-version-id="${version.id}"]`);
+              if (versionElement) {
+                versionElement.remove();
+              }
+
+              // Update state
+              cueInState.versions = cueInState.versions.filter(v => v.id !== version.id);
+
+              // Update active version if needed
+              let needPlayerUpdate = false;
+              if (projectNow.activeVersionId === version.id) {
+                if (cueInState.versions.length) {
+                  projectNow.activeCueId = cueInState.id;
+                  projectNow.activeVersionId = cueInState.versions[0].id;
+                } else {
+                  const fallbackCue = projectNow.cues.find(c => c.versions && c.versions.length);
+                  projectNow.activeCueId = fallbackCue ? fallbackCue.id : null;
+                  projectNow.activeVersionId = fallbackCue?.versions?.[0]?.id || null;
+                }
+                currentPlayerVersionId = null;
+                currentPlayerMediaType = null;
+                currentPlayerCueId = null;
+                needPlayerUpdate = true;
+              }
+
+              // Only re-render player if active version changed
+              if (needPlayerUpdate) {
+                renderPlayer();
+              }
+            } catch (err) {
+              console.error("[FlowPreview] Exception deleting version", err);
+              showAlert("Errore nella cancellazione della versione");
+            }
+          }
+        });
+      });
+
+      console.log("[FlowPreview] Event listeners added for version menu:", version.id, "manageMenuBtn:", manageMenuBtn);
+
+      top.appendChild(dd2);
+      top.appendChild(manageMenuWrap);
+      actions.appendChild(top);
+
+      row.appendChild(lab);
+      row.appendChild(extraSlot);
+      row.appendChild(prev);
+      row.appendChild(main);
+      row.appendChild(actions);
+
+      row.addEventListener("click", e => {
+        if (e.target.closest(".download-toggle")) return;
+        state.playerMode = "review";
+        project.activeCueId = cue.id;
+        project.activeVersionId = version.id;
+        currentPlayerVersionId = null;
+        currentPlayerMediaType = null;
+        currentPlayerCueId = null;
+        updatePlayerModeButtons();
+        renderPlayer();
+        updateActiveVersionRowStyles();
+        renderNotesPanel();
+      });
+
+      row.addEventListener("dragover", e => {
+        if (!isFileDragEvent(e)) return;
+        const projectNow = getActiveProject();
+        if (!projectNow || !isOwnerOfProject(projectNow)) return;
+        e.preventDefault();
+        row.classList.add("drag-over");
+      });
+
+      row.addEventListener("dragleave", e => {
+        if (!row.contains(e.relatedTarget)) {
+          row.classList.remove("drag-over");
+        }
+      });
+
+      row.addEventListener("drop", e => {
+        if (!isFileDragEvent(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove("drag-over");
+
+        const projectNow = getActiveProject();
+        if (!projectNow || !isOwnerOfProject(projectNow)) return;
+
+      const files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      Array.from(files).forEach(file => {
+        handleFileDropOnVersion(projectNow, cue, version, file);
+      });
+      });
+
       versionsContainer.appendChild(row);
     });
 
     details.appendChild(versionsContainer);
+
+    // Add cue notes section
+    const cueNotesSection = document.createElement('div');
+    cueNotesSection.className = 'cue-notes-section';
+    const canEditCueNotes = isOwnerOfProject(project);
+    cueNotesSection.innerHTML = `
+      <div class="cue-notes-header">
+        <span class="cue-notes-title">NOTE GENERALI</span>
+      </div>
+      <div class="cue-notes-list" data-cue-id="${cue.id}"></div>
+      ${
+        canEditCueNotes
+          ? `<button class="add-cue-note-btn" data-cue-id="${cue.id}">+ Aggiungi nota</button>
+      <div class="cue-note-form" data-cue-id="${cue.id}">
+        <textarea placeholder="Scrivi una nota..."></textarea>
+        <div class="cue-note-form-actions">
+          <button class="ghost-btn tiny cancel-cue-note">${tr("action.cancel")}</button>
+          <button class="primary-btn tiny save-cue-note">Salva</button>
+        </div>
+      </div>`
+          : ""
+      }
+    `;
+    details.appendChild(cueNotesSection);
+
+    // Render existing cue notes
+    renderCueNotesInline(cue.id, cueNotesSection.querySelector('.cue-notes-list'));
+
+    // Add cue note button handler
+    if (canEditCueNotes) {
+      cueNotesSection.querySelector('.add-cue-note-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const form = cueNotesSection.querySelector('.cue-note-form');
+        form.classList.add('active');
+        form.querySelector('textarea').focus();
+        e.target.style.display = 'none';
+      });
+
+      // Cancel cue note
+      cueNotesSection.querySelector('.cancel-cue-note').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const form = cueNotesSection.querySelector('.cue-note-form');
+        form.classList.remove('active');
+        form.querySelector('textarea').value = '';
+        cueNotesSection.querySelector('.add-cue-note-btn').style.display = '';
+      });
+
+      // Save cue note
+      cueNotesSection.querySelector('.save-cue-note').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const form = cueNotesSection.querySelector('.cue-note-form');
+        const textarea = form.querySelector('textarea');
+        const text = textarea.value.trim();
+        if (!text) return;
+
+        await saveCueNote(cue.id, text);
+
+        form.classList.remove('active');
+        textarea.value = '';
+        cueNotesSection.querySelector('.add-cue-note-btn').style.display = '';
+        renderCueNotesInline(cue.id, cueNotesSection.querySelector('.cue-notes-list'));
+      });
+    }
+
     cueListEl.appendChild(details);
 
     // Debug: log cue/DOM open state after insertion
@@ -2479,6 +4122,8 @@ function renderCueList() {
 
     details.addEventListener("dragover", e => {
       if (!isFileDragEvent(e)) return;
+      const projectNow = getActiveProject();
+      if (!projectNow || !isOwnerOfProject(projectNow)) return;
       e.preventDefault();
       details.classList.add("drag-over");
     });
@@ -2496,101 +4141,63 @@ function renderCueList() {
       details.classList.remove("drag-over");
 
       const projectNow = getActiveProject();
-      if (!projectNow) return;
+      if (!projectNow || !isOwnerOfProject(projectNow)) return;
 
       const files = e.dataTransfer.files;
       if (!files || !files.length) return;
-
-      handleFileDropOnCue(projectNow, cue, files[0]);
-    });
-
-    const cueBtn = details.querySelector("button.download-toggle");
-    const cueMenu = details.querySelector(".download-menu");
-    cueBtn.addEventListener("click", e => {
-      e.stopPropagation();
-      const open = cueBtn.parentElement.classList.contains("open");
-      document
-        .querySelectorAll(".download-dropdown.open")
-        .forEach(x => x.classList.remove("open"));
-      if (!open) cueBtn.parentElement.classList.add("open");
-    });
-
-      cueMenu.querySelectorAll("button").forEach(b => {
-        b.addEventListener("click", async e => {
-        e.stopPropagation();
-        cueBtn.parentElement.classList.remove("open");
-        const action = b.dataset.action;
-        if (action === "rename") {
-          const name = prompt("Rename cue", cue.name);
-          if (name && name.trim()) {
-            const newName = name.trim();
-            try {
-              const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
-              const res = await fetch('/api/cues', {
-                method: 'PATCH',
-                headers,
-                body: JSON.stringify({ id: cue.id, name: newName, projectId: state.activeProjectId })
-              });
-              if (!res.ok) {
-                console.error('[FlowPreview] Failed to rename cue', await res.text());
-                alert('Errore nel rinominare la cue');
-                return;
-              }
-              cue.name = newName;
-              refreshAllNames();
-              renderAll();
-            } catch (err) {
-              console.error('[FlowPreview] Exception renaming cue', err);
-              alert('Errore nel rinominare la cue');
-            }
-          }
-        }
-        if (action === "delete") {
-          const ok = confirm(
-            `Delete cue "${cue.displayName || cue.name}"?`
-          );
-          if (!ok) return;
-          
-          try {
-            const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}&projectId=${state.activeProjectId}`, { method: 'DELETE' });
-            if (!res.ok) {
-              console.error('[FlowPreview] Failed to delete cue', await res.text());
-              alert('Errore nella cancellazione della cue');
-              return;
-            }
-            
-            const projectNow = getActiveProject();
-            if (!projectNow) return;
-            projectNow.cues = projectNow.cues.filter(c => c.id !== cue.id);
-            if (projectNow.activeCueId === cue.id) {
-              projectNow.activeCueId = projectNow.cues[0]?.id || null;
-              projectNow.activeVersionId =
-                projectNow.cues[0]?.versions[0]?.id || null;
-            }
-            renderAll();
-          } catch (err) {
-            console.error('[FlowPreview] Exception deleting cue', err);
-            alert('Errore nella cancellazione della cue');
-          }
-        }
+      Array.from(files).forEach(file => {
+        handleFileDropOnCue(projectNow, cue, file);
       });
     });
   });
+
+  applyCuesCollapsedState();
 }
 
 function renderVersionPreviews() {
   const project = getActiveProject();
-  if (!project) return;
+  if (!project || cuesCollapsed) return;
 
   project.cues.forEach(cue => {
+    const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
+    if (details && !details.open) return;
     cue.versions.forEach(version => {
       const prev = document.getElementById(`preview-${version.id}`);
       if (!prev) return;
 
-      prev.classList.remove("video");
+      // Skip if waveform already exists for this version (audio) and is valid
+      if (version.media?.type === "audio") {
+        const existingCanvas = prev.querySelector("canvas");
+        if (existingCanvas && existingCanvas.width > 0) {
+          return;
+        }
+        if (miniWaves[version.id] && !existingCanvas) {
+          try {
+            miniWaves[version.id].destroy();
+          } catch (e) {}
+          delete miniWaves[version.id];
+        }
+      }
+
+      // Skip if video element already exists
+      if (version.media?.type === "video" && prev.querySelector("video")) {
+        return;
+      }
+
+      prev.classList.remove("video", "has-thumbnail", "is-placeholder");
+      prev.style.backgroundImage = "";
       prev.innerHTML = "";
 
-      if (!version.media) return;
+      if (!version.media) {
+        const label = document.createElement("span");
+        label.className = "preview-label placeholder";
+        label.textContent = version.deliverables.length
+          ? `${version.deliverables.length} file`
+          : "File";
+        prev.classList.add("is-placeholder");
+        prev.appendChild(label);
+        return;
+      }
 
       if (version.media.type === "audio") {
         createMiniWave(version, prev);
@@ -2626,11 +4233,7 @@ function renderVersionPreviews() {
                 `.version-row[data-version-id="${version.id}"] .version-meta`
               );
               if (metaEl) {
-                const d = version.media.duration ? formatTime(version.media.duration) : "--:--";
-                const filesCount = (version.deliverables && version.deliverables.length) ? ` · ${version.deliverables.length} tech files` : "";
-                metaEl.textContent = version.media
-                  ? (version.media.type === "audio" ? `Audio · ${d}` : `Video · ${d}`) + filesCount
-                  : filesCount || "Only deliverables";
+                metaEl.textContent = getVersionMetaText(version);
               }
             } catch (e) {
               console.warn('video loadedmetadata handler failed', e);
@@ -2661,6 +4264,7 @@ function renderVersionPreviews() {
           try {
             const el = makeVideoEl(version.media.url || null, version.media.thumbnailUrl);
             prev.appendChild(el);
+            prev.classList.add("has-thumbnail");
           } catch (err) {
             console.error("renderVersionPreviews: failed to render poster video", err, version.id);
             // fallback to img
@@ -2669,6 +4273,7 @@ function renderVersionPreviews() {
             img.className = "version-thumb";
             img.onerror = () => { img.style.display = 'none'; };
             prev.appendChild(img);
+            prev.classList.add("has-thumbnail");
           }
         } else if (version.media.url) {
           // No thumbnail: attempt to generate one asynchronously, show placeholder meanwhile
@@ -2697,6 +4302,13 @@ function renderVersionPreviews() {
             el.appendChild(wrapped);
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
+            const el = document.getElementById(`preview-${version.id}`);
+            if (!el) return;
+            el.innerHTML = "";
+            const fallback = document.createElement("span");
+            fallback.className = "preview-label placeholder";
+            fallback.textContent = "Video";
+            el.appendChild(fallback);
           });
         } else {
           // No media url nor thumbnail: show fallback icon
@@ -2727,10 +4339,11 @@ function handleFileDropOnVersion(project, cue, version, file) {
   const type = detectRawType(file.name);
   const url = URL.createObjectURL(file);
 
+  const deliverableId = uid();
   version.deliverables.push({
-    id: uid(),
+    id: deliverableId,
     name: file.name,
-    size: file.size,
+   size: file.size,
     type,
     url
   });
@@ -2742,53 +4355,169 @@ function handleFileDropOnVersion(project, cue, version, file) {
   refreshAllNames();
   renderCueList();
   renderVersionPreviews();
+  renderNotesPanel();
+
+  uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId });
+}
+
+// =======================
+// NOTES PANEL RENDER
+// =======================
+function renderNotesPanel() {
+  if (!generalNotesListEl && !cueNotesListEl && !cueNotesHeadingEl) return;
+
+  const project = getActiveProject();
+
+  const setGeneralState = message => {
+    if (generalNotesListEl) {
+      generalNotesListEl.innerHTML = `<div class="notes-empty-state">${message}</div>`;
+    }
+  };
+
+  const setCueState = message => {
+    if (cueNotesListEl) {
+      cueNotesListEl.innerHTML = `<div class="notes-empty-state">${message}</div>`;
+    }
+  };
+
+  const toggleGeneralForm = enabled => {
+    if (generalNoteInput) {
+      generalNoteInput.disabled = !enabled;
+      if (!enabled) generalNoteInput.value = "";
+      generalNoteInput.placeholder = enabled
+        ? "Scrivi una nota generale..."
+        : "Seleziona un progetto per aggiungere note";
+    }
+    if (generalNoteSubmitBtn) {
+      generalNoteSubmitBtn.disabled = !enabled;
+    }
+  };
+
+  const toggleCueForm = (enabled, placeholderText) => {
+    if (cueNoteInput) {
+      cueNoteInput.disabled = !enabled;
+      if (!enabled) cueNoteInput.value = "";
+      cueNoteInput.placeholder = placeholderText;
+    }
+    if (cueNoteSubmitBtn) {
+      cueNoteSubmitBtn.disabled = !enabled;
+    }
+  };
+
+  if (!project) {
+    toggleGeneralForm(false);
+    toggleCueForm(false, "Seleziona una cue per aggiungere note");
+    setGeneralState("Seleziona un progetto per vedere le note");
+    if (cueNotesHeadingEl) cueNotesHeadingEl.textContent = "Note cue";
+    setCueState("Seleziona una cue per vedere le note");
+    return;
+  }
+
+  toggleGeneralForm(true);
+
+  const generalNotes = Array.isArray(project.notes) ? project.notes : [];
+  if (!generalNotes.length) {
+    setGeneralState("Nessuna nota generale");
+  } else if (generalNotesListEl) {
+    generalNotesListEl.innerHTML = generalNotes
+      .map(note => {
+        const noteId = note.id || note.note_id || "";
+        const noteAttr = noteId ? ` data-note-id="${noteId}"` : "";
+        const noteMeta = `
+          <div class="note-meta">
+            <span class="note-author">${escapeHtml(note.author_name || note.author || "Utente")}</span>
+            <span>${formatNoteTimestamp(note.created_at || note.createdAt)}</span>
+          </div>
+        `;
+        const actions = noteId ? noteActionsTemplate(noteId, "") : "";
+        return `
+          <div class="note-item project-note-item"${noteAttr}>
+            <div class="note-text">${escapeHtml(note.body || note.text || "")}</div>
+            ${noteMeta}
+            ${actions}
+          </div>
+        `;
+      })
+      .join("");
+    attachProjectNoteActions(generalNotesListEl);
+  }
+
+  const activeCue =
+    project.activeCueId &&
+    project.cues?.find(c => c.id === project.activeCueId);
+
+  if (!activeCue) {
+    toggleCueForm(false, "Seleziona una cue per aggiungere note");
+    if (cueNotesHeadingEl) cueNotesHeadingEl.textContent = "Note cue";
+    setCueState("Seleziona una cue per vedere le note");
+    return;
+  }
+
+  toggleCueForm(true, "Scrivi una nota sulla cue...");
+  if (cueNotesHeadingEl) {
+    cueNotesHeadingEl.textContent = `Note · ${activeCue.displayName || activeCue.name || "Cue"}`;
+  }
+
+  if (cueNotesListEl) {
+    renderCueNotesInline(activeCue.id, cueNotesListEl);
+    if (!cueNotesListEl.children.length) {
+      setCueState("Nessuna nota per questa cue");
+    }
+  }
 }
 
 // =======================
 // REFERENCE LIST RENDER
 // =======================
 function renderReferences() {
-  if (!refsDropzoneEl || !refsListEl || !refsSubtitleEl || !refsToggleBtn)
-    return;
+  if (!refsListEl || !refsSubtitleEl || !refsToggleBtn) return;
 
   const project = getActiveProject();
 
   if (!project) {
-    refsSubtitleEl.textContent = "No active project.";
-    refsListEl.innerHTML = "No reference files.";
-    refsListEl.classList.add("refs-list-empty");
-    refsDropzoneEl.classList.add("disabled");
-    refsDropzoneEl.classList.remove("drag-over");
-    refsDropzoneEl.style.pointerEvents = "none";
+    var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    setSectionSubtitle(refsSubtitleEl, refsSubtitleKey, refsSubtitleFallback);
+    refsListEl.innerHTML = t('refs.noFiles');
+    refsListEl.classList.add("cue-list-empty");
+    refsListEl.classList.remove("drag-over");
     refsToggleBtn.disabled = true;
+    updateCountBadge(refsCountBadgeEl, null, "refs.countSingle", "refs.countPlural", "file", "files");
     applyReferencesCollapsedState();
     return;
   }
 
   ensureProjectReferences(project);
-
-  refsDropzoneEl.classList.remove("disabled");
-  refsDropzoneEl.style.pointerEvents = "auto";
-  refsDropzoneEl.style.opacity = "1";
+  setSectionSubtitle(refsSubtitleEl, refsSubtitleKey, refsSubtitleFallback);
   refsToggleBtn.disabled = false;
 
   const refs = project.references || [];
+  updateCountBadge(
+    refsCountBadgeEl,
+    refs.length,
+    "refs.countSingle",
+    "refs.countPlural",
+    "file",
+    "files"
+  );
 
-  if (!refs.length) {
-    refsSubtitleEl.textContent =
-      "No reference files for this project.";
-    refsListEl.innerHTML = "No reference files for this project.";
-    refsListEl.classList.add("refs-list-empty");
+  if (referencesCollapsed) {
     applyReferencesCollapsedState();
     return;
   }
 
-  refsSubtitleEl.textContent =
-    refs.length === 1
-      ? "1 reference (with versions)."
-      : `${refs.length} references (with versions).`;
+  if (!refs.length) {
+    var t2 = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    refsListEl.innerHTML = t2('refs.noFiles');
+    refsListEl.classList.add("cue-list-empty");
+    refsListEl.classList.remove("drag-over");
+    applyReferencesCollapsedState();
+    return;
+  }
 
-  refsListEl.classList.remove("refs-list-empty");
+  // Keep subtitle as static translated text from data-i18n attribute
+  // Badge already shows the count via updateCountBadge above
+
+  refsListEl.classList.remove("cue-list-empty", "drag-over");
   refsListEl.innerHTML = "";
 
   refs.forEach(refRoot => {
@@ -2830,7 +4559,7 @@ function renderReferences() {
         img.alt = active.name;
         preview.appendChild(img);
       } else {
-        generateVideoThumbnailRaw(getProxiedUrl(active.url)).then(th => {
+        generateVideoThumbnailRaw(active.url).then(th => {
           const el = document.getElementById(
             `ref-preview-${refRoot.id}`
           );
@@ -2845,6 +4574,12 @@ function renderReferences() {
           img.src = getProxiedUrl(th);
           img.alt = active.name;
           el.appendChild(img);
+        }).catch(err => {
+          console.error('renderReferences: failed to build video thumbnail', err, active.id);
+          const el = document.getElementById(`ref-preview-${refRoot.id}`);
+          if (!el) return;
+          el.innerHTML = "";
+          el.textContent = getReferenceLabel(active.type);
         });
       }
     } else {
@@ -2875,8 +4610,8 @@ function renderReferences() {
     chip.className = "refs-type-chip";
     chip.textContent =
       refRoot.versions.length > 1
-        ? `Reference · ${refRoot.versions.length} versions`
-        : "Reference";
+        ? tr("refs.groupLabel", { n: refRoot.versions.length })
+        : tr("refs.groupLabelSingle");
 
     const dd = document.createElement("div");
     dd.className = "download-dropdown ref-group-dropdown";
@@ -2889,9 +4624,9 @@ function renderReferences() {
     const ddMenu = document.createElement("div");
     ddMenu.className = "download-menu";
     ddMenu.innerHTML = `
-      <button data-action="rename-active-version">Rename active version</button>
-      <button data-action="delete-active-version">Delete active version</button>
-      <button data-action="delete-group">Delete reference group</button>
+      <button data-action="rename-active-version">${tr("refs.menuRenameActive")}</button>
+      <button data-action="delete-active-version">${tr("refs.menuDeleteActive")}</button>
+      <button data-action="delete-group">${tr("refs.menuDeleteGroup")}</button>
     `;
 
     dd.appendChild(ddBtn);
@@ -2941,7 +4676,7 @@ function renderReferences() {
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
-          generateVideoThumbnailRaw(getProxiedUrl(ver.url)).then(th => {
+          generateVideoThumbnailRaw(ver.url).then(th => {
             const el = document.getElementById(
               `ref-version-preview-${ver.id}`
             );
@@ -2956,6 +4691,12 @@ function renderReferences() {
             img.src = getProxiedUrl(th);
             img.alt = ver.name;
             el.appendChild(img);
+          }).catch(err => {
+            console.error('renderReferences: failed to build version thumbnail', err, ver.id);
+            const el = document.getElementById(`ref-version-preview-${ver.id}`);
+            if (!el) return;
+            el.innerHTML = "";
+            el.textContent = getReferenceLabel(ver.type);
           });
         }
       } else {
@@ -2994,10 +4735,10 @@ function renderReferences() {
       const vMenu = document.createElement("div");
       vMenu.className = "download-menu";
       vMenu.innerHTML = `
-        <button data-action="set-active">Set as active</button>
-        <button data-action="rename-version">Rename version</button>
-        <button data-action="delete-version">Delete version</button>
-        <button data-action="download-version">Download version</button>
+        <button data-action="set-active">${tr("refs.menuSetActive")}</button>
+        <button data-action="rename-version">${tr("action.renameVersion")}</button>
+        <button data-action="delete-version">${tr("action.deleteVersion")}</button>
+        <button data-action="download-version">${tr("action.download")}</button>
       `;
 
       vMenuWrap.appendChild(vMenuBtn);
@@ -3062,6 +4803,7 @@ function renderReferences() {
 
       // Version 3-dot menu
       vMenuBtn.addEventListener("click", e => {
+        e.preventDefault();
         e.stopPropagation();
         const open = vMenuWrap.classList.contains("open");
         document
@@ -3071,7 +4813,8 @@ function renderReferences() {
       });
 
       vMenu.querySelectorAll("button").forEach(btn => {
-        btn.addEventListener("click", e => {
+        btn.addEventListener("click", async e => {
+          e.preventDefault();
           e.stopPropagation();
           vMenuWrap.classList.remove("open");
           const action = btn.dataset.action;
@@ -3088,7 +4831,10 @@ function renderReferences() {
           }
 
           if (action === "rename-version") {
-            const newName = prompt("Rename version", ver.name);
+            const newName = await showPromptDialog({
+              title: tr("action.renameVersion"),
+              defaultValue: ver.name
+            });
             if (newName && newName.trim()) {
               ver.name = newName.trim();
               renderReferences();
@@ -3102,8 +4848,6 @@ function renderReferences() {
           }
 
           if (action === "delete-version") {
-            const ok = confirm(`Delete version "${ver.name}"?`);
-            if (!ok) return;
             const indexToRemove = refRoot.versions.findIndex(
               v => v.id === ver.id
             );
@@ -3128,7 +4872,7 @@ function renderReferences() {
           }
 
           if (action === "download-version") {
-            triggerDownload(getProxiedUrl(ver.url), ver.name || "reference");
+            triggerDownload(getProxiedUrl(ver.url), ver.name || tr("refs.groupLabelSingle"));
           }
         });
       });
@@ -3143,7 +4887,7 @@ function renderReferences() {
     details.addEventListener("dragover", e => {
       if (!isFileDragEvent(e)) return;
       const projectNow = getActiveProject();
-      if (!projectNow) return;
+      if (!projectNow || !isOwnerOfProject(projectNow)) return;
       e.preventDefault();
       details.classList.add("drag-over");
     });
@@ -3161,7 +4905,7 @@ function renderReferences() {
       details.classList.remove("drag-over");
 
       const projectNow = getActiveProject();
-      if (!projectNow) return;
+      if (!projectNow || !isOwnerOfProject(projectNow)) return;
 
       const files = e.dataTransfer.files;
       if (!files || !files.length) return;
@@ -3178,6 +4922,7 @@ function renderReferences() {
 
     // Group 3-dot menu
     ddBtn.addEventListener("click", e => {
+      e.preventDefault();
       e.stopPropagation();
       const open = dd.classList.contains("open");
       document
@@ -3187,7 +4932,8 @@ function renderReferences() {
     });
 
     ddMenu.querySelectorAll("button").forEach(btn => {
-      btn.addEventListener("click", e => {
+      btn.addEventListener("click", async e => {
+        e.preventDefault();
         e.stopPropagation();
         dd.classList.remove("open");
         const action = btn.dataset.action;
@@ -3197,7 +4943,10 @@ function renderReferences() {
         if (action === "rename-active-version") {
           const avIndex = refRoot.activeVersionIndex ?? 0;
           const av = refRoot.versions[avIndex];
-          const newName = prompt("Rename active version", av.name);
+          const newName = await showPromptDialog({
+            title: tr("refs.renameActivePrompt"),
+            defaultValue: av.name
+          });
           if (newName && newName.trim()) {
             av.name = newName.trim();
             renderReferences();
@@ -3213,9 +4962,12 @@ function renderReferences() {
         if (action === "delete-active-version") {
           const avIndex = refRoot.activeVersionIndex ?? 0;
           const av = refRoot.versions[avIndex];
-          const ok = confirm(
-            `Delete active version "${av.name}" from this reference group?`
-          );
+          const ok = await showConfirmDialog({
+            title: tr("action.delete"),
+            message: tr("refs.deleteActiveConfirm", { name: av.name }),
+            confirmLabel: tr("action.delete"),
+            cancelLabel: tr("action.cancel")
+          });
           if (!ok) return;
           refRoot.versions.splice(avIndex, 1);
           if (!refRoot.versions.length) {
@@ -3237,9 +4989,12 @@ function renderReferences() {
         }
 
         if (action === "delete-group") {
-          const ok = confirm(
-            `Delete reference group "${refRoot.name || active.name}"?`
-          );
+          const ok = await showConfirmDialog({
+            title: tr("action.delete"),
+            message: tr("refs.deleteGroupConfirm", { name: refRoot.name || active.name }),
+            confirmLabel: tr("action.delete"),
+            cancelLabel: tr("action.cancel")
+          });
           if (!ok) return;
           projectNow.references = projectNow.references.filter(
             r => r.id !== refRoot.id
@@ -3276,99 +5031,85 @@ function renderReferences() {
   applyReferencesCollapsedState();
 }
 
+if (cueListEl) {
+  cueListEl.addEventListener("dragover", e => {
+    if (!isFileDragEvent(e)) return;
+    const project = getActiveProject();
+    if (!project) return;
+    e.preventDefault();
+    cueListEl.classList.add("drag-over");
+  });
+
+  cueListEl.addEventListener("dragleave", e => {
+    if (!cueListEl.contains(e.relatedTarget)) {
+      cueListEl.classList.remove("drag-over");
+    }
+  });
+
+  cueListEl.addEventListener("drop", e => {
+    if (!isFileDragEvent(e)) return;
+    e.preventDefault();
+    cueListEl.classList.remove("drag-over");
+    if (!e.dataTransfer?.files?.length) return;
+    handleCueFiles(Array.from(e.dataTransfer.files));
+  });
+}
+
 if (refsToggleBtn) {
   refsToggleBtn.addEventListener("click", () => {
     const project = getActiveProject();
     if (!project) return;
     referencesCollapsed = !referencesCollapsed;
     applyReferencesCollapsedState();
+    if (!referencesCollapsed) {
+      renderReferences();
+    }
   });
 }
 
-if (refsDropzoneEl) {
-  refsDropzoneEl.addEventListener("dragover", e => {
+if (cuesToggleBtn) {
+  cuesToggleBtn.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    cuesCollapsed = !cuesCollapsed;
+    applyCuesCollapsedState();
+    if (!cuesCollapsed) {
+      renderCueList();
+      renderVersionPreviews();
+    }
+  });
+}
+
+if (refsListEl) {
+  refsListEl.addEventListener("dragover", e => {
     if (!isFileDragEvent(e)) return;
     const project = getActiveProject();
     if (!project) return;
     e.preventDefault();
-    refsDropzoneEl.classList.add("drag-over");
+    refsListEl.classList.add("drag-over");
   });
 
-  refsDropzoneEl.addEventListener("dragleave", e => {
-    if (!refsDropzoneEl.contains(e.relatedTarget)) {
-      refsDropzoneEl.classList.remove("drag-over");
+  refsListEl.addEventListener("dragleave", e => {
+    if (!refsListEl.contains(e.relatedTarget)) {
+      refsListEl.classList.remove("drag-over");
     }
   });
 
-  refsDropzoneEl.addEventListener("drop", e => {
+  refsListEl.addEventListener("drop", e => {
     if (!isFileDragEvent(e)) return;
     e.preventDefault();
-    refsDropzoneEl.classList.remove("drag-over");
-
-    const project = getActiveProject();
-    if (!project) return;
+    refsListEl.classList.remove("drag-over");
 
     const files = e.dataTransfer.files;
     if (!files || !files.length) return;
-
-    for (let i = 0; i < files.length; i++) {
-      createReferenceForProject(project, files[i], null);
-    }
-
-    renderReferences();
-  });
-
-  refsDropzoneEl.addEventListener("click", () => {
-    const project = getActiveProject();
-    if (!project) return;
-
-    const input = document.createElement("input");
-    input.type = "file";
-    input.multiple = true;
-
-    input.addEventListener("change", () => {
-      if (input.files && input.files.length) {
-        Array.from(input.files).forEach(f =>
-          createReferenceForProject(project, f, null)
-        );
-        renderReferences();
-      }
-    });
-
-    input.click();
+    handleReferenceFiles(Array.from(files));
   });
 }
 
 // =======================
 // PLAYER MODE BUTTONS
 // =======================
-function updatePlayerModeButtons() {
-  if (!modeReviewBtn || !modeRefsBtn) return;
-  if (state.playerMode === "review") {
-    modeReviewBtn.classList.add("active");
-    modeRefsBtn.classList.remove("active");
-  } else {
-    modeReviewBtn.classList.remove("active");
-    modeRefsBtn.classList.add("active");
-  }
-}
-
-if (modeReviewBtn && modeRefsBtn) {
-  modeReviewBtn.addEventListener("click", () => {
-    state.playerMode = "review";
-    updatePlayerModeButtons();
-    renderPlayer();
-  });
-
-  modeRefsBtn.addEventListener("click", () => {
-    const project = getActiveProject();
-    ensureProjectReferences(project || {});
-    if (!project || !project.references || !project.references.length) return;
-    state.playerMode = "refs";
-    updatePlayerModeButtons();
-    renderPlayer();
-  });
-}
+function updatePlayerModeButtons() {}
 
 // =======================
 // PLAYER ROOT
@@ -3377,19 +5118,22 @@ function renderPlayer() {
   const project = getActiveProject();
   if (!project) {
     if (rightColEl) rightColEl.style.display = "none";
+    if (columnResizer) columnResizer.style.display = "none";
+    resetReviewUI();
     destroyMainWave();
     stopVideo();
     currentPlayerVersionId = null;
     currentPlayerMediaType = null;
+    currentPlayerCueId = null;
     playerMediaEl.innerHTML =
-      '<div class="player-placeholder">Create a project and drop a file.</div>';
+      '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.disabled = true;
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     timeLabelEl.textContent = "--:-- / --:--";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
@@ -3402,19 +5146,22 @@ function renderPlayer() {
 
   if (!hasCues && !hasRefs) {
     if (rightColEl) rightColEl.style.display = "none";
+    if (columnResizer) columnResizer.style.display = "none";
+    resetReviewUI();
     destroyMainWave();
     stopVideo();
     currentPlayerVersionId = null;
     currentPlayerMediaType = null;
+    currentPlayerCueId = null;
     playerMediaEl.innerHTML =
-      '<div class="player-placeholder">Create a project and drop a file.</div>';
+      '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.disabled = true;
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     timeLabelEl.textContent = "--:-- / --:--";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
@@ -3422,6 +5169,10 @@ function renderPlayer() {
   }
 
   if (rightColEl) rightColEl.style.display = "flex";
+  if (columnResizer) {
+    columnResizer.style.display = "block";
+    requestAnimationFrame(updateColumnResizerPosition);
+  }
   updatePlayerModeButtons();
 
   if (!hasCues && hasRefs) {
@@ -3440,16 +5191,18 @@ function renderPlayer() {
     stopVideo();
     currentPlayerVersionId = null;
     currentPlayerMediaType = null;
-    playerTitleEl.textContent = "No version selected";
-    playerBadgeEl.textContent = "";
+    currentPlayerCueId = null;
+    resetReviewUI();
+    playerTitleEl.textContent = tr("player.noVersion");
+    playerBadgeEl.textContent = tr("player.noMedia");
     playerBadgeEl.dataset.status = "";
     playerMediaEl.innerHTML =
-      '<div class="player-placeholder">Select a version.</div>';
+      '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.style.display = "none";
     timeLabelEl.style.display = "none";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
@@ -3460,22 +5213,23 @@ function renderPlayer() {
   playerTitleEl.textContent =
     `${cue.displayName} · ${computeVersionLabel(version.index)}`;
 
-  const statusKey = version.status || "in-review";
-  playerBadgeEl.textContent = VERSION_STATUSES[statusKey];
-  playerBadgeEl.dataset.status = statusKey;
+  const statusKey = normalizeVersionStatus(version.status || "in_review");
+  playerBadgeEl.textContent = getStatusLabel(statusKey);
+  playerBadgeEl.dataset.status = getStatusClassKey(statusKey);
 
   if (!version.media) {
     destroyMainWave();
     stopVideo();
     currentPlayerVersionId = null;
     currentPlayerMediaType = null;
+    currentPlayerCueId = null;
     playerMediaEl.innerHTML =
-      '<div class="player-placeholder">This version has no media.</div>';
+      '<div class="player-placeholder">' + tr("player.noMediaForVersion") + '</div>';
     playPauseBtn.style.display = "none";
     timeLabelEl.style.display = "none";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
-    commentsSummaryEl.textContent = "No comments";
+    commentsSummaryEl.textContent = tr("comments.noComments");
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
@@ -3484,19 +5238,33 @@ function renderPlayer() {
 
   const sameVersion =
     currentPlayerVersionId === version.id &&
-    currentPlayerMediaType === version.media.type;
+    currentPlayerMediaType === version.media.type &&
+    currentPlayerCueId === cue.id;
 
   if (!sameVersion) {
+    console.log('[renderPlayer] Loading version:', {
+      versionId: version.id,
+      mediaType: version.media.type,
+      mediaUrl: version.media.url,
+      cueId: cue.id,
+      cueName: cue.name
+    });
+
     if (version.media.type === "audio") {
       loadAudioPlayer(project, cue, version);
     } else if (version.media.type === "video") {
       loadVideoPlayer(project, cue, version);
+    } else {
+      console.warn('[renderPlayer] Unknown media type:', version.media.type);
     }
     currentPlayerVersionId = version.id;
     currentPlayerMediaType = version.media.type;
+    currentPlayerCueId = cue.id;
   }
 
   renderComments();
+  updateReviewUI(project, version);
+  updateActiveVersionRowStyles();
 }
 
 // =======================
@@ -3627,7 +5395,7 @@ function renderProjectList() {
       btn.type = 'button';
       btn.className = 'icon-btn tiny download-toggle';
       btn.textContent = '⋯';
-      btn.title = 'Project options';
+      btn.title = tr("header.projectOptions", {}, "Project options");
 
       const menu = document.createElement('div');
       menu.className = 'download-menu';
@@ -3641,6 +5409,7 @@ function renderProjectList() {
 
       // Toggle open/close
       btn.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         const open = dd.classList.contains('open');
         document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
@@ -3650,6 +5419,7 @@ function renderProjectList() {
       // Menu actions
       menu.querySelectorAll('button').forEach(b => {
         b.addEventListener('click', (e) => {
+          e.preventDefault();
           e.stopPropagation();
           dd.classList.remove('open');
           const action = b.dataset.action;
@@ -3675,13 +5445,13 @@ function renderProjectList() {
       btnShared.type = 'button';
       btnShared.className = 'icon-btn tiny download-toggle';
       btnShared.textContent = '⋯';
-      btnShared.title = 'Project options';
+      btnShared.title = tr("header.projectOptions", {}, "Project options");
 
       const menuShared = document.createElement('div');
       menuShared.className = 'download-menu';
       menuShared.innerHTML = `
-        <button data-action="rename">Rename</button>
-        <button data-action="delete">Delete</button>
+        <button data-action="rename">${tr("action.rename")}</button>
+        <button data-action="delete">${tr("action.delete")}</button>
       `;
 
       ddShared.appendChild(btnShared);
@@ -3689,6 +5459,7 @@ function renderProjectList() {
 
       // Toggle open/close for shared project menu
       btnShared.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         const open = ddShared.classList.contains('open');
         document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
@@ -3698,6 +5469,7 @@ function renderProjectList() {
       // Menu actions for shared projects (same as owned)
       menuShared.querySelectorAll('button').forEach(b => {
         b.addEventListener('click', (e) => {
+          e.preventDefault();
           e.stopPropagation();
           ddShared.classList.remove('open');
           const action = b.dataset.action;
@@ -3716,7 +5488,7 @@ function renderProjectList() {
   if (myProjects.length === 0) {
     const li = document.createElement('li');
     li.className = 'project-item empty';
-    li.textContent = 'No projects yet. Click "New project".';
+    li.textContent = tr("sidebar.noProjects");
     myListEl.appendChild(li);
   } else {
     myProjects.forEach(project => {
@@ -3732,12 +5504,12 @@ function renderProjectList() {
       // If not logged in, prompt to login so shared projects (which require auth) become visible
       const a = document.createElement('a');
       a.href = '/login';
-      a.textContent = 'Log in to see shared projects.';
+      a.textContent = tr("sidebar.loginToSeeShared");
       a.style.color = '#9ca3af';
       a.style.textDecoration = 'underline';
       li.appendChild(a);
     } else {
-      li.textContent = 'No shared projects yet.';
+      li.textContent = tr("sidebar.noSharedProjects");
     }
     sharedListEl.appendChild(li);
   } else {
@@ -3746,13 +5518,27 @@ function renderProjectList() {
     });
   }
 
+  if (!hasAutoSelectedProject && myProjects.length === 0 && sharedProjects.length === 1) {
+    const sharedId = sharedProjects[0].id;
+    const activeInShared = state.activeProjectId === sharedId;
+    if (!activeInShared) {
+      setActiveSidebarTab("shared-with-me");
+      selectProject(sharedId);
+    } else {
+      setActiveSidebarTab("shared-with-me");
+    }
+    hasAutoSelectedProject = true;
+  }
+
 }
 
 function renderProjectHeader() {
   const project = getActiveProject();
   if (!project) {
-    projectTitleEl.textContent = "No project";
-    projectMetaEl.textContent = 'Click "New project".';
+    // Use i18n translations for empty state
+    var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
+    projectTitleEl.textContent = t('header.noProject');
+    projectMetaEl.textContent = t('header.getStarted');
     projectMenuBtn.style.display = "none";
     return;
   }
@@ -3762,31 +5548,244 @@ function renderProjectHeader() {
   const cues = project.cues.length;
   const versions = project.cues.reduce((a, c) => a + c.versions.length, 0);
 
-  projectMetaEl.textContent = `${cues} cues · ${versions} versions`;
+  const cuesLabel =
+    cues === 1 ? tr("cues.countSingle") : tr("cues.countPlural");
+  const versionsLabel =
+    versions === 1 ? tr("misc.version") : tr("misc.versions");
+  projectMetaEl.textContent = `${cues} ${cuesLabel} · ${versions} ${versionsLabel}`;
 
   projectTitleEl.onclick = () => renameProject(project);
   projectMenuBtn.onclick = () => deleteProject(project.id);
   projectMenuBtn.style.display = "inline-flex";
 }
 
-function updateVisibility() {
+function refreshTranslationsOnly() {
   const project = getActiveProject();
+  renderProjectHeader();
+
   if (project) {
-    if (uploadStripEl) uploadStripEl.style.display = "flex";
-    if (contentEl) contentEl.style.display = "grid";
-    if (dropzoneEl) dropzoneEl.classList.remove("disabled");
-    if (shareBtn) shareBtn.disabled = false;
-    if (deliverBtn) deliverBtn.disabled = false;
-    if (copyLinkBtn) copyLinkBtn.disabled = false;
+    updateCountBadge(
+      cuesCountBadgeEl,
+      project.cues.length || 0,
+      "cues.countSingle",
+      "cues.countPlural",
+      "cue",
+      "cues"
+    );
+    updateCountBadge(
+      refsCountBadgeEl,
+      (project.references || []).length,
+      "refs.countSingle",
+      "refs.countPlural",
+      "file",
+      "files"
+    );
+  }
+
+  if (project && cueListEl && project.cues.length) {
+    project.cues.forEach(cue => {
+      const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
+      if (!details) return;
+      const metaEl = details.querySelector(".cue-meta");
+      if (metaEl) {
+        const label = cue.versions.length === 1 ? tr("misc.version") : tr("misc.versions");
+        metaEl.textContent = `${cue.versions.length} ${label}`;
+      }
+      const statusEl = details.querySelector(".cue-status");
+      if (statusEl) {
+        statusEl.textContent = getStatusLabel(normalizeVersionStatus(cue.status || "in_review"));
+      }
+      const menu = details.querySelector(".cue-dropdown .download-menu");
+      if (menu) {
+        const renameBtn = menu.querySelector('button[data-action="rename"]');
+        const deleteBtn = menu.querySelector('button[data-action="delete"]');
+        if (renameBtn) renameBtn.textContent = tr("action.rename");
+        if (deleteBtn) deleteBtn.textContent = tr("action.delete");
+      }
+      cue.versions.forEach(version => {
+        const row = document.querySelector(`.version-row[data-version-id="${version.id}"]`);
+        if (!row) return;
+        const meta = row.querySelector(".version-meta");
+        if (meta) meta.textContent = getVersionMetaText(version);
+        const downloadBtn = row.querySelector(".download-dropdown .download-toggle");
+        if (downloadBtn) downloadBtn.textContent = `${tr("action.download")} ▾`;
+      });
+    });
+  } else if (cueListEl && (!project || !project.cues.length)) {
+    if (cueListEl.classList.contains("cue-list-empty")) {
+      cueListEl.textContent = tr("cues.noCues");
+    }
+  }
+
+  if (project && refsListEl) {
+    const refs = project.references || [];
+    if (!refs.length) {
+      refsListEl.textContent = tr("refs.noFiles");
+    } else {
+      refs.forEach(refRoot => {
+        const details = document.querySelector(`details[data-ref-id="${refRoot.id}"]`);
+        if (!details) return;
+        const activeIndex =
+          typeof refRoot.activeVersionIndex === "number"
+            ? refRoot.activeVersionIndex
+            : refRoot.versions.length - 1;
+        const active = refRoot.versions[activeIndex];
+        const metaEl = details.querySelector(".ref-meta");
+        if (metaEl && active) {
+          const label = getReferenceLabel(active.type);
+          const sizeLabel = formatFileSize(active.size);
+          metaEl.textContent = sizeLabel ? `${label} · ${sizeLabel}` : label;
+        }
+        const chip = details.querySelector(".refs-type-chip");
+        if (chip) {
+          chip.textContent =
+            refRoot.versions.length > 1
+              ? tr("refs.groupLabel", { n: refRoot.versions.length })
+              : tr("refs.groupLabelSingle");
+        }
+        const menu = details.querySelector(".ref-group-dropdown .download-menu");
+        if (menu) {
+          const renameActive = menu.querySelector('button[data-action="rename-active-version"]');
+          const deleteActive = menu.querySelector('button[data-action="delete-active-version"]');
+          const deleteGroup = menu.querySelector('button[data-action="delete-group"]');
+          if (renameActive) renameActive.textContent = tr("refs.menuRenameActive");
+          if (deleteActive) deleteActive.textContent = tr("refs.menuDeleteActive");
+          if (deleteGroup) deleteGroup.textContent = tr("refs.menuDeleteGroup");
+        }
+      });
+      refs.forEach(refRoot => {
+        (refRoot.versions || []).forEach((ver) => {
+          const row = document.querySelector(`.ref-version-row[data-ref-version-id="${ver.id}"]`);
+          if (!row) return;
+          const meta = row.querySelector(".ref-version-meta");
+          if (meta) {
+            const label = getReferenceLabel(ver.type);
+            const sizeLabel = formatFileSize(ver.size);
+            meta.textContent = sizeLabel ? `${label} · ${sizeLabel}` : label;
+          }
+          const menu = row.querySelector(".download-menu");
+          if (menu) {
+            const setActive = menu.querySelector('button[data-action="set-active"]');
+            const rename = menu.querySelector('button[data-action="rename-version"]');
+            const del = menu.querySelector('button[data-action="delete-version"]');
+            const download = menu.querySelector('button[data-action="download-version"]');
+            if (setActive) setActive.textContent = tr("refs.menuSetActive");
+            if (rename) rename.textContent = tr("action.renameVersion");
+            if (del) del.textContent = tr("action.deleteVersion");
+            if (download) download.textContent = tr("action.download");
+          }
+        });
+      });
+    }
+  }
+
+  const ctx = getActiveContext();
+  if (project && ctx && ctx.version) {
+    updateReviewUI(project, ctx.version);
+    const statusKey = normalizeVersionStatus(ctx.version.status || "in_review");
+    playerBadgeEl.textContent = getStatusLabel(statusKey);
+    const commentCount = ctx.version.comments.length;
+    commentsSummaryEl.textContent = commentCount
+      ? tr("comments.count", { n: commentCount })
+      : tr("comments.noComments");
   } else {
-    if (uploadStripEl) uploadStripEl.style.display = "none";
-    if (contentEl) contentEl.style.display = "none";
-    if (dropzoneEl) dropzoneEl.classList.add("disabled");
-    if (shareBtn) shareBtn.disabled = true;
-    if (deliverBtn) deliverBtn.disabled = true;
-    if (copyLinkBtn) copyLinkBtn.disabled = true;
+    renderComments();
+    if (playerBadgeEl && playerBadgeEl.dataset.status === "reference") {
+      playerBadgeEl.textContent = tr("player.referenceBadge");
+    }
+  }
+
+  updateUploadCountLabel();
+  if (uploadProgressPanel) {
+    const titleEl = uploadProgressPanel.querySelector(".upload-progress-title strong");
+    if (titleEl) titleEl.textContent = tr("upload.panelTitle");
   }
 }
+
+function updateVisibility() {
+  const project = getActiveProject();
+  const isOwner = project ? isOwnerOfProject(project) : false;
+  if (contentEl) contentEl.style.display = project ? "grid" : "none";
+  if (shareBtn) shareBtn.disabled = !project;
+  if (deliverBtn) deliverBtn.disabled = !project;
+  if (copyLinkBtn) copyLinkBtn.disabled = !project;
+  if (addCueBtn) addCueBtn.disabled = !project || !isOwner;
+  if (addReferenceBtn) addReferenceBtn.disabled = !project;
+  setDropzoneEnabled(cuesDropzoneEl, !!project && isOwner);
+  setDropzoneEnabled(refsDropzoneEl, !!project);
+}
+
+function setSectionSubtitle(el, key, fallback) {
+  if (!el) return;
+  const t =
+    window.i18n && typeof window.i18n.t === "function" ? window.i18n.t : null;
+  el.textContent = t ? t(key) : fallback;
+}
+
+function openFilePicker({ accept, multiple = true, onFiles }) {
+  const input = document.createElement("input");
+  input.type = "file";
+  if (accept) input.accept = accept;
+  if (multiple) input.multiple = true;
+  input.addEventListener("change", () => {
+    if (!input.files || !input.files.length) return;
+    onFiles(Array.from(input.files));
+  });
+  input.click();
+}
+
+function handleCueFiles(files) {
+  const project = getActiveProject();
+  if (!project) return;
+  files.forEach(file => createCueFromFile(file));
+}
+
+function handleReferenceFiles(files) {
+  const project = getActiveProject();
+  if (!project) return;
+  files.forEach(file => createReferenceForProject(project, file, null));
+  renderReferences();
+}
+
+
+function updateNamingControlsVisibility() {
+  const shouldShow = !!state.autoRename;
+  if (namingControlsWrapper) namingControlsWrapper.classList.toggle("visible", shouldShow);
+  updateNamingModeButtons();
+}
+
+function updateNamingModeButtons() {
+  namingSchemeButtons.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.namingScheme === state.namingMode);
+  });
+}
+
+function setDropzoneEnabled(el, enabled) {
+  if (!el) return;
+  el.classList.toggle("disabled", !enabled);
+  el.style.display = enabled ? "" : "none";
+}
+
+function updateCountBadge(el, count, singularKey, pluralKey, fallbackSingular, fallbackPlural) {
+  if (!el) return;
+  const t =
+    window.i18n && typeof window.i18n.t === "function" ? window.i18n.t : null;
+  const singular = t ? t(singularKey) : fallbackSingular;
+  const plural = t ? t(pluralKey) : fallbackPlural;
+  if (count === null || count === undefined) {
+    el.textContent = "--";
+    el.classList.add("muted");
+    return;
+  }
+  const label = count === 1 ? `${count} ${singular}` : `${count} ${plural}`;
+  el.textContent = label;
+  if (count === 0) {
+    el.classList.add("muted");
+  } else {
+    el.classList.remove("muted");
+  }
+}
+
 
 // =======================
 // GLOBAL DRAG & DROP
@@ -3803,71 +5802,199 @@ window.addEventListener("drop", e => {
   }
 });
 
-dropzoneEl.addEventListener("dragover", e => {
-  if (!isFileDragEvent(e)) return;
-  if (!getActiveProject()) return;
-  e.preventDefault();
-  dropzoneEl.classList.add("drag-over");
-});
-
-dropzoneEl.addEventListener("dragleave", e => {
-  if (!dropzoneEl.contains(e.relatedTarget)) {
-    dropzoneEl.classList.remove("drag-over");
+// =======================
+// AUTO-RENAME CONTROLS
+// =======================
+if (autoRenameToggle) {
+  // Load saved preference
+  const savedAutoRename = localStorage.getItem("auto-rename");
+  if (savedAutoRename === "true") {
+    state.autoRename = true;
+    autoRenameToggle.checked = true;
   }
-});
+  updateNamingControlsVisibility();
 
-dropzoneEl.addEventListener("drop", e => {
-  if (!isFileDragEvent(e)) return;
-  e.preventDefault();
-  dropzoneEl.classList.remove("drag-over");
-
-  const project = getActiveProject();
-  if (!project) return;
-
-  const files = e.dataTransfer.files;
-  if (!files || !files.length) return;
-
-  createCueFromFile(files[0]);
-});
-
-dropzoneEl.addEventListener("click", () => {
-  const project = getActiveProject();
-  if (!project) return;
-
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "audio/*,video/*,application/zip";
-  input.multiple = false;
-
-  input.addEventListener("change", () => {
-    if (input.files && input.files.length) {
-      createCueFromFile(input.files[0]);
-    }
-  });
-
-  input.click();
-});
-
-// =======================
-// AUTO RENAME
-// =======================
-autoRenameToggle.addEventListener("change", () => {
-  state.autoRename = autoRenameToggle.checked;
-  namingLevelsEl.classList.toggle("visible", state.autoRename);
-  refreshAllNames();
-  updateNamesInDOM();
-});
-
-namingLevelRadios.forEach(r => {
-  r.addEventListener("change", () => {
-    const checked = document.querySelector(
-      "input[name='namingLevel']:checked"
-    );
-    state.namingMode = checked.value;
+  autoRenameToggle.addEventListener("change", e => {
+    state.autoRename = e.target.checked;
+    localStorage.setItem("auto-rename", state.autoRename ? "true" : "false");
+    console.log("[AutoRename] Toggle:", state.autoRename);
+    updateNamingControlsVisibility();
     refreshAllNames();
     updateNamesInDOM();
   });
-});
+} else {
+  updateNamingControlsVisibility();
+}
+
+const allowedNamingModes = ["media", "cinema"];
+const savedNamingMode = localStorage.getItem("naming-mode");
+if (savedNamingMode && allowedNamingModes.includes(savedNamingMode)) {
+  state.namingMode = savedNamingMode;
+}
+
+if (namingSchemeButtons && namingSchemeButtons.length) {
+  namingSchemeButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const scheme = btn.dataset.namingScheme;
+      if (!scheme || scheme === state.namingMode || !allowedNamingModes.includes(scheme)) return;
+      state.namingMode = scheme;
+      localStorage.setItem("naming-mode", scheme);
+      updateNamingModeButtons();
+      refreshAllNames();
+      updateNamesInDOM();
+    });
+  });
+}
+
+updateNamingModeButtons();
+
+// =======================
+// LAYOUT RESIZERS
+// =======================
+const sidebarResizer = document.getElementById("sidebarResizer");
+const columnResizer = document.getElementById("columnResizer");
+const leftColumn = document.querySelector(".left-column");
+const rightColumn = document.querySelector(".right-column");
+
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 500;
+
+function updateSidebarResizerPosition() {
+  if (!sidebarResizer || !sidebarEl) return;
+  const handleWidth = sidebarResizer.offsetWidth || 12;
+  sidebarResizer.style.left = `${sidebarEl.offsetWidth - handleWidth / 2}px`;
+}
+
+function updateColumnResizerPosition() {
+  if (!columnResizer || !leftColumn || !contentEl) return;
+  const handleWidth = columnResizer.offsetWidth || 12;
+  const leftPos = leftColumn.offsetLeft + leftColumn.offsetWidth - handleWidth / 2;
+  columnResizer.style.left = `${leftPos}px`;
+}
+
+function applySidebarWidth(widthPx) {
+  if (!sidebarEl) return;
+  const width = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, widthPx));
+  sidebarEl.style.width = `${width}px`;
+  sidebarEl.style.flex = `0 0 ${width}px`;
+  document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+  updateSidebarResizerPosition();
+}
+
+if (sidebarResizer && sidebarEl) {
+  const storedSidebarWidth = parseInt(localStorage.getItem("sidebar-width") || "", 10);
+  if (!Number.isNaN(storedSidebarWidth)) {
+    applySidebarWidth(storedSidebarWidth);
+  } else {
+    applySidebarWidth(sidebarEl.offsetWidth || SIDEBAR_MIN_WIDTH);
+  }
+
+  let isSidebarResizing = false;
+  let startSidebarX = 0;
+  let startSidebarWidth = sidebarEl.offsetWidth;
+
+  sidebarResizer.addEventListener("mousedown", e => {
+    isSidebarResizing = true;
+    startSidebarX = e.clientX;
+    startSidebarWidth = sidebarEl.offsetWidth;
+    sidebarResizer.classList.add("dragging");
+    document.body.classList.add("resizing");
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", e => {
+    if (!isSidebarResizing) return;
+    const delta = e.clientX - startSidebarX;
+    applySidebarWidth(startSidebarWidth + delta);
+    updateColumnResizerPosition();
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!isSidebarResizing) return;
+    isSidebarResizing = false;
+    sidebarResizer.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    localStorage.setItem("sidebar-width", `${sidebarEl.offsetWidth}`);
+  });
+
+  window.addEventListener("resize", () => {
+    if (!isSidebarResizing) {
+      updateSidebarResizerPosition();
+      updateColumnResizerPosition();
+    }
+  });
+} else {
+  updateSidebarResizerPosition();
+}
+
+if (columnResizer && contentEl && leftColumn) {
+  let isResizing = false;
+  let startX = 0;
+  let startLeftWidth = 0;
+
+  const savedLeftWidth = localStorage.getItem("column-left-width");
+  if (savedLeftWidth) {
+    contentEl.style.setProperty("--left-column-width", savedLeftWidth);
+    contentEl.style.setProperty("--right-column-width", `calc(100% - ${savedLeftWidth})`);
+  }
+  updateColumnResizerPosition();
+
+  columnResizer.addEventListener("mousedown", (e) => {
+    isResizing = true;
+    startX = e.clientX;
+    startLeftWidth = leftColumn.offsetWidth;
+
+    columnResizer.classList.add("dragging");
+    document.body.classList.add("resizing");
+
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!isResizing) return;
+
+    const contentRect = contentEl.getBoundingClientRect();
+    const styles = window.getComputedStyle(contentEl);
+    const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+    const paddingRight = parseFloat(styles.paddingRight) || 0;
+    const usableWidth = Math.max(1, contentRect.width - paddingLeft - paddingRight);
+    const minWidth = 300;
+    const maxWidth = Math.max(minWidth, usableWidth - minWidth);
+
+    const deltaX = e.clientX - startX;
+    let newLeftWidth = startLeftWidth + deltaX;
+
+    newLeftWidth = Math.max(minWidth, Math.min(maxWidth, newLeftWidth));
+
+    const leftPercent = (newLeftWidth / usableWidth) * 100;
+    const rightPercent = 100 - leftPercent;
+
+    contentEl.style.setProperty("--left-column-width", `${leftPercent}%`);
+    contentEl.style.setProperty("--right-column-width", `${rightPercent}%`);
+
+    updateColumnResizerPosition();
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!isResizing) return;
+
+    isResizing = false;
+    columnResizer.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+
+    const leftWidth = getComputedStyle(contentEl).getPropertyValue("--left-column-width");
+    if (leftWidth) {
+      localStorage.setItem("column-left-width", leftWidth.trim());
+    }
+    updateColumnResizerPosition();
+  });
+
+  window.addEventListener("resize", () => {
+    if (!isResizing) {
+      updateColumnResizerPosition();
+    }
+  });
+}
 
 // =======================
 // GLOBAL EVENTS
@@ -3877,19 +6004,19 @@ namingLevelRadios.forEach(r => {
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabContents = document.querySelectorAll(".tab-content");
 
+function setActiveSidebarTab(tabName) {
+  tabButtons.forEach(b => b.classList.remove("active"));
+  tabContents.forEach(c => c.classList.remove("active"));
+  const btn = Array.from(tabButtons).find(b => b.dataset.tab === tabName);
+  const tabContent = document.getElementById(`${tabName}-tab`);
+  if (btn) btn.classList.add("active");
+  if (tabContent) tabContent.classList.add("active");
+}
+
 tabButtons.forEach(btn => {
   btn.addEventListener("click", () => {
-    // Remove active class from all buttons and contents
-    tabButtons.forEach(b => b.classList.remove("active"));
-    tabContents.forEach(c => c.classList.remove("active"));
-
-    // Add active class to clicked button and corresponding content
-    btn.classList.add("active");
     const tabName = btn.dataset.tab;
-    const tabContent = document.getElementById(`${tabName}-tab`);
-    if (tabContent) {
-      tabContent.classList.add("active");
-    }
+    setActiveSidebarTab(tabName);
   });
 });
 
@@ -3899,23 +6026,53 @@ if (newProjectBtn) {
   console.error("[FlowPreview] newProjectBtn not found in DOM");
 }
 
-if (statusInReviewBtn && statusApprovedBtn && statusChangesBtn) {
-  statusInReviewBtn.addEventListener("click", () => {
+if (reviewCompleteBtn) {
+  reviewCompleteBtn.addEventListener("click", () => {
     const ctx = getActiveContext();
     if (!ctx) return;
-    setVersionStatus(ctx.project, ctx.cue, ctx.version, "in-review");
+    setVersionStatus(ctx.project, ctx.cue, ctx.version, "review_completed");
   });
+}
 
-  statusApprovedBtn.addEventListener("click", () => {
+if (startRevisionBtn) {
+  startRevisionBtn.addEventListener("click", () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+    setVersionStatus(ctx.project, ctx.cue, ctx.version, "in_revision");
+  });
+}
+
+if (approveVersionBtn) {
+  approveVersionBtn.addEventListener("click", () => {
     const ctx = getActiveContext();
     if (!ctx) return;
     setVersionStatus(ctx.project, ctx.cue, ctx.version, "approved");
   });
+}
 
-  statusChangesBtn.addEventListener("click", () => {
+if (requestChangesBtn) {
+  requestChangesBtn.addEventListener("click", () => {
     const ctx = getActiveContext();
     if (!ctx) return;
-    setVersionStatus(ctx.project, ctx.cue, ctx.version, "changes-requested");
+    setVersionStatus(ctx.project, ctx.cue, ctx.version, "changes_requested");
+  });
+}
+
+if (statusInReviewBtn) {
+  statusInReviewBtn.addEventListener("click", () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+    setVersionStatus(ctx.project, ctx.cue, ctx.version, "in_review");
+  });
+}
+
+// statusInRevisionBtn removed from UI
+
+if (statusApprovedBtn) {
+  statusApprovedBtn.addEventListener("click", () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+    setVersionStatus(ctx.project, ctx.cue, ctx.version, "approved");
   });
 }
 
@@ -3924,7 +6081,7 @@ if (copyLinkBtn) {
   copyLinkBtn.addEventListener('click', async () => {
     const project = window.getActiveProject ? window.getActiveProject() : null;
     if (!project) {
-      alert('No project selected');
+      showAlert('No project selected');
       return;
     }
 
@@ -3975,7 +6132,7 @@ if (copyLinkBtn) {
             const body = await resp.json();
             if (body && body.link) {
               await navigator.clipboard.writeText(body.link);
-              alert('Link copiato negli appunti: ' + body.link);
+              showAlert('Link copiato negli appunti: ' + body.link);
               return;
             }
           } else {
@@ -3993,15 +6150,15 @@ if (copyLinkBtn) {
                 const invBody = await invResp.json().catch(() => ({}));
                 if (invResp.ok && invBody.invite_url) {
                   await navigator.clipboard.writeText(invBody.invite_url);
-                  alert('Link invito copiato negli appunti: ' + invBody.invite_url);
+                  showAlert('Link invito copiato negli appunti: ' + invBody.invite_url);
                   return;
                 }
 
                 console.warn('[FlowPreview] /api/invites failed or not allowed', invResp.status, invBody);
-                alert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+                showAlert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
               } catch (ie) {
                 console.warn('[FlowPreview] create invite fallback failed', ie);
-                alert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+                showAlert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
               }
             }
           }
@@ -4063,7 +6220,7 @@ if (copyLinkBtn) {
           }
 
           await navigator.clipboard.writeText(inviteUrl);
-          alert('Link copiato negli appunti: ' + inviteUrl);
+          showAlert('Link copiato negli appunti: ' + inviteUrl);
           return;
         }
       } catch (err) {
@@ -4072,10 +6229,10 @@ if (copyLinkBtn) {
         try {
           const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
           await navigator.clipboard.writeText(temp);
-          alert('Impossibile generare link definitivo. Link temporaneo copiato negli appunti: ' + temp);
+          showAlert('Impossibile generare link definitivo. Link temporaneo copiato negli appunti: ' + temp);
         } catch (clipErr) {
           console.error('[FlowPreview] Fallback clipboard write failed', clipErr);
-          alert('Errore creando il link di condivisione');
+          showAlert('Errore creando il link di condivisione');
         }
       } finally {
         copyLinkBtn.disabled = false;
@@ -4085,7 +6242,16 @@ if (copyLinkBtn) {
     }
 
     // Not authenticated: ask the user whether to register or copy a temporary project link
-    const shouldRegister = confirm("Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare.");
+    const shouldRegister = await showConfirmDialog({
+      title: tr("action.confirmDefaultTitle"),
+      message: tr(
+        "share.registerPrompt",
+        {},
+        "Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare."
+      ),
+      confirmLabel: tr("action.confirm"),
+      cancelLabel: tr("action.cancel")
+    });
     if (shouldRegister) {
       window.location.href = '/register';
       return;
@@ -4095,10 +6261,10 @@ if (copyLinkBtn) {
     try {
       const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
       await navigator.clipboard.writeText(temp);
-      alert('Link temporaneo copiato negli appunti');
+      showAlert('Link temporaneo copiato negli appunti');
     } catch (err) {
       console.error('[FlowPreview] Clipboard write failed', err);
-      alert('Impossibile copiare il link.');
+      showAlert('Impossibile copiare il link.');
     }
   });
 }
@@ -4157,7 +6323,9 @@ async function initializeFromSupabase() {
       // ignore header detection errors and proceed anonymously
     }
 
-    // Fetch projects (allow one retry after attempting client auth bootstrap)
+    console.log("[Flow] Fetching project list via /api/projects...");
+    const listStartTime = Date.now();
+
     let response = await fetch("/api/projects", { headers: fetchHeaders });
     let didRetry = false;
     if (!response.ok) {
@@ -4167,11 +6335,13 @@ async function initializeFromSupabase() {
     }
 
     let data = await response.json();
+    const listElapsed = Date.now() - listStartTime;
+    console.log(`[Flow] Loaded project list in ${listElapsed}ms`);
 
     // If the initial fetch returned the public all-projects list (no actor info)
     // and we have a client `flowAuth` available, try to initAuth() then retry once.
     try {
-      const looksAnonymous = !data.my_projects && !data.shared_with_me;
+      const looksAnonymous = !Array.isArray(data.my_projects) && !Array.isArray(data.shared_with_me) && !Array.isArray(data.projects);
       if (looksAnonymous && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
         const boot = await window.flowAuth.initAuth().catch(() => false);
         if (boot) {
@@ -4203,23 +6373,25 @@ async function initializeFromSupabase() {
     } catch (e) {
       // ignore
     }
-    // Normalize project list: accept either `projects` (combined) or
-    // `my_projects` + `shared_with_me` shapes coming from the server.
+    // Build combined project list (owned + shared) with empty cues to be loaded lazily
+    const myProjects = Array.isArray(data.my_projects) ? data.my_projects : [];
+    const sharedProjects = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
     let projects = [];
-    if (Array.isArray(data.projects)) {
+    if (Array.isArray(data.projects) && data.projects.length > 0) {
       projects = data.projects;
     } else {
-      const my = Array.isArray(data.my_projects) ? data.my_projects : [];
-      const shared = Array.isArray(data.shared_with_me) ? data.shared_with_me : [];
-      projects = [...my, ...shared];
+      projects = [...myProjects, ...sharedProjects];
     }
 
     console.log("[Flow] Loaded projects:", projects.length);
 
-    // Populate state with projects from DB
-    // Preserve owner and team_members so we can split "my" vs "shared" projects in the UI
-    // Also mark projects returned in server `shared_with_me` so direct project_members are respected
-    const sharedIds = new Set((Array.isArray(data.shared_with_me) ? data.shared_with_me : []).map(p => p.id));
+    const sharedIds = new Set(sharedProjects.map(p => p.id));
+    if (sharedIds.size === 0 && projects.some(p => p.is_shared)) {
+      projects
+        .filter(p => p.is_shared)
+        .forEach(p => sharedIds.add(p.id));
+    }
+
     state.projects = projects.map(p => ({
       id: p.id,
       name: p.name || "Untitled",
@@ -4227,23 +6399,24 @@ async function initializeFromSupabase() {
       owner_id: p.owner_id || null,
       team_members: p.team_members || [],
       is_shared: sharedIds.has(p.id),
-      cues: [], // Load on demand if needed
+      cues: [],
       activeCueId: null,
       activeVersionId: null,
-      references: p.references || [],
+      references: [],
       activeReferenceId: null
     }));
 
     // If a specific project was requested (open_project), prefer it
+    let bootProjectId = null;
     try {
       const openProject = localStorage.getItem('open_project');
       if (openProject) {
         const found = state.projects.find(p => p.id === openProject);
         if (found) {
           state.activeProjectId = found.id;
+          bootProjectId = found.id;
           // Clean up the flag so subsequent loads don't reopen it
           localStorage.removeItem('open_project');
-          await loadProjectCues(found.id);
         }
       }
     } catch (e) {
@@ -4253,10 +6426,21 @@ async function initializeFromSupabase() {
     // Set first project as active if none selected
     if (!state.activeProjectId && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
-      await loadProjectCues(state.projects[0].id);
+      bootProjectId = state.projects[0].id;
     }
 
+    // Refresh names and render immediately
+    refreshAllNames();
     renderAll();
+    console.log("[Flow] Project list ready. Active project:", state.activeProjectId);
+
+    // Immediately load cues/versions/comments for the active project
+    if (bootProjectId) {
+      await loadProjectCues(bootProjectId);
+    } else {
+      console.log("[Flow] No projects found for this user.");
+    }
+
   } catch (err) {
     console.error("[Flow] initializeFromSupabase error:", err);
     renderAll(); // Fallback to empty UI
@@ -4275,6 +6459,8 @@ function renderAll() {
   renderCueList();
   renderVersionPreviews();
   renderPlayer();
+  renderNotesPanel();
+  updateProjectNotesButton();
 }
 
 // Export for page.tsx to call after auth
@@ -4282,6 +6468,601 @@ window.initializeFromSupabase = initializeFromSupabase;
 window.getActiveProject = getActiveProject; // Export for share-handler.js
 
 // Don't auto-initialize - wait for page.tsx to call initializeFromSupabase
+// ==========================================
+// NOTES FUNCTIONALITY (Modal + Inline Cue Notes)
+// ==========================================
+
+// Note: projectNotesStore is already declared at the top of the file
+function cloneCueNotesMap(source = {}) {
+  const clone = {};
+  for (const key of Object.keys(source)) {
+    const arr = source[key];
+    clone[key] = Array.isArray(arr) ? [...arr] : [];
+  }
+  return clone;
+}
+
+function noteActionsTemplate(noteId, cueId) {
+  const cueAttr = cueId ? ` data-cue-id="${cueId}"` : "";
+  return `
+    <div class="download-dropdown note-actions"${cueAttr} data-note-id="${noteId}">
+      <button type="button" class="icon-btn tiny download-toggle" aria-label="Azioni nota">⋯</button>
+      <div class="download-menu">
+        <button class="note-edit" data-note-id="${noteId}"${cueAttr}>Modifica</button>
+        <button class="note-delete" data-note-id="${noteId}"${cueAttr}>Elimina</button>
+      </div>
+    </div>
+  `;
+}
+
+function initNotesUI() {
+  // Project notes button in header
+  const projectNotesBtn = document.getElementById('projectNotesBtn');
+  const projectNotesModal = document.getElementById('projectNotesModal');
+  const closeProjectNotesModal = document.getElementById('closeProjectNotesModal');
+  const projectNoteForm = document.getElementById('projectNoteForm');
+
+  if (projectNotesBtn) {
+    projectNotesBtn.addEventListener('click', () => {
+      if (projectNotesModal) {
+        projectNotesModal.style.display = 'flex';
+        loadAndRenderProjectNotes();
+      }
+    });
+  }
+
+  if (closeProjectNotesModal) {
+    closeProjectNotesModal.addEventListener('click', () => {
+      if (projectNotesModal) projectNotesModal.style.display = 'none';
+    });
+  }
+
+  if (projectNotesModal) {
+    projectNotesModal.addEventListener('click', (e) => {
+      if (e.target === projectNotesModal) {
+        projectNotesModal.style.display = 'none';
+      }
+    });
+  }
+
+  if (projectNoteForm) {
+    projectNoteForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('projectNoteInput');
+      const text = input?.value?.trim();
+      if (!text) return;
+
+      await saveProjectNote(text);
+      if (input) input.value = '';
+      loadAndRenderProjectNotes();
+    });
+  }
+}
+
+async function loadAndRenderProjectNotes() {
+  const project = getActiveProject();
+  if (!project) return;
+
+  const listEl = document.getElementById('projectNotesList');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div class="notes-empty-state">Caricamento...</div>';
+
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/notes?projectId=${project.id}&type=general`, { headers });
+
+    if (!res.ok) {
+      throw new Error('Errore caricamento note');
+    }
+
+    const data = await res.json();
+    const notes = data.notes || [];
+    project.notes = notes;
+    if (!projectNotesStore[project.id]) {
+      projectNotesStore[project.id] = { general: [...notes], cue: {}, loadedAt: Date.now() };
+    } else {
+      projectNotesStore[project.id].general = [...notes];
+    }
+    renderNotesPanel();
+
+    if (notes.length === 0) {
+      listEl.innerHTML = '<div class="notes-empty-state">Nessuna nota per questo progetto</div>';
+      return;
+    }
+
+    listEl.innerHTML = notes.map(note => `
+      <div class="project-note-item" data-note-id="${note.id}">
+        <div class="note-text">${escapeHtml(note.body)}</div>
+        <div class="note-meta">
+          <span class="note-author">${escapeHtml(note.author_name || 'Utente')}</span>
+          <span>${formatNoteTimestamp(note.created_at)}</span>
+        </div>
+        ${noteActionsTemplate(note.id, '')}
+      </div>
+    `).join('');
+    attachProjectNoteActions(listEl);
+
+  } catch (err) {
+    console.error('[Notes] Error loading project notes:', err);
+    listEl.innerHTML = '<div class="notes-empty-state">Errore caricamento note</div>';
+  }
+}
+
+async function loadProjectNotes(projectId, options = {}) {
+  const project = getProjectById(projectId);
+  if (!project) return;
+  const cached = projectNotesStore[projectId];
+  if (cached && !options.force) {
+    project.notes = [...(cached.general || [])];
+    project.cueNotes = cloneCueNotesMap(cached.cue || {});
+    renderCueList();
+    renderVersionPreviews();
+    renderNotesPanel();
+    return;
+  }
+
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/notes?projectId=${projectId}`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load project notes (${res.status})`);
+    }
+    const data = await res.json();
+    const notes = Array.isArray(data.notes) ? data.notes : [];
+    const general = [];
+    const cueMap = {};
+    notes.forEach((note) => {
+      if (note.cue_id) {
+        if (!cueMap[note.cue_id]) cueMap[note.cue_id] = [];
+        cueMap[note.cue_id].push(note);
+      } else {
+        general.push(note);
+      }
+    });
+    project.notes = general;
+    project.cueNotes = cueMap;
+    projectNotesStore[projectId] = {
+      general: [...general],
+      cue: cloneCueNotesMap(cueMap),
+      loadedAt: Date.now()
+    };
+    renderCueList();
+    renderVersionPreviews();
+    renderNotesPanel();
+  } catch (err) {
+    console.error('[Notes] Error loading project notes:', err);
+    throw err;
+  }
+}
+
+async function saveProjectNote(text) {
+  const project = getActiveProject();
+  if (!project || !text) return;
+
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        projectId: project.id,
+        body: text,
+        type: 'general',
+        authorName: getCurrentUserDisplayName()
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error('Errore salvataggio nota');
+    }
+
+    const data = await res.json().catch(() => null);
+    const createdNote = data?.note || {
+      id: uid(),
+      body: text,
+      author_name: getCurrentUserDisplayName(),
+      created_at: new Date().toISOString()
+    };
+    if (projectNotesStore[project.id]) {
+      const storeEntry = projectNotesStore[project.id];
+      storeEntry.general = [createdNote, ...(storeEntry.general || [])];
+    }
+    if (!project.notes) project.notes = [];
+    project.notes.unshift(createdNote);
+    renderNotesPanel();
+    console.log('[Notes] Project note saved');
+  } catch (err) {
+    console.error('[Notes] Error saving project note:', err);
+    showAlert('Errore durante il salvataggio della nota');
+  }
+}
+
+// Render cue notes inline (inside each cue)
+function renderCueNotesInline(cueId, container) {
+  if (!container) return;
+
+  const project = getActiveProject();
+  if (!project) {
+    container.innerHTML = '';
+    return;
+  }
+
+  // Get notes for this cue from project's cueNotes
+  const cueNotes = project.cueNotes?.[cueId] || [];
+
+  if (cueNotes.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = cueNotes.map(note => `
+    <div class="cue-note-item" data-note-id="${note.id}" data-cue-id="${cueId}">
+      <div class="note-text">${escapeHtml(note.body || note.text)}</div>
+      <div class="note-meta">
+        ${escapeHtml(note.author_name || 'Utente')} · ${formatNoteTimestamp(note.created_at)}
+      </div>
+      ${noteActionsTemplate(note.id, cueId)}
+    </div>
+  `).join('');
+  attachCueNoteActions(container, cueId);
+}
+
+async function saveCueNote(cueId, text) {
+  const project = getActiveProject();
+  if (!project || !cueId || !text) return;
+
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        projectId: project.id,
+        cueId: cueId,
+        body: text,
+        type: 'cue',
+        authorName: getCurrentUserDisplayName()
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error('Errore salvataggio nota');
+    }
+
+    const data = await res.json();
+    const createdNote = data.note;
+
+    // Add to local state
+    if (!project.cueNotes) project.cueNotes = {};
+    if (!project.cueNotes[cueId]) project.cueNotes[cueId] = [];
+    if (createdNote) {
+      project.cueNotes[cueId].unshift(createdNote);
+    }
+    if (projectNotesStore[project.id]) {
+      const storeEntry = projectNotesStore[project.id];
+      if (!storeEntry.cue) storeEntry.cue = {};
+      const existing = storeEntry.cue[cueId] || [];
+      storeEntry.cue[cueId] = createdNote ? [createdNote, ...existing] : existing;
+    }
+
+    renderNotesPanel();
+    console.log('[Notes] Cue note saved');
+  } catch (err) {
+    console.error('[Notes] Error saving cue note:', err);
+    showAlert('Errore durante il salvataggio della nota');
+  }
+}
+
+async function getAuthHeaders() {
+  const headers = {};
+  try {
+    if (window.supabaseClient?.auth) {
+      const { data: { session } } = await window.supabaseClient.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+      if (session?.user?.id) {
+        headers['x-actor-id'] = session.user.id;
+      }
+    }
+  } catch (err) {
+    console.warn('[Notes] Could not get auth headers:', err);
+  }
+  return headers;
+}
+
+function formatNoteTimestamp(value) {
+  if (!value) return '';
+  try {
+    const d = new Date(value);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'ora';
+    if (diffMins < 60) return `${diffMins}m fa`;
+    if (diffHours < 24) return `${diffHours}h fa`;
+    if (diffDays < 7) return `${diffDays}g fa`;
+
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+  } catch (err) {
+    return '';
+  }
+}
+
+function getCurrentUserDisplayName() {
+  try {
+    if (window.flowAuth?.getUser) {
+      const user = window.flowAuth.getUser();
+      if (user?.full_name) return user.full_name;
+      if (user?.displayName) return user.displayName;
+      if (user?.email) return user.email;
+    }
+    if (window.flowAuth?.getSession) {
+      const session = window.flowAuth.getSession();
+      if (session?.user?.email) return session.user.email;
+    }
+  } catch (err) {}
+  return 'Utente';
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function attachProjectNoteActions(listEl) {
+  const project = getActiveProject();
+  if (!project) return;
+  listEl.querySelectorAll('.project-note-item').forEach(item => {
+    const noteId = item.dataset.noteId;
+    const dropdown = item.querySelector('.note-actions');
+    setupNoteDropdown(dropdown);
+    const editBtn = item.querySelector('.note-edit');
+    const deleteBtn = item.querySelector('.note-delete');
+    if (editBtn) {
+      editBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        dropdown?.classList.remove('open');
+        await handleEditNote(noteId, null);
+      });
+    }
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        dropdown?.classList.remove('open');
+        await handleDeleteNote(noteId, null);
+      });
+    }
+  });
+}
+
+function attachCueNoteActions(container, cueId) {
+  container.querySelectorAll('.cue-note-item').forEach(item => {
+    const noteId = item.dataset.noteId;
+    const dropdown = item.querySelector('.note-actions');
+    setupNoteDropdown(dropdown);
+    const editBtn = item.querySelector('.note-edit');
+    const deleteBtn = item.querySelector('.note-delete');
+    if (editBtn) {
+      editBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        dropdown?.classList.remove('open');
+        await handleEditNote(noteId, cueId);
+      });
+    }
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        dropdown?.classList.remove('open');
+        await handleDeleteNote(noteId, cueId);
+      });
+    }
+  });
+}
+
+function setupNoteDropdown(dropdown) {
+  if (!dropdown) return;
+  const toggle = dropdown.querySelector('.download-toggle');
+  if (!toggle) return;
+  const closeHandler = (event) => {
+    if (!dropdown.contains(event.target)) {
+      dropdown.classList.remove('open');
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document
+      .querySelectorAll('.download-dropdown.open')
+      .forEach(el => {
+        if (el !== dropdown) el.classList.remove('open');
+      });
+    const willOpen = !dropdown.classList.contains('open');
+    dropdown.classList.toggle('open');
+    if (willOpen) {
+      document.addEventListener('click', closeHandler);
+    }
+  });
+}
+
+async function handleEditNote(noteId, cueId) {
+  const project = getActiveProject();
+  if (!project || !noteId) return;
+  const list = cueId ? (project.cueNotes?.[cueId] || []) : (project.notes || []);
+  const note = list.find(n => n.id === noteId);
+  if (!note) return;
+  const currentText = note.body || note.text || '';
+  const edited = await showPromptDialog({
+    title: tr("notes.editPrompt", {}, "Modifica nota"),
+    defaultValue: currentText
+  });
+  if (edited === null) return;
+  const trimmed = edited.trim();
+  if (!trimmed || trimmed === currentText.trim()) return;
+  try {
+    await updateNoteRequest(noteId, trimmed);
+    if (cueId) {
+      const cueListEl = document.querySelector(`.cue-notes-list[data-cue-id="${cueId}"]`);
+      if (cueListEl) renderCueNotesInline(cueId, cueListEl);
+    } else {
+      loadAndRenderProjectNotes();
+    }
+  } catch (err) {
+    console.error('[Notes] Failed to edit note', err);
+    showAlert('Errore durante la modifica della nota');
+  }
+}
+
+async function handleDeleteNote(noteId, cueId) {
+  const project = getActiveProject();
+  if (!project || !noteId) return;
+  const list = cueId ? (project.cueNotes?.[cueId] || []) : (project.notes || []);
+  const note = list.find(n => n.id === noteId);
+  if (!note) return;
+  const ok = await showConfirmDialog({
+    title: tr("action.delete"),
+    message: tr("notes.deleteConfirm", {}, "Eliminare questa nota?"),
+    confirmLabel: tr("action.delete"),
+    cancelLabel: tr("action.cancel")
+  });
+  if (!ok) return;
+  try {
+    await deleteNoteRequest(noteId);
+    removeNoteFromState(project.id, noteId, cueId);
+    if (cueId) {
+      const cueListEl = document.querySelector(`.cue-notes-list[data-cue-id="${cueId}"]`);
+      if (cueListEl) renderCueNotesInline(cueId, cueListEl);
+    } else {
+      loadAndRenderProjectNotes();
+    }
+  } catch (err) {
+    console.error('[Notes] Failed to delete note', err);
+    showAlert('Errore durante la cancellazione della nota');
+  }
+}
+
+async function updateNoteRequest(noteId, text) {
+  const headers = await getAuthHeaders();
+  headers['Content-Type'] = 'application/json';
+  const res = await fetch('/api/notes', {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ noteId, body: text })
+  });
+  if (!res.ok) {
+    throw new Error('Failed to update note');
+  }
+  const data = await res.json();
+  if (data.note) {
+    applyNoteUpdate(data.note);
+  }
+  return data.note;
+}
+
+async function deleteNoteRequest(noteId) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`/api/notes?noteId=${encodeURIComponent(noteId)}`, {
+    method: 'DELETE',
+    headers
+  });
+  if (!res.ok) {
+    throw new Error('Failed to delete note');
+  }
+}
+
+function applyNoteUpdate(note) {
+  if (!note) return;
+  const project = getProjectById(note.project_id) || getActiveProject();
+  if (!project) return;
+  if (note.cue_id) {
+    if (!project.cueNotes) project.cueNotes = {};
+    if (!project.cueNotes[note.cue_id]) project.cueNotes[note.cue_id] = [];
+    const idx = project.cueNotes[note.cue_id].findIndex(n => n.id === note.id);
+    if (idx >= 0) {
+      project.cueNotes[note.cue_id][idx] = note;
+    } else {
+      project.cueNotes[note.cue_id].unshift(note);
+    }
+  } else {
+    if (!project.notes) project.notes = [];
+    const idx = project.notes.findIndex(n => n.id === note.id);
+    if (idx >= 0) {
+      project.notes[idx] = note;
+    } else {
+      project.notes.unshift(note);
+    }
+  }
+  const storeEntry = projectNotesStore[note.project_id];
+  if (storeEntry) {
+    if (note.cue_id) {
+      if (!storeEntry.cue) storeEntry.cue = {};
+      if (!storeEntry.cue[note.cue_id]) storeEntry.cue[note.cue_id] = [];
+      const idx = storeEntry.cue[note.cue_id].findIndex(n => n.id === note.id);
+      if (idx >= 0) {
+        storeEntry.cue[note.cue_id][idx] = note;
+      } else {
+        storeEntry.cue[note.cue_id].unshift(note);
+      }
+    } else if (storeEntry.general) {
+      const idx = storeEntry.general.findIndex(n => n.id === note.id);
+      if (idx >= 0) {
+        storeEntry.general[idx] = note;
+      }
+    }
+  }
+  renderNotesPanel();
+}
+
+function removeNoteFromState(projectId, noteId, cueId) {
+  const project = getProjectById(projectId) || getActiveProject();
+  if (!project) return;
+  if (cueId) {
+    if (!project.cueNotes) project.cueNotes = {};
+    if (project.cueNotes[cueId]) {
+      project.cueNotes[cueId] = project.cueNotes[cueId].filter(n => n.id !== noteId);
+    }
+  } else if (project.notes) {
+    project.notes = project.notes.filter(n => n.id !== noteId);
+  }
+  const storeEntry = projectNotesStore[projectId];
+  if (storeEntry) {
+    if (cueId) {
+      if (storeEntry.cue && storeEntry.cue[cueId]) {
+        storeEntry.cue[cueId] = storeEntry.cue[cueId].filter(n => n.id !== noteId);
+      }
+    } else if (storeEntry.general) {
+      storeEntry.general = storeEntry.general.filter(n => n.id !== noteId);
+    }
+  }
+  renderNotesPanel();
+}
+
+// Show/hide project notes button based on active project
+function updateProjectNotesButton() {
+  const btn = document.getElementById('projectNotesBtn');
+  const project = getActiveProject();
+  if (btn) {
+    btn.style.display = project ? '' : 'none';
+  }
+}
+
+// Initialize notes UI after DOM is ready
+setTimeout(initNotesUI, 100);
+
+// ==========================================
+// END NOTES FUNCTIONALITY
+// ==========================================
+
 console.log("[Flow] Script loaded, waiting for page.tsx to initialize...");
 
 // Fallback auto-init if the page never calls us (e.g. auth bootstrap fails silently)
@@ -4303,3 +7084,135 @@ setTimeout(() => {
     });
   }
 }, 800);
+
+// =======================
+// LANGUAGE CHANGE HANDLER
+// =======================
+// Re-render dynamic content when language changes
+window.addEventListener("language-changed", (e) => {
+  console.log("[Flow] Language changed to:", e.detail && e.detail.language);
+  // Re-render all dynamic UI components with new translations
+  renderProjectList();
+  refreshTranslationsOnly();
+});
+if (addCueBtn) {
+  addCueBtn.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    openFilePicker({
+      accept: "audio/*,video/*,application/zip",
+      multiple: true,
+      onFiles: handleCueFiles
+    });
+  });
+}
+
+if (addReferenceBtn) {
+  addReferenceBtn.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    openFilePicker({
+      multiple: true,
+      onFiles: files => handleReferenceFiles(files)
+    });
+  });
+}
+
+if (cuesDropzoneEl) {
+  cuesDropzoneEl.addEventListener("dragover", e => {
+    if (!isFileDragEvent(e)) return;
+    const project = getActiveProject();
+    if (!project || !isOwnerOfProject(project)) return;
+    e.preventDefault();
+    cuesDropzoneEl.classList.add("drag-over");
+  });
+
+  cuesDropzoneEl.addEventListener("dragleave", e => {
+    if (!cuesDropzoneEl.contains(e.relatedTarget)) {
+      cuesDropzoneEl.classList.remove("drag-over");
+    }
+  });
+
+  cuesDropzoneEl.addEventListener("drop", e => {
+    if (!isFileDragEvent(e)) return;
+    const project = getActiveProject();
+    if (!project || !isOwnerOfProject(project)) return;
+    e.preventDefault();
+    cuesDropzoneEl.classList.remove("drag-over");
+    if (!e.dataTransfer?.files?.length) return;
+    handleCueFiles(Array.from(e.dataTransfer.files));
+  });
+
+  cuesDropzoneEl.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project || !isOwnerOfProject(project)) return;
+    openFilePicker({
+      accept: "audio/*,video/*,application/zip",
+      multiple: true,
+      onFiles: handleCueFiles
+    });
+  });
+}
+
+if (refsDropzoneEl) {
+  refsDropzoneEl.addEventListener("dragover", e => {
+    if (!isFileDragEvent(e)) return;
+    if (!getActiveProject()) return;
+    e.preventDefault();
+    refsDropzoneEl.classList.add("drag-over");
+  });
+
+  refsDropzoneEl.addEventListener("dragleave", e => {
+    if (!refsDropzoneEl.contains(e.relatedTarget)) {
+      refsDropzoneEl.classList.remove("drag-over");
+    }
+  });
+
+  refsDropzoneEl.addEventListener("drop", e => {
+    if (!isFileDragEvent(e)) return;
+    e.preventDefault();
+    refsDropzoneEl.classList.remove("drag-over");
+    if (!e.dataTransfer?.files?.length) return;
+    handleReferenceFiles(Array.from(e.dataTransfer.files));
+  });
+
+  refsDropzoneEl.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    openFilePicker({
+      multiple: true,
+      onFiles: files => handleReferenceFiles(files)
+    });
+  });
+}
+
+// =======================
+// ADD CUE BUTTON
+// =======================
+if (addCueBtn) {
+  addCueBtn.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    openFilePicker({
+      accept: "audio/*,video/*",
+      multiple: true,
+      onFiles: files => {
+        files.forEach(file => createCueFromFile(file));
+      }
+    });
+  });
+}
+
+// =======================
+// ADD REFERENCE BUTTON
+// =======================
+if (addReferenceBtn) {
+  addReferenceBtn.addEventListener("click", () => {
+    const project = getActiveProject();
+    if (!project) return;
+    openFilePicker({
+      multiple: true,
+      onFiles: files => handleReferenceFiles(files)
+    });
+  });
+}

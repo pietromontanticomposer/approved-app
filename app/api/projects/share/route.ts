@@ -59,20 +59,22 @@ export async function POST(req: Request) {
         .eq('project_id', projectId)
         .eq('member_id', actorId)
         .limit(1);
-      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'manage')) isAuthorized = true;
+      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'manage' || pm[0].role === 'admin')) {
+        isAuthorized = true;
+      }
     }
 
-    // If still not authorized and project has no owner_id set, check the team's owner via team_members
-    if (!isAuthorized && !proj.owner_id && proj.team_id) {
+    // If still not authorized, check the user's role in the project's team
+    if (!isAuthorized && proj.team_id) {
       try {
-        const { data: teamOwnerRows } = await supabaseAdmin
+        const { data: teamRows } = await supabaseAdmin
           .from('team_members')
           .select('user_id, role')
           .eq('team_id', proj.team_id)
-          .eq('role', 'owner')
+          .eq('user_id', actorId)
+          .in('role', ['owner', 'admin', 'manage'])
           .limit(1);
-        const ownerRow = Array.isArray(teamOwnerRows) ? teamOwnerRows[0] : teamOwnerRows;
-        if (ownerRow && ownerRow.user_id === actorId) isAuthorized = true;
+        if (teamRows && teamRows.length > 0) isAuthorized = true;
       } catch (e) {
         console.warn('[/api/projects/share] team owner lookup failed', e);
       }

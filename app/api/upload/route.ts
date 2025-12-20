@@ -41,6 +41,10 @@ const ALLOWED_MIME_TYPES = [
   'audio/mpeg',
   'audio/wav',
   'audio/x-wav',
+  'audio/wave',
+  'audio/x-pn-wav',
+  'audio/aiff',
+  'audio/x-aiff',
   'audio/aac',
   'audio/mp4',
   'audio/ogg',
@@ -54,6 +58,13 @@ const ALLOWED_MIME_TYPES = [
   // Documents
   'application/pdf',
   'text/plain',
+  // Archives / generic
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-7z-compressed',
+  'application/x-rar-compressed',
+  'application/vnd.rar',
+  'application/octet-stream',
 ];
 
 // ============================================================================
@@ -75,6 +86,98 @@ function sanitizeFilename(filename: string): string {
     .replace(/\.+/g, '.')
     .replace(/_+/g, '_')
     .slice(0, 255);
+}
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.mp4',
+  '.mov',
+  '.mkv',
+  '.avi',
+  '.webm',
+  '.m4v',
+  '.mp3',
+  '.wav',
+  '.aif',
+  '.aiff',
+  '.flac',
+  '.aac',
+  '.m4a',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.svg',
+  '.pdf',
+  '.txt',
+  '.zip',
+  '.rar',
+  '.7z'
+]);
+
+function getExtension(filename: string): string {
+  const idx = filename.lastIndexOf('.');
+  if (idx === -1) return '';
+  return filename.slice(idx).toLowerCase();
+}
+
+function guessMimeType(ext: string): string {
+  switch (ext) {
+    case '.mp4':
+    case '.m4v':
+      return 'video/mp4';
+    case '.mov':
+      return 'video/quicktime';
+    case '.mkv':
+      return 'video/x-matroska';
+    case '.avi':
+      return 'video/x-msvideo';
+    case '.webm':
+      return 'video/webm';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.wav':
+      return 'audio/wav';
+    case '.aif':
+    case '.aiff':
+      return 'audio/aiff';
+    case '.flac':
+      return 'audio/flac';
+    case '.aac':
+      return 'audio/aac';
+    case '.m4a':
+      return 'audio/mp4';
+    case '.ogg':
+    case '.oga':
+    case '.opus':
+      return 'audio/ogg';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.pdf':
+      return 'application/pdf';
+    case '.txt':
+      return 'text/plain';
+    case '.zip':
+      return 'application/zip';
+    case '.rar':
+      return 'application/vnd.rar';
+    case '.7z':
+      return 'application/x-7z-compressed';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 /**
@@ -175,12 +278,16 @@ export async function POST(req: NextRequest) {
     }
 
     // SECURITY: Validate file type
-    const contentType = file.type || "application/octet-stream";
+    let contentType = file.type || "application/octet-stream";
     if (!isAllowedFileType(contentType)) {
-      return NextResponse.json(
-        { error: `File type ${contentType} is not allowed` },
-        { status: 415 }
-      );
+      const ext = getExtension(file.name || "");
+      if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
+        return NextResponse.json(
+          { error: `File type ${contentType} is not allowed` },
+          { status: 415 }
+        );
+      }
+      contentType = guessMimeType(ext);
     }
 
     // SECURITY: Check if user can modify this project

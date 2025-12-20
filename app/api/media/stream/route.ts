@@ -5,6 +5,39 @@ export const runtime = "nodejs";
 
 const STORAGE_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "media";
 const SIGNED_URL_TTL_SECONDS = parseInt(process.env.NEXT_PUBLIC_SUPABASE_SIGNED_TTL || "7200", 10);
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  "";
+
+const explicitAllowedHosts = new Set<string>();
+try {
+  if (SUPABASE_URL) {
+    const parsed = new URL(SUPABASE_URL);
+    if (parsed.hostname) {
+      explicitAllowedHosts.add(parsed.hostname.toLowerCase());
+    }
+  }
+} catch {
+  // ignore malformed env
+}
+
+function isAllowedStorageUrl(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (!["https:", "http:"].includes(url.protocol)) {
+      return false;
+    }
+    const host = (url.hostname || "").toLowerCase();
+    if (explicitAllowedHosts.has(host)) return true;
+    if (host.endsWith(".supabase.co")) return true;
+    if (host.endsWith(".supabase.in")) return true;
+    if (host.endsWith(".supabase.net")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 function normalizeStoragePath(path: string | null) {
   if (!path) return null;
@@ -25,7 +58,13 @@ export async function GET(req: Request) {
     let targetUrl: string | null = null;
 
     if (rawUrl) {
-      // If caller passes an absolute URL (signed or public), use it directly
+      if (!isAllowedStorageUrl(rawUrl)) {
+        return NextResponse.json(
+          { error: "Only Supabase storage URLs are allowed" },
+          { status: 400 }
+        );
+      }
+      // If caller passes an absolute Supabase URL (signed or public), use it directly
       targetUrl = rawUrl;
     } else if (rawPath) {
       const clean = normalizeStoragePath(rawPath);

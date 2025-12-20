@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       .insert({
         cue_id: cue.id,
         index_in_cue: version?.index_in_cue ?? 0,
-        status: version?.status ?? "in-review",
+        status: version?.status ?? "in_review",
         media_type: version?.media_type ?? null,
         media_storage_path: version?.media_storage_path ?? null,
         media_url: version?.media_url ?? null,

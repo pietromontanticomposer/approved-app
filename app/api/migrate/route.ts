@@ -8,12 +8,25 @@ const connectionString =
   process.env.DATABASE_URL ||
   process.env.SUPABASE_CONNECTION_STRING;
 
-// Only allow POST requests in development
+// Only allow POST requests in development with authentication
 export async function POST(request: Request) {
+  // SECURITY: Disable in production
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { error: "Migration disabled in production" },
       { status: 403 }
+    );
+  }
+
+  // SECURITY: Require a secret key even in development to prevent unauthorized migration execution
+  const authHeader = request.headers.get('authorization');
+  const expectedSecret = process.env.MIGRATION_SECRET || 'please-set-MIGRATION_SECRET-in-env';
+
+  if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
+    console.warn('[Migration] Unauthorized migration attempt blocked');
+    return NextResponse.json(
+      { error: "Unauthorized - valid MIGRATION_SECRET required in Authorization header" },
+      { status: 401 }
     );
   }
 

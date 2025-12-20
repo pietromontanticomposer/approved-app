@@ -189,20 +189,38 @@ export async function POST(req: NextRequest) {
 
     const cue_id = uuidv4();
 
-    // Create cue
-    const { data, error } = await supabaseAdmin
-      .from("cues")
-      .insert({
+    const buildCuePayload = (includeMax: boolean) => {
+      const payload: any = {
         id: cue_id,
         project_id,
         index_in_project: typeof cue.index === 'number' ? cue.index : 0,
         original_name: cue.originalName || null,
         name: cue.name || null,
         display_name: cue.displayName || null,
-        status: cue.status || "in-review",
-      })
-      .select()
-      .single();
+        status: cue.status || "in_review",
+      };
+      if (includeMax) {
+        payload.max_revisions = typeof cue.max_revisions === "number" ? cue.max_revisions : null;
+      }
+      return payload;
+    };
+
+    const insertCue = async (includeMax: boolean) => {
+      return supabaseAdmin
+        .from("cues")
+        .insert(buildCuePayload(includeMax))
+        .select()
+        .single();
+    };
+
+    // Create cue (retry without max_revisions if schema cache is outdated)
+    let { data, error } = await insertCue(true);
+    if (error && error.message && error.message.includes("max_revisions")) {
+      console.warn("[POST /api/cues] max_revisions missing, retrying without column");
+      const retry = await insertCue(false);
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
       console.error("[POST /api/cues] Error creating cue:", error);

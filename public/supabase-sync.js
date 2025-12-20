@@ -90,7 +90,8 @@ export const SupabaseSync = {
           original_name: cue.originalName || null,
           name: cue.name || null,
           display_name: cue.displayName || null,
-          status: cue.status || "in-review",
+          status: cue.status || "in_review",
+          max_revisions: typeof cue.maxRevisions === "number" ? cue.maxRevisions : null,
         },
         { onConflict: "id" }
       );
@@ -110,7 +111,7 @@ export const SupabaseSync = {
           id: version.id,
           cue_id: cueId,
           index_in_cue: version.index || version.indexInCue || 0,
-          status: version.status || "in-review",
+          status: version.status || "in_review",
           media_type: version.media?.type || null,
           media_storage_path: version.media?.storagePath || null,
           media_url: version.media?.url || null,

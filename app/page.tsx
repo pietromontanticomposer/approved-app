@@ -46,22 +46,22 @@ export default function Page() {
 
   const html = `<div class="app">
   <aside class="sidebar">
-    <div class="logo">Approved</div>
-    <button id="newProjectBtn" class="primary-btn full">+ New project</button>
+    <div class="logo" data-i18n="app.name">Approved</div>
+    <button id="newProjectBtn" class="primary-btn full" data-i18n="sidebar.newProject">+ New project</button>
 
     <div class="sidebar-section">
       <div class="tabs">
-        <button class="tab-btn active" data-tab="my-projects">
-          I miei progetti
+        <button class="tab-btn active" data-tab="my-projects" data-i18n="sidebar.myProjects">
+          My projects
         </button>
-        <button class="tab-btn" data-tab="shared-with-me">
-          Condivisi con me
+        <button class="tab-btn" data-tab="shared-with-me" data-i18n="sidebar.sharedWithMe">
+          Shared with me
         </button>
       </div>
 
       <div id="my-projects-tab" class="tab-content active">
         <ul id="projectList" class="project-list">
-          <li class="project-item empty">
+          <li class="project-item empty" data-i18n="sidebar.noProjects">
             No projects yet. Click "New project".
           </li>
         </ul>
@@ -69,138 +69,183 @@ export default function Page() {
 
       <div id="shared-with-me-tab" class="tab-content">
         <ul id="sharedProjectList" class="project-list">
-          <li class="project-item empty">
+          <li class="project-item empty" data-i18n="sidebar.noSharedProjects">
             No shared projects yet.
           </li>
         </ul>
       </div>
     </div>
+
+    <!-- Language Selector -->
+    <div class="sidebar-section small">
+      <div class="language-selector">
+        <label for="languageSelect" class="language-label" data-i18n="lang.select">Language</label>
+        <select id="languageSelect" class="language-select">
+          <option value="en" data-i18n="lang.en">English</option>
+          <option value="it" data-i18n="lang.it">Italiano</option>
+        </select>
+      </div>
+    </div>
   </aside>
+
+  <div id="sidebarResizer" class="panel-resizer sidebar-resizer"></div>
 
   <main class="main">
     <header class="topbar">
       <div class="project-header-left">
         <div class="project-title-row">
-          <div id="projectTitle" class="project-title">No project</div>
+          <div id="projectTitle" class="project-title" data-i18n-default="header.noProject">No project</div>
           <button
             id="projectMenuBtn"
             class="icon-btn"
             type="button"
             title="Project options"
+            data-i18n-title="header.projectOptions"
             style="display: none"
           >
             ⋯
           </button>
         </div>
-        <div id="projectMeta" class="project-meta">
+        <div id="projectMeta" class="project-meta" data-i18n-default="header.getStarted">
           Click "New project" to get started
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="accountBtn" class="ghost-btn" onclick="window.location.href='/account'">
-          Il mio account
+        <button id="myAccountBtn" class="ghost-btn" data-i18n="header.myAccount" onclick="window.location.href='/account'">
+          My account
         </button>
       </div>
     </header>
 
-    <section class="upload-strip">
-      <div id="globalDropzone" class="dropzone disabled">
-        <strong>Drop media here</strong>
-        <span>Create a project to start.</span>
-      </div>
-
-      <div class="naming-options">
-        <label class="rename-toggle">
-          <input type="checkbox" id="autoRenameToggle" />
-          <span>Auto rename files (composer preset)</span>
-        </label>
-        <div class="naming-levels">
-          <span class="level-label">Scheme:</span>
-          <label class="level-option">
-            <input type="radio" name="namingLevel" value="media" checked />
-            <span>Media</span>
-          </label>
-          <label class="level-option">
-            <input type="radio" name="namingLevel" value="cinema" />
-            <span>Cinema</span>
-          </label>
-        </div>
-      </div>
-    </section>
-
-    <section class="content">
+    <section class="content notes-panel-container">
       <!-- LEFT COLUMN -->
       <div class="left-column">
         <!-- PROJECT REFERENCES -->
-        <div class="refs-card">
-          <div class="refs-header">
-            <div>
-              <h2>Project references</h2>
-              <div id="refsSubtitle" class="refs-subtitle">
+        <div class="section-stack">
+          <div class="naming-options standalone">
+            <label class="rename-toggle">
+              <input type="checkbox" id="autoRenameToggle" />
+                <span data-i18n="upload.autoRename">Auto rename files</span>
+            </label>
+            <div class="naming-presets-container">
+              <div class="preset-group">
+                <span class="level-label">Scenario:</span>
+                <div class="preset-pills">
+                  <button type="button" class="scheme-btn active" data-naming-scheme="media">Media</button>
+                  <button type="button" class="scheme-btn" data-naming-scheme="cinema">Cinema</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+          <!-- PROJECT REFERENCES -->
+          <div class="section-card refs-section">
+            <div class="section-card-header">
+              <div class="section-card-top">
+                <h2 data-i18n="refs.title">Project references</h2>
+                <div class="section-card-actions">
+                  <span id="refsCountBadge" class="section-badge muted">--</span>
+                  <button id="refsToggleBtn" class="ghost-btn tiny" data-i18n="refs.show">
+                    Show
+                  </button>
+                </div>
+              </div>
+              <div id="refsSubtitle" class="section-subtitle" data-i18n="refs.subtitle">
                 Upload script, storyboard, temp tracks, brief...
               </div>
             </div>
-            <button id="refsToggleBtn" class="ghost-btn tiny">
-              Show
-            </button>
+            <div id="refsBody" class="refs-body section-card-body">
+              <div id="refsDropzone" class="card-dropzone disabled" data-drop-type="refs">
+                <span class="dropzone-icon">📎</span>
+                <span data-i18n="refs.dropHere">Drop reference files here</span>
+              </div>
+              <div
+                id="refsList"
+                class="cue-list cue-list-empty"
+                data-i18n-default="refs.noFiles"
+              >
+                No reference files for this project.
+              </div>
+            </div>
           </div>
 
-          <div id="refsBody" class="refs-body">
-            <div id="refsDropzone" class="refs-dropzone disabled">
-              <strong>Drop reference files here</strong>
-              <span>PDF, images, audio, video, zip…</span>
+          <!-- CUE LIST -->
+          <div class="section-card cues-section">
+            <div class="section-card-header">
+              <div class="section-card-top">
+                <h2 data-i18n="cues.title">Project cues</h2>
+                <div class="section-card-actions">
+                  <span id="cuesCountBadge" class="section-badge muted">--</span>
+                  <button id="cuesToggleBtn" class="ghost-btn tiny" data-i18n="cues.show">
+                    Show
+                  </button>
+                </div>
+              </div>
+              <div
+                id="cueListSubtitle"
+                class="section-subtitle"
+                data-i18n="cues.subtitle"
+              >
+                Manage cues and versions for each deliverable.
+              </div>
             </div>
-            <div id="refsList" class="refs-list refs-list-empty">
-              No reference files for this project.
+            <div id="cuesBody" class="section-card-body">
+              <div id="cuesDropzone" class="card-dropzone disabled" data-drop-type="cues">
+                <span class="dropzone-icon">🎵</span>
+                <span data-i18n="upload.dropHere">Drop media here</span>
+              </div>
+              <div id="cueList" class="cue-list cue-list-empty" data-i18n-default="cues.noCues">
+                No project. Click "New project" to get started.
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- CUE -->
-        <h2>Project cues</h2>
-        <div id="cueListSubtitle" class="cue-list-subtitle">
-          No project yet. Click "New project".
-        </div>
-        <div id="cueList" class="cue-list cue-list-empty">
-          No project. Click "New project" to get started.
+      <!-- PROJECT NOTES MODAL -->
+      <div id="projectNotesModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content notes-modal">
+          <div class="modal-header">
+            <h2 data-i18n="modal.projectNotes">Project Notes</h2>
+            <button id="closeProjectNotesModal" class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div id="projectNotesList" class="project-notes-list">
+              <div class="notes-empty-state" data-i18n="notes.noNotes">No notes for this project</div>
+            </div>
+            <form id="projectNoteForm" class="project-note-form">
+              <textarea
+                id="projectNoteInput"
+                data-i18n-placeholder="modal.addNotePlaceholder"
+                placeholder="Write a note for the team..."
+                rows="3"
+              ></textarea>
+              <button type="submit" class="primary-btn small" data-i18n="notes.addNote">Add note</button>
+            </form>
+          </div>
         </div>
       </div>
 
       <!-- RIGHT COLUMN -->
       <div class="right-column">
         <div class="player-card">
-          <div class="player-mode-toggle">
-            <button
-              id="modeReviewBtn"
-              class="ghost-btn tiny player-mode-btn active"
-            >
-              Review versions
-            </button>
-            <button
-              id="modeRefsBtn"
-              class="ghost-btn tiny player-mode-btn"
-            >
-              Project references
-            </button>
-          </div>
-
           <div class="player-title-row">
-            <div id="playerTitle" class="player-title">
+            <div id="playerTitle" class="player-title" data-i18n-default="player.noVersion">
               No version selected
             </div>
-            <span id="playerBadge" class="player-badge" data-status="">
+            <span id="playerBadge" class="player-badge" data-status="" data-i18n-default="player.noMedia">
               No media
             </span>
           </div>
 
           <div id="playerMedia" class="player-preview">
-            <div class="player-placeholder">
+            <div class="player-placeholder" data-i18n="player.placeholder">
               Create a project and drop a file to see the player.
             </div>
           </div>
 
           <div class="player-controls">
-            <button id="playPauseBtn" class="primary-btn small" disabled>
+            <button id="playPauseBtn" class="primary-btn small" disabled data-i18n="player.play">
               Play
             </button>
             <!-- VOLUME SLIDER AUDIO ONLY -->
@@ -218,32 +263,49 @@ export default function Page() {
 
           <!-- VERSION STATUS BUTTONS -->
           <div class="status-controls">
-            <button id="statusInReviewBtn" class="ghost-btn tiny">
+            <button id="statusInReviewBtn" class="ghost-btn tiny" data-i18n="player.inReview">
               In review
             </button>
-            <button id="statusApprovedBtn" class="ghost-btn tiny">
+            <button id="statusApprovedBtn" class="ghost-btn tiny" data-i18n="player.approved">
               Approved
-            </button>
-            <button id="statusChangesBtn" class="ghost-btn tiny">
-              Changes requested
             </button>
           </div>
         </div>
 
-        <div class="comments-card">
+          <div class="comments-card">
             <div class="comments-header">
-              <h3>Comments</h3>
-              <span id="commentsSummary" class="tag small">No comments</span>
+              <h3 data-i18n="comments.title">Comments</h3>
+              <span id="commentsSummary" class="tag small" data-i18n="comments.noComments">No comments</span>
             </div>
+            <div id="reviewStatusMessage" class="review-status-message"></div>
             <ul id="commentsList" class="comments-list"></ul>
+
+            <div class="review-actions">
+              <button id="reviewCompleteBtn" class="ghost-btn small" data-i18n="review.completeCta">
+                Ho finito di commentare
+              </button>
+              <button id="startRevisionBtn" class="ghost-btn small" data-i18n="review.startRevisionCta">
+                Start revision
+              </button>
+            </div>
+
+            <div class="decision-actions">
+              <button id="approveVersionBtn" class="primary-btn small" data-i18n="review.approveCta">
+                Approva
+              </button>
+              <button id="requestChangesBtn" class="ghost-btn small" data-i18n="review.requestChangesCta">
+                Richiedi modifiche
+              </button>
+            </div>
 
             <div class="comment-input">
               <input
                 id="commentInput"
                 type="text"
+                data-i18n-placeholder="comments.addPlaceholder"
                 placeholder="Add a comment (auto timecode)…"
               />
-              <button id="addCommentBtn" class="primary-btn small" disabled>
+              <button id="addCommentBtn" class="primary-btn small" disabled data-i18n="comments.send">
                 Send
               </button>
             </div>
@@ -252,17 +314,18 @@ export default function Page() {
           <div class="share-card">
             <div class="share-row">
               <div>
-                <strong>Client link</strong>
-                <div class="share-meta">
+                <strong data-i18n="share.clientLink">Client link</strong>
+                <div class="share-meta" data-i18n="share.clientHint">
                   They can listen, comment and approve without an account.
                 </div>
               </div>
-              <button id="copyLinkBtn" class="ghost-btn small" disabled>
+              <button id="copyLinkBtn" class="ghost-btn small" disabled data-i18n="share.copyLink">
                 Copy demo link
               </button>
             </div>
           </div>
         </div>
+        <div id="columnResizer" class="panel-resizer column-resizer"></div>
       </section>
     </main>
   </div>
@@ -312,10 +375,11 @@ export default function Page() {
         src="https://unpkg.com/wavesurfer.js@6"
         strategy="beforeInteractive"
       />
+      <Script src="/i18n.js" strategy="afterInteractive" />
       <Script src="/flow-auth.js" strategy="afterInteractive" />
       <Script src="/share-handler.js" strategy="afterInteractive" />
-      <Script 
-        src="/flow.js"
+      <Script
+        src="/flow.js?v=5"
         strategy="afterInteractive"
         onLoad={() => {
           console.log('[PageInit] Scripts loaded');
