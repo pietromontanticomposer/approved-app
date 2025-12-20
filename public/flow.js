@@ -962,10 +962,11 @@ function updateReviewUI(project, version) {
   }
 
   if (statusInReviewBtn) {
-    statusInReviewBtn.style.display = isOwner ? "inline-flex" : "none";
+    statusInReviewBtn.style.display = "none";
   }
   if (statusApprovedBtn) {
-    statusApprovedBtn.style.display = isOwner ? "inline-flex" : "none";
+    statusApprovedBtn.style.display = !isOwner ? "inline-flex" : "none";
+    statusApprovedBtn.disabled = isOwner || !(status === "in_review" || status === "review_completed");
   }
 
   if (approveVersionBtn) {
