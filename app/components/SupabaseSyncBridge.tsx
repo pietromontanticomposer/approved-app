@@ -3,6 +3,13 @@
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
+declare global {
+  interface Window {
+    supabase?: any;
+    SupabaseSync?: any;
+  }
+}
+
 export default function SupabaseSyncBridge() {
   useEffect(() => {
     // Expose Supabase client and sync functions to global scope
