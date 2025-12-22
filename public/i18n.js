@@ -76,6 +76,8 @@
       'cues.countPlural': 'cues',
       'cues.setInReview': 'Set in review',
       'cues.setApproved': 'Set approved',
+      'cues.approveConfirmTitle': 'Approve cue',
+      'cues.approveConfirmMessage': 'Are you sure you want to approve this cue?',
       'cues.noVersionsForStatus': 'No versions available to change status',
 
       // Player
@@ -271,6 +273,8 @@
       'cues.countPlural': 'cue',
       'cues.setInReview': 'Imposta in review',
       'cues.setApproved': 'Imposta approvato',
+      'cues.approveConfirmTitle': 'Approva cue',
+      'cues.approveConfirmMessage': 'Sei sicuro di voler approvare questa cue?',
       'cues.noVersionsForStatus': 'Nessuna versione disponibile per cambiare stato',
 
       // Player

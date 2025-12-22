@@ -6,12 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.ts,.tsx"
+    "lint": "eslint . --ext .js,.ts,.tsx",
+    "maildev": "maildev --smtp=1025 --web 1080",
+    "test:email": "node scripts/e2e_robust.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.2",
     "dotenv": "^17.2.3",
     "next": "16.0.7",
+    "node-fetch": "^2.7.0",
+    "nodemailer": "^6.9.4",
     "pg": "^8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",

@@ -78,16 +78,19 @@ export default function LoginPage() {
       }
 
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/login`,
-          },
+        // Use server endpoint to generate Supabase action link and send email from our SMTP
+        const resp = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
         });
-
-        if (error) throw error;
-        setMessage("Check your email to confirm your account!");
+        const data = await resp.json();
+        if (!resp.ok || data?.error) {
+          throw new Error(data?.error || 'Signup failed');
+        }
+        setMessage("✉️ Controlla la tua email! Ti abbiamo inviato una mail di conferma da Approved.");
+        setLoading(false);
+        return;
       } else {
         console.log('[Login] Attempting sign in...');
         const { data, error } = await supabase.auth.signInWithPassword({
