@@ -3765,14 +3765,6 @@ function renderCueList(options = {}) {
           renderVersionPreviews();
           renderNotesPanel();
         } else if (!details.open) {
-          cue.versions.forEach(v => {
-            if (miniWaves[v.id]) {
-              try {
-                miniWaves[v.id].destroy();
-              } catch (e) {}
-              delete miniWaves[v.id];
-            }
-          });
           renderNotesPanel();
         }
       } catch (err) {

@@ -24,6 +24,15 @@ export default function AccountPage() {
   const [language, setLanguage] = useState("it");
   const [notifications, setNotifications] = useState(true);
 
+  const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() ||
+    (user?.email ? user.email.slice(0, 2).toUpperCase() : "AC");
+  const lastSignIn = user?.last_sign_in_at
+    ? new Date(user.last_sign_in_at).toLocaleString("it-IT")
+    : "—";
+  const createdAt = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString("it-IT")
+    : "—";
+
   useEffect(() => {
     const init = async () => {
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
@@ -132,120 +141,170 @@ export default function AccountPage() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.headerRow}>
-        <div>
-          <h1 style={styles.title}>Il mio account</h1>
-          <p style={styles.muted}>Gestisci dati personali, sicurezza e preferenze</p>
-        </div>
-        <button style={styles.ghostButton} onClick={() => router.push("/")}>← Torna all'app</button>
-      </div>
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
+      `}</style>
 
-      <div style={styles.grid}>
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>👤 Dati personali</h2>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Nome</div>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Nome" style={{ ...styles.input, width: '140px' }} />
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Cognome" style={{ ...styles.input, width: '180px' }} />
-              <button style={styles.primaryButton} onClick={handleSaveProfile}>Salva</button>
+      <div style={styles.shell}>
+        <div style={styles.headerRow}>
+          <div>
+            <div style={styles.eyebrow}>Account</div>
+            <h1 style={styles.title}>Il mio account</h1>
+            <p style={styles.subtitle}>Gestisci dati personali, sicurezza e preferenze.</p>
+          </div>
+          <button style={styles.ghostButton} onClick={() => router.push("/")}>← Torna all'app</button>
+        </div>
+
+        <div style={styles.grid}>
+          <div style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <div style={styles.cardEyebrow}>Profilo</div>
+                <h2 style={styles.cardTitle}>Dati personali</h2>
+                <p style={styles.cardDesc}>Aggiorna nome e preferenze di profilo.</p>
+              </div>
+              <div style={styles.avatar}>{initials}</div>
             </div>
-            
+            <div style={styles.profileSummary}>
+              <div style={styles.profileName}>
+                {user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || "Utente"}
+              </div>
+              <div style={styles.profileEmail}>{user.email || "—"}</div>
+              <div style={styles.profileMeta}>
+                <span>ID {user.id?.slice(0, 8) || "—"}</span>
+                <span>Creato {createdAt}</span>
+              </div>
+            </div>
+            <div style={styles.fieldStack}>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Nome</div>
+                <div style={styles.inputRow}>
+                  <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Nome" style={styles.input} />
+                  <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Cognome" style={styles.input} />
+                </div>
+              </div>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Email</div>
+                <div style={styles.value}>{user.email || "—"}</div>
+              </div>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Foto profilo</div>
+                <div style={styles.value}>Gestita dal provider collegato</div>
+              </div>
+            </div>
+            <div style={styles.actionsRow}>
+              <button style={styles.primaryButton} onClick={handleSaveProfile}>Salva modifiche</button>
+            </div>
           </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Nome completo</div>
-            <div style={styles.value}>{user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || "—"}</div>
-          </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Email</div>
-            <div style={styles.value}>{user.email || "—"}</div>
-          </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Foto profilo</div>
-            <div style={styles.value}>Usa il provider collegato (Google/Apple)</div>
-          </div>
-        </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>🔐 Sicurezza</h2>
-          <div style={styles.subsection}>
-            <div style={styles.subLabel}>Provider collegati</div>
-            <ul style={{ paddingLeft: "1rem", margin: 0 }}>
-              {providers.length === 0 && <li style={styles.muted}>Nessun provider trovato</li>}
-              {providers.map((p) => (
-                <li key={p.identityId || p.provider} style={styles.value}>
-                  {providerLabel(p.provider)} {p.email ? `(${p.email})` : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {showPasswordSection ? (
+          <div style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <div style={styles.cardEyebrow}>Sicurezza</div>
+                <h2 style={styles.cardTitle}>Accesso e sessioni</h2>
+                <p style={styles.cardDesc}>Controlla provider e password.</p>
+              </div>
+              <div style={styles.securityBadge}>Sessione attiva</div>
+            </div>
+            <div style={styles.securityStats}>
+              <div style={styles.statItem}>
+                <div style={styles.statLabel}>Ultimo accesso</div>
+                <div style={styles.statValue}>{lastSignIn}</div>
+              </div>
+              <div style={styles.statItem}>
+                <div style={styles.statLabel}>Provider</div>
+                <div style={styles.statValue}>{providers.length || 0}</div>
+              </div>
+            </div>
             <div style={styles.subsection}>
-              <div style={styles.subLabel}>Cambia password</div>
-              <input
-                type="password"
-                placeholder="Nuova password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                style={styles.input}
-              />
-              <button style={styles.primaryButton} onClick={handlePasswordChange}>Aggiorna password</button>
+              <div style={styles.subLabel}>Provider collegati</div>
+              <div style={styles.providerList}>
+                {providers.length === 0 && <span style={styles.muted}>Nessun provider trovato</span>}
+                {providers.map((p) => (
+                  <span key={p.identityId || p.provider} style={styles.providerChip}>
+                    {providerLabel(p.provider)} {p.email ? `· ${p.email}` : ""}
+                  </span>
+                ))}
+              </div>
             </div>
-          ) : (
+
+            {showPasswordSection ? (
+              <div style={styles.subsection}>
+                <div style={styles.subLabel}>Cambia password</div>
+                <div style={styles.inputRow}>
+                  <input
+                    type="password"
+                    placeholder="Nuova password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={styles.input}
+                  />
+                  <button style={styles.primaryButton} onClick={handlePasswordChange}>Aggiorna</button>
+                </div>
+              </div>
+            ) : (
+              <div style={styles.subsection}>
+                <div style={styles.subLabel}>Cambia password</div>
+                <div style={styles.muted}>Non disponibile per i provider social (Google/Apple).</div>
+              </div>
+            )}
+
+            <div style={styles.buttonsRow}>
+              <button style={styles.secondaryButton} onClick={() => signOut(false)}>Logout</button>
+              <button style={styles.ghostButton} onClick={() => signOut(true)}>Logout da tutti i dispositivi</button>
+            </div>
             <div style={styles.subsection}>
-              <div style={styles.subLabel}>Cambia password</div>
-              <div style={styles.muted}>Non disponibile per i provider social (Google/Apple)</div>
+              <div style={styles.subLabel}>Cancella account</div>
+              <div style={styles.muted}>Contatta il supporto per la cancellazione definitiva.</div>
             </div>
-          )}
-
-          <div style={styles.buttonsRow}>
-            <button style={styles.secondaryButton} onClick={() => signOut(false)}>Logout</button>
-            <button style={styles.ghostButton} onClick={() => signOut(true)}>Logout da tutti i dispositivi</button>
           </div>
-          <div style={styles.subsection}>
-            <div style={styles.subLabel}>Cancella account</div>
-            <div style={styles.muted}>Contatta il supporto per la cancellazione definitiva.</div>
+
+          <div style={styles.card}>
+            <div style={styles.cardHeader}>
+              <div>
+                <div style={styles.cardEyebrow}>Preferenze</div>
+                <h2 style={styles.cardTitle}>Esperienza</h2>
+                <p style={styles.cardDesc}>Personalizza l’interfaccia.</p>
+              </div>
+            </div>
+            <div style={styles.fieldStack}>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Tema</div>
+                <select style={styles.select} value={theme} onChange={(e) => setTheme(e.target.value)}>
+                  <option value="dark">Scuro</option>
+                  <option value="light">Chiaro</option>
+                </select>
+              </div>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Lingua</div>
+                <select style={styles.select} value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  <option value="it">Italiano</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>Notifiche</div>
+                <label style={styles.toggleRow}>
+                  <input
+                    type="checkbox"
+                    checked={notifications}
+                    onChange={(e) => setNotifications(e.target.checked)}
+                  />
+                  <span style={styles.value}>Attive</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>⚙️ Preferenze</h2>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Tema</div>
-            <select style={styles.select} value={theme} onChange={(e) => setTheme(e.target.value)}>
-              <option value="dark">Scuro</option>
-              <option value="light">Chiaro</option>
-            </select>
+        {(message || error) && (
+          <div style={{ ...styles.notice, borderColor: error ? "#4d1a1a" : "#1a4d1a" }}>
+            <div style={{ color: error ? "#ff6b6b" : "#44ff44" }}>
+              {error || message}
+            </div>
           </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Lingua</div>
-            <select style={styles.select} value={language} onChange={(e) => setLanguage(e.target.value)}>
-              <option value="it">Italiano</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.label}>Notifiche</div>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <input
-                type="checkbox"
-                checked={notifications}
-                onChange={(e) => setNotifications(e.target.checked)}
-              />
-              <span style={styles.value}>Attive</span>
-            </label>
-          </div>
-        </div>
+        )}
       </div>
-
-      {(message || error) && (
-        <div style={{ ...styles.card, borderColor: error ? "#4d1a1a" : "#1a4d1a" }}>
-          <div style={{ color: error ? "#ff6b6b" : "#44ff44" }}>
-            {error || message}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -253,85 +312,209 @@ export default function AccountPage() {
 const styles: Record<string, any> = {
   page: {
     minHeight: "100vh",
-    background: "#0a0a0a",
-    color: "#fff",
-    padding: "2rem",
-    fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+    background: "radial-gradient(circle at 15% 15%, #0f172a, #0b0f1a 45%, #070a12 100%)",
+    color: "#e5e7eb",
+    padding: "2.5rem",
+    fontFamily: '"Space Grotesk", "DM Sans", sans-serif',
+  },
+  shell: {
+    maxWidth: "1200px",
+    margin: "0 auto",
   },
   headerRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "1.5rem",
+    marginBottom: "2rem",
+    gap: "1rem",
+    flexWrap: "wrap",
   },
-  title: { margin: 0, fontSize: "1.8rem" },
-  muted: { color: "#888", margin: 0 },
+  eyebrow: {
+    textTransform: "uppercase",
+    letterSpacing: "0.22em",
+    fontSize: "0.7rem",
+    color: "#7c8aa5",
+  },
+  title: { margin: 0, fontSize: "2.2rem", color: "#f8fafc" },
+  subtitle: { color: "#9aa4b2", margin: "0.4rem 0 0" },
+  muted: { color: "#9aa4b2", margin: 0 },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "1rem",
+    gridTemplateColumns: "minmax(320px, 1.2fr) minmax(320px, 1fr)",
+    gap: "1.5rem",
   },
   card: {
-    background: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: "10px",
-    padding: "1.25rem",
+    background: "linear-gradient(180deg, rgba(17,24,39,0.95), rgba(10,15,25,0.95))",
+    border: "1px solid rgba(148,163,184,0.18)",
+    borderRadius: "16px",
+    padding: "1.5rem",
+    boxShadow: "0 20px 40px rgba(2,8,23,0.35)",
   },
-  cardTitle: { marginTop: 0, marginBottom: "1rem" },
+  cardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "1rem",
+    marginBottom: "1rem",
+  },
+  cardEyebrow: {
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+    fontSize: "0.7rem",
+    color: "#64748b",
+  },
+  cardTitle: { margin: "0.35rem 0 0", fontSize: "1.35rem", color: "#f8fafc" },
+  cardDesc: { margin: "0.35rem 0 0", color: "#94a3b8", fontSize: "0.95rem" },
+  avatar: {
+    width: "54px",
+    height: "54px",
+    borderRadius: "16px",
+    background: "linear-gradient(135deg, #1d4ed8, #0ea5e9)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#fff",
+    fontWeight: 700,
+    fontSize: "1rem",
+  },
+  profileSummary: {
+    background: "rgba(15,23,42,0.7)",
+    border: "1px solid rgba(148,163,184,0.2)",
+    borderRadius: "12px",
+    padding: "1rem",
+    marginBottom: "1rem",
+  },
+  profileName: { fontSize: "1.1rem", color: "#f1f5f9", fontWeight: 600 },
+  profileEmail: { color: "#94a3b8", marginTop: "0.2rem" },
+  profileMeta: {
+    marginTop: "0.6rem",
+    display: "flex",
+    gap: "1rem",
+    flexWrap: "wrap",
+    fontSize: "0.85rem",
+    color: "#64748b",
+  },
   fieldRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "0.5rem 0",
-    borderBottom: "1px solid #222",
+    padding: "0.65rem 0",
+    borderBottom: "1px solid rgba(148,163,184,0.12)",
+    gap: "1rem",
+    flexWrap: "wrap",
   },
-  label: { color: "#aaa", fontSize: "0.9rem" },
-  value: { color: "#fff", fontSize: "0.95rem" },
-  subLabel: { color: "#aaa", fontSize: "0.9rem", marginBottom: "0.35rem" },
-  subsection: { marginTop: "0.75rem", borderTop: "1px solid #222", paddingTop: "0.75rem" },
-  buttonsRow: { display: "flex", gap: "0.5rem", marginTop: "0.5rem" },
+  fieldStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.1rem",
+  },
+  label: { color: "#94a3b8", fontSize: "0.9rem" },
+  value: { color: "#e2e8f0", fontSize: "0.95rem" },
+  subLabel: { color: "#94a3b8", fontSize: "0.9rem", marginBottom: "0.35rem" },
+  subsection: { marginTop: "0.9rem", borderTop: "1px solid rgba(148,163,184,0.15)", paddingTop: "0.9rem" },
+  buttonsRow: { display: "flex", gap: "0.75rem", marginTop: "0.9rem", flexWrap: "wrap" },
+  inputRow: {
+    display: "flex",
+    gap: "0.6rem",
+    alignItems: "center",
+    flexWrap: "wrap",
+    minWidth: "240px",
+  },
+  actionsRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginTop: "1rem",
+  },
   primaryButton: {
-    background: "#0066ff",
+    background: "linear-gradient(135deg, #2563eb, #38bdf8)",
     color: "#fff",
     border: "none",
-    padding: "0.6rem 1rem",
-    borderRadius: "6px",
+    padding: "0.65rem 1.1rem",
+    borderRadius: "999px",
     cursor: "pointer",
     fontWeight: 600,
   },
   secondaryButton: {
-    background: "#333",
-    color: "#fff",
-    border: "1px solid #444",
-    padding: "0.6rem 1rem",
-    borderRadius: "6px",
+    background: "rgba(15,23,42,0.7)",
+    color: "#e2e8f0",
+    border: "1px solid rgba(148,163,184,0.3)",
+    padding: "0.6rem 1.1rem",
+    borderRadius: "999px",
     cursor: "pointer",
     fontWeight: 600,
   },
   ghostButton: {
     background: "transparent",
-    color: "#999",
-    border: "1px solid #333",
-    padding: "0.6rem 1rem",
-    borderRadius: "6px",
+    color: "#cbd5f5",
+    border: "1px solid rgba(148,163,184,0.3)",
+    padding: "0.6rem 1.1rem",
+    borderRadius: "999px",
     cursor: "pointer",
     fontWeight: 600,
   },
   input: {
     width: "100%",
-    padding: "0.65rem",
-    borderRadius: "6px",
-    border: "1px solid #333",
-    background: "#0a0a0a",
-    color: "#fff",
-    marginBottom: "0.5rem",
+    minWidth: "180px",
+    padding: "0.6rem 0.75rem",
+    borderRadius: "10px",
+    border: "1px solid rgba(148,163,184,0.2)",
+    background: "rgba(2,6,23,0.6)",
+    color: "#e2e8f0",
   },
   select: {
-    background: "#0a0a0a",
-    color: "#fff",
-    border: "1px solid #333",
-    borderRadius: "6px",
-    padding: "0.45rem",
+    background: "rgba(2,6,23,0.6)",
+    color: "#e2e8f0",
+    border: "1px solid rgba(148,163,184,0.2)",
+    borderRadius: "10px",
+    padding: "0.45rem 0.7rem",
     minWidth: "140px",
+  },
+  providerList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.4rem",
+  },
+  providerChip: {
+    background: "rgba(15,23,42,0.75)",
+    border: "1px solid rgba(148,163,184,0.2)",
+    borderRadius: "999px",
+    padding: "0.35rem 0.8rem",
+    fontSize: "0.85rem",
+    color: "#e2e8f0",
+  },
+  securityBadge: {
+    background: "rgba(16,185,129,0.12)",
+    border: "1px solid rgba(16,185,129,0.4)",
+    color: "#6ee7b7",
+    fontSize: "0.8rem",
+    padding: "0.35rem 0.8rem",
+    borderRadius: "999px",
+  },
+  securityStats: {
+    display: "flex",
+    gap: "1.5rem",
+    flexWrap: "wrap",
+    marginBottom: "0.8rem",
+  },
+  statItem: {
+    background: "rgba(15,23,42,0.65)",
+    border: "1px solid rgba(148,163,184,0.18)",
+    borderRadius: "12px",
+    padding: "0.6rem 0.9rem",
+    minWidth: "160px",
+  },
+  statLabel: { color: "#94a3b8", fontSize: "0.8rem" },
+  statValue: { color: "#f8fafc", fontSize: "0.95rem", marginTop: "0.2rem" },
+  toggleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.6rem",
+  },
+  notice: {
+    marginTop: "1.5rem",
+    padding: "0.9rem 1rem",
+    border: "1px solid rgba(148,163,184,0.2)",
+    borderRadius: "12px",
+    background: "rgba(15,23,42,0.6)",
   },
 };
