@@ -32,6 +32,17 @@ Available scripts
 
   npm run test:email
 
+Dev scripts
+
+Temporary test scripts live in `dev-scripts/`. If you need to run them directly:
+
+  node dev-scripts/e2e_robust.js
+  node dev-scripts/e2e_signup_maildev.js
+  node dev-scripts/e2e_signup_test.js
+  node dev-scripts/test_send_email_stream.js
+
+These were moved from `scripts/` to keep the repo scripts folder clean.
+
 Quick manual test
 
 1. Start MailDev in a separate terminal: `npm run maildev` (web UI at http://localhost:1080)
