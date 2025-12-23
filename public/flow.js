@@ -1162,6 +1162,38 @@ function getProjectById(id) {
   return state.projects.find(x => x.id === id) || null;
 }
 
+function scheduleProjectPrefetch(activeId) {
+  if (!state.projects || state.projects.length <= 1) return;
+  const ids = state.projects.map(p => p.id).filter(Boolean);
+  let index = 0;
+
+  const nextId = () => {
+    while (index < ids.length) {
+      const id = ids[index++];
+      if (id === activeId) continue;
+      const p = getProjectById(id);
+      if (!p || (p.cues && p.cues.length)) continue;
+      if (projectLoadPromises.has(id)) continue;
+      return id;
+    }
+    return null;
+  };
+
+  const run = () => {
+    const id = nextId();
+    if (!id) return;
+    loadProjectCues(id, { render: false }).finally(() => {
+      setTimeout(run, 400);
+    });
+  };
+
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(() => setTimeout(run, 600));
+  } else {
+    setTimeout(run, 800);
+  }
+}
+
 async function selectProject(projectId) {
   const project = getProjectById(projectId);
   if (!project) return;
@@ -1170,11 +1202,12 @@ async function selectProject(projectId) {
 
   // If project cues are not loaded yet (shouldn't happen with /api/projects/full)
   // load them now
-  if (!project.cues || project.cues.length === 0) {
-    await loadProjectCues(projectId);
-  }
-
   renderAll();
+  if (!project.cues || project.cues.length === 0) {
+    loadProjectCues(projectId).catch(err => {
+      console.warn('[Flow] Failed to load cues for project selection', err);
+    });
+  }
   if (!projectNotesStore[projectId]) {
     loadProjectNotes(projectId).catch(err => {
       console.warn('[Flow] Failed to load notes for project selection', err);
@@ -3224,7 +3257,7 @@ function renderComments() {
 // =======================
 // LOAD PROJECT DATA FROM API
 // =======================
-async function loadProjectCues(projectId) {
+async function loadProjectCues(projectId, options = {}) {
   const project = getProjectById(projectId);
   if (!project) return;
   if (projectLoadPromises.has(projectId)) {
@@ -3281,14 +3314,16 @@ async function loadProjectCues(projectId) {
         project.activeReferenceId = project.references[0].id;
       }
 
-      renderAll();
+      if (options.render !== false) {
+        renderAll();
+      }
       log("[Flow] Project cues loaded successfully via /api/projects/full");
       return;
     } catch (err) {
       console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
     }
 
-    await loadProjectCuesLegacy(projectId, headers);
+    await loadProjectCuesLegacy(projectId, headers, options);
   })();
 
   projectLoadPromises.set(projectId, loader);
@@ -3299,7 +3334,7 @@ async function loadProjectCues(projectId) {
   }
 }
 
-async function loadProjectCuesLegacy(projectId, headers) {
+async function loadProjectCuesLegacy(projectId, headers, options = {}) {
   const project = getProjectById(projectId);
   if (!project) return;
 
@@ -3392,10 +3427,12 @@ async function loadProjectCuesLegacy(projectId, headers) {
     }
 
     await loadProjectReferencesLegacy(projectId, headers);
-    renderAll();
-    loadProjectNotes(projectId).catch(err => {
-      console.warn('[Flow] Failed to preload notes (legacy path)', err);
-    });
+    if (options.render !== false) {
+      renderAll();
+      loadProjectNotes(projectId).catch(err => {
+        console.warn('[Flow] Failed to preload notes (legacy path)', err);
+      });
+    }
     log("[Flow] Project cues loaded via legacy path");
   } catch (err) {
     console.error("[Flow] Legacy cue loader failed:", err);
@@ -7011,6 +7048,7 @@ async function initializeFromSupabase() {
     // Immediately load cues/versions/comments for the active project
     if (bootProjectId) {
       await loadProjectCues(bootProjectId);
+      scheduleProjectPrefetch(bootProjectId);
     } else {
       log("[Flow] No projects found for this user.");
     }
