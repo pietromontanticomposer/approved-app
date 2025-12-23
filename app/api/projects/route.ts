@@ -105,34 +105,31 @@ async function getOwnedProjects(userId: string): Promise<Project[]> {
  * Get projects shared with user
  */
 async function getSharedProjects(userId: string, ownedProjectIds: string[]): Promise<Project[]> {
-  // Get project IDs from project_members and team IDs in parallel
-  const [
-    { data: membershipRows, error: membershipError },
-    { data: teamRows, error: teamError }
-  ] = await Promise.all([
-    supabaseAdmin
-      .from('project_members')
-      .select('project_id')
-      .eq('member_id', userId),
-    supabaseAdmin
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', userId)
-  ]);
+  // Get project IDs from project_members
+  const { data: membershipRows, error: membershipError } = await supabaseAdmin
+    .from('project_members')
+    .select('project_id')
+    .eq('member_id', userId);
 
   if (membershipError) {
     console.error('[Projects] Error loading project memberships:', membershipError);
     throw new Error(`Failed to load project memberships: ${membershipError.message}`);
   }
 
+  const projectIdsFromMembership = (membershipRows || [])
+    .map(r => r.project_id)
+    .filter(Boolean);
+
+  // Get team IDs for user
+  const { data: teamRows, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId);
+
   if (teamError) {
     console.error('[Projects] Error loading team memberships:', teamError);
     throw new Error(`Failed to load team memberships: ${teamError.message}`);
   }
-
-  const projectIdsFromMembership = (membershipRows || [])
-    .map(r => r.project_id)
-    .filter(Boolean);
 
   const teamIds = (teamRows || []).map(t => t.team_id).filter(Boolean);
 
@@ -213,12 +210,12 @@ export async function GET(req: NextRequest) {
     const sharedProjects = await getSharedProjects(userId, ownedProjectIds);
     if (isDev) console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
 
-    // Hydrate with team member info once for all projects
-    const ownedIdsSet = new Set(ownedProjectIds);
-    const allProjects = [...ownedProjects, ...sharedProjects];
-    const allHydrated = await hydrateProjectsWithTeamMembers(allProjects);
-    const myProjectsHydrated = allHydrated.filter(p => ownedIdsSet.has(p.id));
-    const sharedProjectsHydrated = allHydrated.filter(p => !ownedIdsSet.has(p.id));
+    // Hydrate with team member info
+    const myProjectsHydrated = await hydrateProjectsWithTeamMembers(ownedProjects);
+    const sharedProjectsHydrated = await hydrateProjectsWithTeamMembers(sharedProjects);
+
+    // Combine for backward compatibility
+    const allProjects = [...myProjectsHydrated, ...sharedProjectsHydrated];
 
     return NextResponse.json({
       my_projects: myProjectsHydrated,

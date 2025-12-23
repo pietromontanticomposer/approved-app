@@ -24,8 +24,6 @@ export async function GET(req: NextRequest) {
     const startTime = Date.now();
     const url = new URL(req.url);
     const projectIdFilter = url.searchParams.get('projectId') || null;
-    const includeCommentsParam = url.searchParams.get('includeComments');
-    const includeComments = includeCommentsParam !== '0' && includeCommentsParam !== 'false';
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -219,9 +217,9 @@ export async function GET(req: NextRequest) {
 
     const versionIds = allVersions.map(v => v.id);
 
-    // Step 4: Load comments (only if requested and we have versions)
+    // Step 4: Load comments (only if we have versions)
     let allComments = [];
-    if (includeComments && versionIds.length > 0) {
+    if (versionIds.length > 0) {
       const { data } = await supabaseAdmin
         .from('comments')
         .select('*')
