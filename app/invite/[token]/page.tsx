@@ -90,19 +90,16 @@ export default function InvitePage() {
     setError("");
 
     try {
-      const { data, error: acceptError } = await supabase.rpc("accept_invite", {
-        invite_token: token,
-        accepting_user_id: user.id,
+      const resp = await fetch("/api/invites/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ invite_token: token })
       });
 
-      if (acceptError) {
-        console.error("Error accepting invite:", acceptError);
-        setError("Errore durante l'accettazione dell'invito.");
-        setAccepting(false);
-        return;
-      }
+      const data = await resp.json().catch(() => ({}));
 
-      if (!data.success) {
+      if (!resp.ok) {
         setError(data.error || "Errore durante l'accettazione dell'invito.");
         setAccepting(false);
         return;

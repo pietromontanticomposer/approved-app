@@ -6002,6 +6002,45 @@ function setShareInviteMessage(text, isError) {
   shareInviteMessageEl.style.color = isError ? "#fca5a5" : "#9ca3af";
 }
 
+function renderInviteLinkMessage(link) {
+  if (!shareInviteMessageEl) return;
+  shareInviteMessageEl.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.style.display = "flex";
+  wrap.style.gap = "8px";
+  wrap.style.alignItems = "center";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = link;
+  input.readOnly = true;
+  input.style.flex = "1";
+  input.style.minWidth = "0";
+  input.style.padding = "6px 8px";
+  input.style.borderRadius = "8px";
+  input.style.border = "1px solid #1f2937";
+  input.style.background = "transparent";
+  input.style.color = "#cbd5e1";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ghost-btn tiny";
+  btn.textContent = tr("share.copyLink");
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      showAlert(tr("share.copySuccess", {}, "Link copiato"));
+    } catch (err) {
+      showAlert(tr("share.copyError", {}, "Impossibile copiare il link"));
+    }
+  });
+
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  shareInviteMessageEl.appendChild(wrap);
+  shareInviteMessageEl.style.color = "#9ca3af";
+}
+
 async function handleShareInvite() {
   const project = getActiveProject();
   if (!project) {
@@ -6022,10 +6061,6 @@ async function handleShareInvite() {
   }
 
   const email = (shareInviteEmailEl && shareInviteEmailEl.value || "").trim();
-  if (!email) {
-    setShareInviteMessage(tr("share.inviteEmailRequired"), true);
-    return;
-  }
 
   const role = (shareInviteRoleEl && shareInviteRoleEl.value) || "viewer";
   if (shareInviteBtn) shareInviteBtn.disabled = true;
@@ -6033,15 +6068,14 @@ async function handleShareInvite() {
   try {
     const headers = await getAuthHeaders();
     headers["Content-Type"] = "application/json";
-    const res = await fetch("/api/invites", {
+    const res = await fetch("/api/projects/share", {
       method: "POST",
       headers,
       body: JSON.stringify({
-        team_id: project.team_id,
         project_id: project.id,
-        email,
         role,
-        is_link_invite: false
+        email: email || null,
+        invite: true
       })
     });
 
@@ -6053,7 +6087,13 @@ async function handleShareInvite() {
     }
 
     if (shareInviteEmailEl) shareInviteEmailEl.value = "";
-    setShareInviteMessage(tr("share.inviteSuccess"), false);
+    const inviteUrl = data.invite_url || data.link || "";
+    if (inviteUrl) {
+      renderInviteLinkMessage(inviteUrl);
+    } else {
+      setShareInviteMessage(tr("share.inviteSuccess"), false);
+    }
+    refreshSharedWithPanel(true);
   } catch (err) {
     console.warn("[Share] Invite error", err);
     setShareInviteMessage(tr("share.inviteError"), true);
@@ -6062,7 +6102,7 @@ async function handleShareInvite() {
   }
 }
 
-function renderSharedWithList(items, opts) {
+function renderSharedWithList(payload, opts) {
   if (!sharedWithListEl) return;
   sharedWithListEl.innerHTML = "";
 
@@ -6083,7 +6123,10 @@ function renderSharedWithList(items, opts) {
     return;
   }
 
-  if (!items || items.length === 0) {
+  const members = Array.isArray(payload) ? payload : (payload && payload.members) || [];
+  const pending = payload && !Array.isArray(payload) ? (payload.pending || []) : [];
+
+  if (!members.length && !pending.length) {
     const li = document.createElement("li");
     li.className = "share-empty";
     li.textContent = tr("share.peopleEmpty");
@@ -6091,17 +6134,98 @@ function renderSharedWithList(items, opts) {
     return;
   }
 
-  items.forEach((item) => {
-    const li = document.createElement("li");
-    li.className = "share-person";
-    const name = item.display_name || item.email || item.member_id || tr("misc.user");
-    const role = item.role || "viewer";
-    li.innerHTML = `
-      <span class="share-person-name">${escapeHtml(name)}</span>
-      <span class="share-person-role">${escapeHtml(role)}</span>
-    `;
-    sharedWithListEl.appendChild(li);
-  });
+  if (members.length) {
+    const head = document.createElement("li");
+    head.className = "share-empty";
+    head.textContent = tr("share.membersTitle", {}, "Members");
+    sharedWithListEl.appendChild(head);
+    members.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "share-person";
+      const name = item.display_name || item.email || item.member_id || tr("misc.user");
+      const role = item.role || "viewer";
+      li.innerHTML = `
+        <span class="share-person-name">${escapeHtml(name)}</span>
+        <span class="share-person-role">${escapeHtml(role)}</span>
+      `;
+      sharedWithListEl.appendChild(li);
+    });
+  }
+
+  if (pending.length) {
+    const head = document.createElement("li");
+    head.className = "share-empty";
+    head.textContent = tr("share.pendingInvitesTitle", {}, "Pending invites");
+    sharedWithListEl.appendChild(head);
+    pending.forEach((inv) => {
+      const li = document.createElement("li");
+      li.className = "share-person";
+      const label = inv.email || tr("share.linkInviteLabel", {}, "Link invite");
+      const role = inv.role || "viewer";
+      const created = inv.created_at ? new Date(inv.created_at).toLocaleDateString() : "";
+      const expires = inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : "";
+      const meta = expires ? `${created} → ${expires}` : created;
+      li.innerHTML = `
+        <span class="share-person-name">${escapeHtml(label)}</span>
+        <span class="share-person-role">${escapeHtml(role)}</span>
+      `;
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      actions.style.marginLeft = "auto";
+
+      if (inv.invite_url) {
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "ghost-btn tiny";
+        copyBtn.textContent = tr("share.copyLink");
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(inv.invite_url);
+            showAlert(tr("share.copySuccess", {}, "Link copiato"));
+          } catch (err) {
+            showAlert(tr("share.copyError", {}, "Impossibile copiare il link"));
+          }
+        });
+        actions.appendChild(copyBtn);
+      }
+
+      if (inv.invite_id) {
+        const revokeBtn = document.createElement("button");
+        revokeBtn.type = "button";
+        revokeBtn.className = "ghost-btn tiny";
+        revokeBtn.textContent = tr("share.revokeInvite", {}, "Revoke");
+        revokeBtn.addEventListener("click", async () => {
+          try {
+            const headers = await getAuthHeaders();
+            const res = await fetch(`/api/invites?invite_id=${encodeURIComponent(inv.invite_id)}`, {
+              method: "DELETE",
+              headers
+            });
+            if (!res.ok) {
+              showAlert(tr("share.revokeError", {}, "Impossibile revocare"));
+              return;
+            }
+            refreshSharedWithPanel(true);
+          } catch (err) {
+            showAlert(tr("share.revokeError", {}, "Impossibile revocare"));
+          }
+        });
+        actions.appendChild(revokeBtn);
+      }
+
+      if (meta) {
+        const metaSpan = document.createElement("span");
+        metaSpan.className = "share-person-role";
+        metaSpan.textContent = meta;
+        actions.appendChild(metaSpan);
+      }
+
+      li.appendChild(actions);
+      sharedWithListEl.appendChild(li);
+    });
+  }
 }
 
 async function refreshSharedWithPanel(force) {
@@ -6161,8 +6285,9 @@ async function refreshSharedWithPanel(force) {
     }
     const data = await res.json();
     const items = Array.isArray(data.shared_with) ? data.shared_with : [];
-    sharedWithCache = { projectId: project.id, items };
-    renderSharedWithList(items);
+    const pending = Array.isArray(data.pending_invites) ? data.pending_invites : [];
+    sharedWithCache = { projectId: project.id, items: { members: items, pending } };
+    renderSharedWithList({ members: items, pending });
   } catch (err) {
     console.warn("[Share] Failed to load shared-with list", err);
     renderSharedWithList([], { messageKey: "share.peopleEmpty" });

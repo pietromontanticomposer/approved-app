@@ -1,7 +1,7 @@
 // app/api/projects/shared-with/route.ts
 /**
  * GET /api/projects/shared-with?project_id=xxx
- * Returns list of project members (owner-only or team owner).
+ * Returns list of project members + pending invites.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,6 +9,21 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
+
+function buildOrigin(req: NextRequest) {
+  const envUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_APP_ORIGIN ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "";
+  const originHeader = req.headers.get("origin");
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const hostHeader = req.headers.get("host");
+  const fallbackProto = forwardedProto || "http";
+  const computedOrigin =
+    envUrl || originHeader || (hostHeader ? `${fallbackProto}://${hostHeader}` : `http://localhost:3000`);
+  return computedOrigin.replace(/\/+$/, "");
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,19 +49,19 @@ export async function GET(req: NextRequest) {
     }
 
     const isOwner = project.owner_id === auth.userId;
-    let isTeamOwner = false;
+    let isMember = false;
 
-    if (!isOwner && project.team_id) {
-      const { data: teamMember } = await supabaseAdmin
-        .from("team_members")
-        .select("role")
-        .eq("team_id", project.team_id)
-        .eq("user_id", auth.userId)
+    if (!isOwner) {
+      const { data: membership } = await supabaseAdmin
+        .from("project_members")
+        .select("member_id")
+        .eq("project_id", projectId)
+        .eq("member_id", auth.userId)
         .maybeSingle();
-      isTeamOwner = teamMember?.role === "owner";
+      isMember = !!membership;
     }
 
-    if (!isOwner && !isTeamOwner) {
+    if (!isOwner && !isMember) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -95,7 +110,33 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ shared_with: sharedWith });
+    const nowIso = new Date().toISOString();
+    const { data: invites, error: invitesErr } = await supabaseAdmin
+      .from("invites")
+      .select("id, project_id, email, role, invited_by, created_at, expires_at, used_at, revoked, is_link_invite")
+      .eq("project_id", projectId)
+      .eq("revoked", false)
+      .is("used_at", null)
+      .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
+      .order("created_at", { ascending: false });
+
+    if (invitesErr) {
+      return NextResponse.json({ error: invitesErr.message }, { status: 500 });
+    }
+
+    const origin = buildOrigin(req);
+    const pendingInvites = (invites || []).map((inv) => ({
+      invite_id: inv.id,
+      role: inv.role || "viewer",
+      email: inv.email || null,
+      invited_by: inv.invited_by || null,
+      created_at: inv.created_at || null,
+      expires_at: inv.expires_at || null,
+      status: "pending",
+      invite_url: `${origin}/invite/${inv.id}`,
+    }));
+
+    return NextResponse.json({ shared_with: sharedWith, pending_invites: pendingInvites });
   } catch (err: any) {
     console.error("[GET /api/projects/shared-with] Error:", err);
     return NextResponse.json(
