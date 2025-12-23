@@ -20,6 +20,13 @@ export default function Page() {
     // Reset sign-out flag on fresh page load to allow bootstrap
     (window as any).__isSigningOut = false;
 
+    try {
+      const storedTheme = localStorage.getItem("approved_theme");
+      if (storedTheme) {
+        document.documentElement.setAttribute("data-theme", storedTheme);
+      }
+    } catch {}
+
     // Initialize supabase client immediately
     const initSupabase = async () => {
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
