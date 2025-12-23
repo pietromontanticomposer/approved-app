@@ -28,6 +28,46 @@
   --ink-spot: #0b1b3a;
 }
 
+:root[data-theme="dark-02"] {
+  --bg-core: #0b1324;
+  --bg-deep: #0f1b33;
+  --bg-ink: #142347;
+  --surface: #101a30;
+  --surface-2: #152446;
+  --surface-3: #1a2c51;
+  --border: #24324f;
+  --border-strong: #2f4368;
+  --border-soft: rgba(59, 130, 246, 0.22);
+  --text: #e8eef9;
+  --text-strong: #f4f7ff;
+  --text-muted: #cdd7e6;
+  --text-subtle: #a5b4c7;
+  --text-weak: #7b8ca8;
+  --ink-spot: #10214a;
+}
+
+:root[data-theme="azure-01"] {
+  --bg-core: #0f1f3a;
+  --bg-deep: #15284a;
+  --bg-ink: #1b3158;
+  --surface: #162748;
+  --surface-2: #1b2f55;
+  --surface-3: #2a4372;
+  --border: #3a5686;
+  --border-strong: #4a6aa3;
+  --border-soft: rgba(59, 130, 246, 0.32);
+  --text: #e6edf7;
+  --text-strong: #f4f7fb;
+  --text-muted: #c7d3e6;
+  --text-subtle: #a6b6d1;
+  --text-weak: #7f93b5;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-dark: #1e40af;
+  --accent-bright: #0ea5e9;
+  --ink-spot: #16305c;
+}
+
 body {
   background:
     radial-gradient(900px 520px at 12% 8%, rgba(59, 130, 246, 0.26), rgba(2, 6, 23, 0.06) 55%),
@@ -36,6 +76,24 @@ body {
     repeating-linear-gradient(0deg, rgba(148, 163, 184, 0.05) 0, rgba(148, 163, 184, 0.05) 1px, transparent 1px, transparent 24px),
     radial-gradient(circle at 12% 12%, var(--bg-ink), var(--bg-deep) 45%, var(--bg-core) 100%);
   color: var(--text);
+}
+
+:root[data-theme="dark-02"] body {
+  background:
+    radial-gradient(900px 520px at 12% 8%, rgba(59, 130, 246, 0.32), rgba(7, 12, 28, 0.06) 55%),
+    radial-gradient(720px 420px at 88% 16%, rgba(99, 102, 241, 0.28), rgba(7, 12, 28, 0.08) 60%),
+    linear-gradient(180deg, rgba(20, 35, 70, 0.78), rgba(7, 12, 28, 0.9)),
+    repeating-linear-gradient(0deg, rgba(148, 163, 184, 0.06) 0, rgba(148, 163, 184, 0.06) 1px, transparent 1px, transparent 24px),
+    radial-gradient(circle at 12% 12%, var(--bg-ink), var(--bg-deep) 45%, var(--bg-core) 100%);
+}
+
+:root[data-theme="azure-01"] body {
+  background:
+    radial-gradient(900px 520px at 12% 8%, rgba(37, 99, 235, 0.26), rgba(11, 18, 32, 0.12) 55%),
+    radial-gradient(720px 420px at 88% 16%, rgba(14, 165, 233, 0.22), rgba(11, 18, 32, 0.14) 60%),
+    linear-gradient(180deg, rgba(16, 32, 60, 0.86), rgba(11, 18, 32, 0.92)),
+    repeating-linear-gradient(0deg, rgba(59, 130, 246, 0.08) 0, rgba(59, 130, 246, 0.08) 1px, transparent 1px, transparent 24px),
+    radial-gradient(circle at 12% 12%, var(--bg-ink), var(--bg-deep) 45%, var(--bg-core) 100%);
 }
 
 .app {
@@ -65,6 +123,21 @@ body {
     0 0 0 1px rgba(15, 23, 42, 0.4);
 }
 
+:root[data-theme="dark-02"] .sidebar {
+  background: linear-gradient(180deg, rgba(12, 20, 40, 0.9), rgba(12, 20, 40, 0.72));
+  box-shadow:
+    inset -1px 0 0 rgba(59, 130, 246, 0.16),
+    0 0 0 1px rgba(20, 35, 70, 0.35);
+}
+
+:root[data-theme="azure-01"] .sidebar {
+  background: linear-gradient(180deg, rgba(18, 35, 66, 0.92), rgba(18, 35, 66, 0.78));
+  border-right: 1px solid var(--border);
+  box-shadow:
+    inset -1px 0 0 rgba(59, 130, 246, 0.16),
+    0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
 .sidebar-section,
 .tabs,
 .project-list,
@@ -73,6 +146,20 @@ body {
   border-radius: 10px;
   padding: 10px;
   background: rgba(7, 13, 28, 0.45);
+}
+
+:root[data-theme="dark-02"] .sidebar-section,
+:root[data-theme="dark-02"] .tabs,
+:root[data-theme="dark-02"] .project-list,
+:root[data-theme="dark-02"] .language-selector {
+  background: rgba(12, 20, 40, 0.5);
+}
+
+:root[data-theme="azure-01"] .sidebar-section,
+:root[data-theme="azure-01"] .tabs,
+:root[data-theme="azure-01"] .project-list,
+:root[data-theme="azure-01"] .language-selector {
+  background: rgba(18, 35, 66, 0.65);
 }
 
 .sidebar-section.small {

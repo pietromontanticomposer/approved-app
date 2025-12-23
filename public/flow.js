@@ -35,6 +35,7 @@ let renderVersionPreviewsRetryTimer = null;
 let renderNotesPanelScheduled = false;
 const projectLoadPromises = new Map();
 let cueDragImageEl = null;
+const previewResizeObservers = new WeakMap();
 
 function onWaveSurferReady(cb) {
   if (typeof WaveSurfer !== 'undefined') {
@@ -2066,6 +2067,18 @@ function applyCuesCollapsedState() {
     cuesBodyEl.classList.remove("collapsed");
     cuesToggleBtn.textContent = t('cues.hide');
   }
+}
+
+function reorderCueDom(project) {
+  if (!project || !cueListEl) return false;
+  const nodes = project.cues.map(cue =>
+    cueListEl.querySelector(`details.cue-block[data-cue-id="${cue.id}"]`)
+  ).filter(Boolean);
+  if (!nodes.length) return false;
+  nodes.forEach(node => {
+    cueListEl.appendChild(node);
+  });
+  return true;
 }
 
 // =======================
@@ -4404,7 +4417,11 @@ function renderCueList(options = {}) {
         c.index_in_project = idx;
       });
 
-      renderCueList();
+      const didReorder = reorderCueDom(projectNow);
+      if (!didReorder) {
+        renderCueList();
+        renderVersionPreviews();
+      }
       persistCueOrder(projectNow).catch(err => {
         console.warn('[CueOrder] Persist failed', err);
       });
@@ -4438,6 +4455,23 @@ function renderVersionPreviewsInner() {
         prev.clientWidth || prev.offsetWidth || 0
       );
       if (targetWidth < 30) {
+        if (typeof ResizeObserver !== "undefined" && !previewResizeObservers.has(prev)) {
+          const ro = new ResizeObserver(() => {
+            if (!prev.isConnected) {
+              ro.disconnect();
+              previewResizeObservers.delete(prev);
+              return;
+            }
+            const w = Math.max(0, prev.clientWidth || prev.offsetWidth || 0);
+            if (w >= 30) {
+              ro.disconnect();
+              previewResizeObservers.delete(prev);
+              renderVersionPreviews();
+            }
+          });
+          ro.observe(prev);
+          previewResizeObservers.set(prev, ro);
+        }
         const retryCount = parseInt(prev.dataset.waveRetry || "0", 10);
         if (retryCount < 10) {
           prev.dataset.waveRetry = String(retryCount + 1);

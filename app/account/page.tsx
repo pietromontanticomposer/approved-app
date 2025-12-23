@@ -20,9 +20,16 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("dark-01");
   const [language, setLanguage] = useState("it");
   const [notifications, setNotifications] = useState(true);
+  const themeOptions = [
+    { value: "dark-01", label: "Scuro 01" },
+    { value: "dark-02", label: "Scuro 02" },
+    { value: "azure-01", label: "Azzurro 01" },
+    { value: "dark", label: "Scuro" },
+    { value: "light", label: "Chiaro" },
+  ];
 
   const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() ||
     (user?.email ? user.email.slice(0, 2).toUpperCase() : "AC");
@@ -58,6 +65,20 @@ export default function AccountPage() {
 
     init();
   }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("approved_theme");
+      if (stored) setTheme(stored);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("approved_theme", theme);
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch {}
+  }, [theme]);
 
   const signOut = async (global = false) => {
     if (!supabase) return;
@@ -152,7 +173,14 @@ export default function AccountPage() {
             <h1 style={styles.title}>Il mio account</h1>
             <p style={styles.subtitle}>Gestisci dati personali, sicurezza e preferenze.</p>
           </div>
-          <button style={styles.ghostButton} onClick={() => router.push("/")}>← Torna all'app</button>
+          <button
+            style={styles.ghostButton}
+            onClick={() => {
+              window.location.href = "/";
+            }}
+          >
+            ← Torna all'app
+          </button>
         </div>
 
         <div style={styles.grid}>
@@ -271,8 +299,11 @@ export default function AccountPage() {
               <div style={styles.fieldRow}>
                 <div style={styles.label}>Tema</div>
                 <select style={styles.select} value={theme} onChange={(e) => setTheme(e.target.value)}>
-                  <option value="dark">Scuro</option>
-                  <option value="light">Chiaro</option>
+                  {themeOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div style={styles.fieldRow}>
@@ -312,8 +343,8 @@ export default function AccountPage() {
 const styles: Record<string, any> = {
   page: {
     minHeight: "100vh",
-    background: "radial-gradient(circle at 15% 15%, #0f172a, #0b0f1a 45%, #070a12 100%)",
-    color: "#e5e7eb",
+    background: "radial-gradient(circle at 15% 15%, var(--bg-ink), var(--bg-deep) 45%, var(--bg-core) 100%)",
+    color: "var(--text)",
     padding: "2.5rem",
     fontFamily: '"Space Grotesk", "DM Sans", sans-serif',
   },
@@ -333,19 +364,19 @@ const styles: Record<string, any> = {
     textTransform: "uppercase",
     letterSpacing: "0.22em",
     fontSize: "0.7rem",
-    color: "#7c8aa5",
+    color: "var(--text-weak)",
   },
-  title: { margin: 0, fontSize: "2.2rem", color: "#f8fafc" },
-  subtitle: { color: "#9aa4b2", margin: "0.4rem 0 0" },
-  muted: { color: "#9aa4b2", margin: 0 },
+  title: { margin: 0, fontSize: "2.2rem", color: "var(--text-strong)" },
+  subtitle: { color: "var(--text-subtle)", margin: "0.4rem 0 0" },
+  muted: { color: "var(--text-subtle)", margin: 0 },
   grid: {
     display: "grid",
     gridTemplateColumns: "minmax(320px, 1.2fr) minmax(320px, 1fr)",
     gap: "1.5rem",
   },
   card: {
-    background: "linear-gradient(180deg, rgba(17,24,39,0.95), rgba(10,15,25,0.95))",
-    border: "1px solid rgba(148,163,184,0.18)",
+    background: "linear-gradient(180deg, var(--surface), var(--surface-2))",
+    border: "1px solid var(--border)",
     borderRadius: "16px",
     padding: "1.5rem",
     boxShadow: "0 20px 40px rgba(2,8,23,0.35)",
@@ -361,15 +392,15 @@ const styles: Record<string, any> = {
     textTransform: "uppercase",
     letterSpacing: "0.14em",
     fontSize: "0.7rem",
-    color: "#64748b",
+    color: "var(--text-weak)",
   },
-  cardTitle: { margin: "0.35rem 0 0", fontSize: "1.35rem", color: "#f8fafc" },
-  cardDesc: { margin: "0.35rem 0 0", color: "#94a3b8", fontSize: "0.95rem" },
+  cardTitle: { margin: "0.35rem 0 0", fontSize: "1.35rem", color: "var(--text-strong)" },
+  cardDesc: { margin: "0.35rem 0 0", color: "var(--text-subtle)", fontSize: "0.95rem" },
   avatar: {
     width: "54px",
     height: "54px",
     borderRadius: "16px",
-    background: "linear-gradient(135deg, #1d4ed8, #0ea5e9)",
+    background: "linear-gradient(135deg, var(--accent-strong), var(--accent-bright))",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -378,28 +409,28 @@ const styles: Record<string, any> = {
     fontSize: "1rem",
   },
   profileSummary: {
-    background: "rgba(15,23,42,0.7)",
-    border: "1px solid rgba(148,163,184,0.2)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
     borderRadius: "12px",
     padding: "1rem",
     marginBottom: "1rem",
   },
-  profileName: { fontSize: "1.1rem", color: "#f1f5f9", fontWeight: 600 },
-  profileEmail: { color: "#94a3b8", marginTop: "0.2rem" },
+  profileName: { fontSize: "1.1rem", color: "var(--text-strong)", fontWeight: 600 },
+  profileEmail: { color: "var(--text-subtle)", marginTop: "0.2rem" },
   profileMeta: {
     marginTop: "0.6rem",
     display: "flex",
     gap: "1rem",
     flexWrap: "wrap",
     fontSize: "0.85rem",
-    color: "#64748b",
+    color: "var(--text-weak)",
   },
   fieldRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     padding: "0.65rem 0",
-    borderBottom: "1px solid rgba(148,163,184,0.12)",
+    borderBottom: "1px solid var(--border)",
     gap: "1rem",
     flexWrap: "wrap",
   },
@@ -408,10 +439,10 @@ const styles: Record<string, any> = {
     flexDirection: "column",
     gap: "0.1rem",
   },
-  label: { color: "#94a3b8", fontSize: "0.9rem" },
-  value: { color: "#e2e8f0", fontSize: "0.95rem" },
-  subLabel: { color: "#94a3b8", fontSize: "0.9rem", marginBottom: "0.35rem" },
-  subsection: { marginTop: "0.9rem", borderTop: "1px solid rgba(148,163,184,0.15)", paddingTop: "0.9rem" },
+  label: { color: "var(--text-subtle)", fontSize: "0.9rem" },
+  value: { color: "var(--text)", fontSize: "0.95rem" },
+  subLabel: { color: "var(--text-subtle)", fontSize: "0.9rem", marginBottom: "0.35rem" },
+  subsection: { marginTop: "0.9rem", borderTop: "1px solid var(--border)", paddingTop: "0.9rem" },
   buttonsRow: { display: "flex", gap: "0.75rem", marginTop: "0.9rem", flexWrap: "wrap" },
   inputRow: {
     display: "flex",
@@ -426,7 +457,7 @@ const styles: Record<string, any> = {
     marginTop: "1rem",
   },
   primaryButton: {
-    background: "linear-gradient(135deg, #2563eb, #38bdf8)",
+    background: "linear-gradient(135deg, var(--accent-strong), var(--accent-bright))",
     color: "#fff",
     border: "none",
     padding: "0.65rem 1.1rem",
@@ -435,9 +466,9 @@ const styles: Record<string, any> = {
     fontWeight: 600,
   },
   secondaryButton: {
-    background: "rgba(15,23,42,0.7)",
-    color: "#e2e8f0",
-    border: "1px solid rgba(148,163,184,0.3)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
     padding: "0.6rem 1.1rem",
     borderRadius: "999px",
     cursor: "pointer",
@@ -445,8 +476,8 @@ const styles: Record<string, any> = {
   },
   ghostButton: {
     background: "transparent",
-    color: "#cbd5f5",
-    border: "1px solid rgba(148,163,184,0.3)",
+    color: "var(--text-muted)",
+    border: "1px solid var(--border)",
     padding: "0.6rem 1.1rem",
     borderRadius: "999px",
     cursor: "pointer",
@@ -457,14 +488,14 @@ const styles: Record<string, any> = {
     minWidth: "180px",
     padding: "0.6rem 0.75rem",
     borderRadius: "10px",
-    border: "1px solid rgba(148,163,184,0.2)",
-    background: "rgba(2,6,23,0.6)",
-    color: "#e2e8f0",
+    border: "1px solid var(--border)",
+    background: "var(--surface)",
+    color: "var(--text)",
   },
   select: {
-    background: "rgba(2,6,23,0.6)",
-    color: "#e2e8f0",
-    border: "1px solid rgba(148,163,184,0.2)",
+    background: "var(--surface)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
     borderRadius: "10px",
     padding: "0.45rem 0.7rem",
     minWidth: "140px",
@@ -475,12 +506,12 @@ const styles: Record<string, any> = {
     gap: "0.4rem",
   },
   providerChip: {
-    background: "rgba(15,23,42,0.75)",
-    border: "1px solid rgba(148,163,184,0.2)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
     borderRadius: "999px",
     padding: "0.35rem 0.8rem",
     fontSize: "0.85rem",
-    color: "#e2e8f0",
+    color: "var(--text)",
   },
   securityBadge: {
     background: "rgba(16,185,129,0.12)",
@@ -497,14 +528,14 @@ const styles: Record<string, any> = {
     marginBottom: "0.8rem",
   },
   statItem: {
-    background: "rgba(15,23,42,0.65)",
-    border: "1px solid rgba(148,163,184,0.18)",
+    background: "var(--surface-2)",
+    border: "1px solid var(--border)",
     borderRadius: "12px",
     padding: "0.6rem 0.9rem",
     minWidth: "160px",
   },
-  statLabel: { color: "#94a3b8", fontSize: "0.8rem" },
-  statValue: { color: "#f8fafc", fontSize: "0.95rem", marginTop: "0.2rem" },
+  statLabel: { color: "var(--text-subtle)", fontSize: "0.8rem" },
+  statValue: { color: "var(--text-strong)", fontSize: "0.95rem", marginTop: "0.2rem" },
   toggleRow: {
     display: "flex",
     alignItems: "center",
@@ -513,8 +544,8 @@ const styles: Record<string, any> = {
   notice: {
     marginTop: "1.5rem",
     padding: "0.9rem 1rem",
-    border: "1px solid rgba(148,163,184,0.2)",
+    border: "1px solid var(--border)",
     borderRadius: "12px",
-    background: "rgba(15,23,42,0.6)",
+    background: "var(--surface-2)",
   },
 };

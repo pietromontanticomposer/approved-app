@@ -39,7 +39,26 @@ export default function Page() {
 
     window.addEventListener('open-share-modal', handleOpenShareModal);
 
+    let cancelled = false;
+    const retryInit = async () => {
+      for (let i = 0; i < 40; i++) {
+        if (cancelled) return;
+        if (typeof (window as any).initializeFromSupabase === 'function') {
+          try {
+            (window as any).initializeFromSupabase();
+          } catch (e) {
+            console.warn('[HomePage] initializeFromSupabase retry failed', e);
+          }
+          return;
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
+    };
+
+    retryInit();
+
     return () => {
+      cancelled = true;
       window.removeEventListener('open-share-modal', handleOpenShareModal);
     };
   }, []);
