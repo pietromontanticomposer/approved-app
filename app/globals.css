@@ -1092,8 +1092,8 @@ body.resizing {
 .cue-block {
   border-radius: 12px;
   border: 1px solid rgba(59, 130, 246, 0.18);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.6);
+  background: var(--panel-bg);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
   padding: 4px 10px 8px;
 }
 

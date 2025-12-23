@@ -537,7 +537,8 @@
 .cue-block {
   border-radius: 12px;
   border: 1px solid #1f2937;
-  background: #020617;
+  background: radial-gradient(circle at 10% 20%, #111827, #020617 70%);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
   padding: 4px 10px 8px;
 }
 
