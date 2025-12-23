@@ -13,6 +13,7 @@
   --surface: #0a0f1a;
   --surface-2: #0f172a;
   --surface-3: #111827;
+  --panel-bg: radial-gradient(circle at 10% 20%, var(--surface-3), var(--bg-core) 70%);
   --border: #1e293b;
   --border-strong: #334155;
   --border-soft: rgba(59, 130, 246, 0.15);
@@ -496,7 +497,7 @@ body {
 
 .naming-options.standalone {
   padding: 16px;
-  background: var(--surface);
+  background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -970,15 +971,17 @@ body.resizing {
 }
 
 .section-card {
-  background: var(--surface);
+  background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
 }
 
 .section-card-header {
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 
 .section-card-top {
@@ -1394,7 +1397,7 @@ body.resizing {
 .share-card {
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--panel-bg);
   padding: 10px 12px;
 }
 
@@ -1472,7 +1475,7 @@ body.resizing {
 }
 
 .player-preview {
-  background: radial-gradient(circle at 10% 20%, var(--surface-3), var(--bg-core) 70%);
+  background: var(--panel-bg);
   margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1483,7 +1486,7 @@ body.resizing {
 
 #waveform {
   border-radius: 8px;
-  background: radial-gradient(circle at 12% 18%, var(--surface-3), var(--bg-core) 70%);
+  background: var(--panel-bg);
 }
 
 .confirm-input {

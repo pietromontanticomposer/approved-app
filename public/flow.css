@@ -838,7 +838,7 @@
 }
 
 .player-preview {
-  background: #020617;
+  background: radial-gradient(circle at 10% 20%, #111827, #020617 70%);
   margin-bottom: 8px;
 }
 
@@ -1584,11 +1584,12 @@
 .section-card {
   border: 1px solid #1f2937;
   border-radius: 14px;
-  background: #020617;
+  background: radial-gradient(circle at 10% 20%, #111827, #020617 70%);
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
 }
 
 .section-card-header {
