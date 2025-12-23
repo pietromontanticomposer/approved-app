@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { checkAdminSecret } from "@/lib/adminAuth";
 
 // Diagnostic endpoint to check Supabase admin connectivity without leaking secrets.
 export async function GET(req: Request) {
+  const auth = checkAdminSecret(req);
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
+  }
+
   try {
     const adminPresent = !!supabaseAdmin;
 

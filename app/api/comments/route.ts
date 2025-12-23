@@ -30,6 +30,8 @@ type Comment = {
   updated_at: string;
 };
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -76,12 +78,12 @@ async function getUserDisplayName(userId: string): Promise<string | null> {
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/comments] Request started');
+    if (isDev) console.log('[GET /api/comments] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[GET /api/comments] Unauthorized request');
+      if (isDev) console.log('[GET /api/comments] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -141,12 +143,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/comments] Request started');
+    if (isDev) console.log('[POST /api/comments] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[POST /api/comments] Unauthorized request');
+      if (isDev) console.log('[POST /api/comments] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -228,7 +230,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log('[POST /api/comments] Comment created:', comment_id);
+    if (isDev) console.log('[POST /api/comments] Comment created:', comment_id);
     return NextResponse.json({ comment: data }, { status: 201 });
 
   } catch (err: any) {
@@ -250,12 +252,12 @@ export async function POST(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    console.log('[PATCH /api/comments] Request started');
+    if (isDev) console.log('[PATCH /api/comments] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[PATCH /api/comments] Unauthorized request');
+      if (isDev) console.log('[PATCH /api/comments] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -331,7 +333,7 @@ export async function PATCH(req: NextRequest) {
 
     // Check ownership
     if (existing.actor_id !== userId) {
-      console.log('[PATCH /api/comments] User not authorized to edit comment');
+      if (isDev) console.log('[PATCH /api/comments] User not authorized to edit comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to edit this comment' },
         { status: 403 }
@@ -354,7 +356,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    console.log('[PATCH /api/comments] Comment updated:', id);
+    if (isDev) console.log('[PATCH /api/comments] Comment updated:', id);
     return NextResponse.json({ comment: data }, { status: 200 });
 
   } catch (err: any) {
@@ -376,12 +378,12 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/comments] Request started');
+    if (isDev) console.log('[DELETE /api/comments] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[DELETE /api/comments] Unauthorized request');
+      if (isDev) console.log('[DELETE /api/comments] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -440,7 +442,7 @@ export async function DELETE(req: NextRequest) {
 
     // Check ownership
     if (existing.actor_id !== userId) {
-      console.log('[DELETE /api/comments] User not authorized to delete comment');
+      if (isDev) console.log('[DELETE /api/comments] User not authorized to delete comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this comment' },
         { status: 403 }
@@ -461,7 +463,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    console.log('[DELETE /api/comments] Comment deleted:', id);
+    if (isDev) console.log('[DELETE /api/comments] Comment deleted:', id);
     return NextResponse.json({ success: true }, { status: 200 });
 
   } catch (err: any) {

@@ -312,16 +312,51 @@ export default function Page() {
           </div>
 
           <div class="share-card">
-            <div class="share-row">
-              <div>
-                <strong data-i18n="share.clientLink">Client link</strong>
-                <div class="share-meta" data-i18n="share.clientHint">
-                  They can listen, comment and approve without an account.
-                </div>
-              </div>
-              <button id="copyLinkBtn" class="ghost-btn small" disabled data-i18n="share.copyLink">
-                Copy demo link
+            <div class="share-tabs">
+              <button class="share-tab-btn active" data-share-tab="link" data-i18n="share.tabLink">
+                Link
               </button>
+              <button class="share-tab-btn" data-share-tab="people" data-i18n="share.tabPeople">
+                Shared with
+              </button>
+            </div>
+            <div id="share-link-panel" class="share-tab-panel active">
+              <div class="share-row">
+                <div>
+                  <strong data-i18n="share.clientLink">Client link</strong>
+                  <div class="share-meta" data-i18n="share.clientHint">
+                    They can listen, comment and approve without an account.
+                  </div>
+                </div>
+                <button id="copyLinkBtn" class="ghost-btn small" disabled data-i18n="share.copyLink">
+                  Copy demo link
+                </button>
+              </div>
+            </div>
+            <div id="share-people-panel" class="share-tab-panel">
+              <div id="sharePeopleHint" class="share-meta" data-i18n="share.peopleHint">
+                Only project owners can see this list.
+              </div>
+              <div class="share-invite-row">
+                <input
+                  id="shareInviteEmail"
+                  class="share-invite-input"
+                  type="email"
+                  placeholder="name@email.com"
+                  data-i18n-placeholder="share.invitePlaceholder"
+                />
+                <select id="shareInviteRole" class="share-invite-select">
+                  <option value="viewer" data-i18n="share.inviteRoleViewer">Viewer</option>
+                  <option value="editor" data-i18n="share.inviteRoleEditor">Editor</option>
+                </select>
+                <button id="shareInviteBtn" class="ghost-btn small" type="button" data-i18n="share.inviteSend">
+                  Send invite
+                </button>
+              </div>
+              <div id="shareInviteMessage" class="share-meta"></div>
+              <ul id="sharedWithList" class="share-people-list">
+                <li class="share-empty" data-i18n="share.peopleEmpty">Not shared yet.</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -345,7 +380,7 @@ export default function Page() {
             window.safeFetchProjectsFallback = window.safeFetchProjectsFallback || (async function(){
               console.warn('[InitStub] safeFetchProjectsFallback called before implementation');
               try {
-                const res = await fetch('/api/projects?debug=1', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+                const res = await fetch('/api/projects', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
                 if (res.ok) return res.json();
               } catch (e) {
                 console.warn('[InitStub] fallback fetch failed', e);

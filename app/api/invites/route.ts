@@ -9,8 +9,10 @@ import { NextResponse, NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
+import { sendInviteEmail } from '@/lib/email';
 
 export const runtime = "nodejs";
+const isDev = process.env.NODE_ENV !== "production";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -22,7 +24,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/invites] Request started');
+    if (isDev) console.log('[GET /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -77,7 +79,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/invites] Request started');
+    if (isDev) console.log('[POST /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -130,10 +132,29 @@ export async function POST(req: NextRequest) {
     const computedOrigin = envUrl || originHeader || (hostHeader ? `${fallbackProto}://${hostHeader}` : `http://localhost:3000`);
     const safeOrigin = computedOrigin.replace(/\/+$/, "");
 
+    // Build invite url
+    const inviteUrl = `${safeOrigin}/invite/${data.invite_id}`;
+
+    // If this was a nominal email invite, attempt to send the invite email
+    let emailStatus: "sent" | "failed" | "skipped" = "skipped";
+    let emailError: string | null = null;
+    if (!is_link_invite && email) {
+      try {
+        await sendInviteEmail(email, inviteUrl, auth.email || null);
+        emailStatus = "sent";
+      } catch (e: any) {
+        emailStatus = "failed";
+        emailError = e?.message || "send failed";
+        console.warn('[POST /api/invites] sendInviteEmail failed', e);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       invite_id: data.invite_id,
-      invite_url: `${safeOrigin}/invite/${data.invite_id}`,
+      invite_url: inviteUrl,
+      email_status: emailStatus,
+      email_error: emailError,
     });
   } catch (error: any) {
     console.error("Error creating invite:", error);
@@ -147,7 +168,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/invites] Request started');
+    if (isDev) console.log('[DELETE /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

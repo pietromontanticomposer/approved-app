@@ -15,6 +15,8 @@ import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -54,12 +56,12 @@ const isUuid = (value: string) =>
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/cues] Request started');
+    if (isDev) console.log('[GET /api/cues] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[GET /api/cues] Unauthorized request');
+      if (isDev) console.log('[GET /api/cues] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
     // SECURITY: Check if user has access to this project
     const hasAccess = await canAccessProject(userId, projectId);
     if (!hasAccess) {
-      console.log('[GET /api/cues] User does not have access to project');
+      if (isDev) console.log('[GET /api/cues] User does not have access to project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have access to this project' },
         { status: 403 }
@@ -110,7 +112,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    console.log('[GET /api/cues] Found', cues?.length || 0, 'cues for project', projectId);
+    if (isDev) console.log('[GET /api/cues] Found', cues?.length || 0, 'cues for project', projectId);
     return NextResponse.json({ cues: cues || [] }, {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -135,12 +137,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/cues] Request started');
+    if (isDev) console.log('[POST /api/cues] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[POST /api/cues] Unauthorized request');
+      if (isDev) console.log('[POST /api/cues] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -180,7 +182,7 @@ export async function POST(req: NextRequest) {
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, project_id);
     if (!canModify) {
-      console.log('[POST /api/cues] User not authorized to modify project');
+      if (isDev) console.log('[POST /api/cues] User not authorized to modify project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to modify this project' },
         { status: 403 }
@@ -230,7 +232,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("[POST /api/cues] Cue created:", cue_id);
+    if (isDev) console.log("[POST /api/cues] Cue created:", cue_id);
     return NextResponse.json({ cue: data, cueId: cue_id }, { status: 201 });
 
   } catch (err: any) {
@@ -252,12 +254,12 @@ export async function POST(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    console.log('[PATCH /api/cues] Request started');
+    if (isDev) console.log('[PATCH /api/cues] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[PATCH /api/cues] Unauthorized request');
+      if (isDev) console.log('[PATCH /api/cues] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -312,7 +314,7 @@ export async function PATCH(req: NextRequest) {
     // SECURITY: Check if user can modify the project this cue belongs to
     const canModify = await canModifyProject(userId, existingCue.project_id);
     if (!canModify) {
-      console.log('[PATCH /api/cues] User not authorized to modify project');
+      if (isDev) console.log('[PATCH /api/cues] User not authorized to modify project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to modify this cue' },
         { status: 403 }
@@ -357,7 +359,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    console.log("[PATCH /api/cues] Cue updated:", id);
+    if (isDev) console.log("[PATCH /api/cues] Cue updated:", id);
     return NextResponse.json({ cue: data }, { status: 200 });
 
   } catch (err: any) {
@@ -379,12 +381,12 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/cues] Request started');
+    if (isDev) console.log('[DELETE /api/cues] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[DELETE /api/cues] Unauthorized request');
+      if (isDev) console.log('[DELETE /api/cues] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -428,7 +430,7 @@ export async function DELETE(req: NextRequest) {
     // SECURITY: Check if user can modify the project this cue belongs to
     const canModify = await canModifyProject(userId, existingCue.project_id);
     if (!canModify) {
-      console.log('[DELETE /api/cues] User not authorized to modify project');
+      if (isDev) console.log('[DELETE /api/cues] User not authorized to modify project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this cue' },
         { status: 403 }
@@ -463,7 +465,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    console.log("[DELETE /api/cues] Cue deleted:", id);
+    if (isDev) console.log("[DELETE /api/cues] Cue deleted:", id);
     return NextResponse.json({ success: true }, { status: 200 });
 
   } catch (err: any) {

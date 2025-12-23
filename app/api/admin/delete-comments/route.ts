@@ -1,19 +1,17 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { checkAdminSecret } from '@/lib/adminAuth';
 
 // Protected admin route to delete all comments.
 // Requires header `x-admin-delete-secret` matching process.env.ADMIN_DELETE_SECRET.
 export async function POST(req: Request) {
   try {
-    const secretHeader = req.headers.get('x-admin-delete-secret') || '';
-    const secretEnv = process.env.ADMIN_DELETE_SECRET || '';
-
-    if (!secretEnv) {
-      return NextResponse.json({ error: 'ADMIN_DELETE_SECRET not configured on server' }, { status: 500 });
-    }
-
-    if (!secretHeader || secretHeader !== secretEnv) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    const auth = checkAdminSecret(req, {
+      headerName: 'x-admin-delete-secret',
+      envNames: ['ADMIN_DELETE_SECRET'],
+    });
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     // Count rows first (use head to get count)

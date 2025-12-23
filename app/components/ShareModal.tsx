@@ -112,7 +112,13 @@ export default function ShareModal({
         throw new Error(data.error || "Failed to create invite");
       }
 
-      setMessage(`✅ Invito inviato a ${email}`);
+      if (data.email_status === "failed") {
+        const err = data.email_error || "configura SMTP/Resend";
+        const link = data.invite_url ? ` Link: ${data.invite_url}` : "";
+        setMessage(`❌ Invito creato ma email non inviata (${err}).${link}`);
+      } else {
+        setMessage(`✅ Invito inviato a ${email}`);
+      }
       setEmail("");
       loadInvites();
     } catch (error: any) {

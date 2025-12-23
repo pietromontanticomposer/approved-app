@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject } from '@/lib/auth';
 
 export const runtime = "nodejs";
+const isDev = process.env.NODE_ENV !== "production";
 
 // ============================================================================
 // CONFIGURATION
@@ -201,12 +202,12 @@ function isAllowedFileType(mimeType: string): boolean {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/upload] Request started');
+    if (isDev) console.log('[POST /api/upload] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[POST /api/upload] Unauthorized request');
+      if (isDev) console.log('[POST /api/upload] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -293,7 +294,7 @@ export async function POST(req: NextRequest) {
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, projectId);
     if (!canModify) {
-      console.log('[POST /api/upload] User not authorized to modify project');
+      if (isDev) console.log('[POST /api/upload] User not authorized to modify project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to upload files to this project' },
         { status: 403 }
@@ -317,7 +318,7 @@ export async function POST(req: NextRequest) {
     const timestamp = Date.now();
     const path = `${folder}/${timestamp}-${sanitizedName}`;
 
-    console.log("[POST /api/upload] Uploading file:", {
+    if (isDev) console.log("[POST /api/upload] Uploading file:", {
       path,
       size: file.size,
       type: contentType,
@@ -343,7 +344,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("[POST /api/upload] File uploaded to:", data.path);
+    if (isDev) console.log("[POST /api/upload] File uploaded to:", data.path);
 
     // Generate signed URL for secure access
     const { data: signedData, error: signError } = await supabaseAdmin.storage
@@ -351,7 +352,7 @@ export async function POST(req: NextRequest) {
       .createSignedUrl(data.path, SIGNED_URL_TTL_SECONDS);
 
     if (signError) {
-      console.warn("[POST /api/upload] Signed URL error:", signError);
+    if (isDev) console.warn("[POST /api/upload] Signed URL error:", signError);
       // Fallback to public URL (less secure but functional)
       const { data: publicData } = supabaseAdmin.storage
         .from(STORAGE_BUCKET)

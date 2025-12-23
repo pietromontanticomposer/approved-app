@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { checkAdminSecret } from "@/lib/adminAuth";
 
 /**
  * POST /api/reset-all
@@ -13,6 +14,11 @@ export async function POST(req: Request) {
       { error: "Reset-all disabilitato in produzione" },
       { status: 403 }
     );
+  }
+
+  const auth = checkAdminSecret(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   try {

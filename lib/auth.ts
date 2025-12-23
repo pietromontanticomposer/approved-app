@@ -3,6 +3,8 @@ import { supabase } from "./supabaseClient";
 import { supabaseAdmin } from "./supabaseAdmin";
 import { NextRequest } from 'next/server';
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // =======================
 // CLIENT-SIDE AUTH
 // =======================
@@ -46,17 +48,21 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     // Extract Bearer token from Authorization header
     const authHeader = req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      // TEMP: allow requests without authentication (fallback user)
-      return {
-        userId: 'public-user',
-        email: 'public@approved.local',
-        isAuthenticated: true,
-      };
+      const allowPublic =
+        process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+      if (allowPublic) {
+        return {
+          userId: 'public-user',
+          email: 'public@approved.local',
+          isAuthenticated: true,
+        };
+      }
+      return null;
     }
 
     const token = authHeader.substring(7); // Remove "Bearer " prefix
     if (!token) {
-      console.log('[Auth] Empty token');
+      if (isDev) console.log('[Auth] Empty token');
       return null;
     }
 
@@ -65,14 +71,14 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     if (token === 'demo') {
       const actorId = req.headers.get('x-actor-id');
       if (actorId && actorId.length > 0) {
-        console.log('[Auth] Demo mode - using x-actor-id:', actorId);
+        if (isDev) console.log('[Auth] Demo mode - using x-actor-id:', actorId);
         return {
           userId: actorId,
           email: 'demo@approved.local',
           isAuthenticated: true,
         };
       }
-      console.log('[Auth] Demo mode but no x-actor-id header');
+      if (isDev) console.log('[Auth] Demo mode but no x-actor-id header');
       return null;
     }
 
@@ -80,7 +86,7 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     const { data, error } = await supabaseAdmin.auth.getUser(token);
 
     if (error || !data.user) {
-      console.log('[Auth] Token verification failed:', error?.message);
+      if (isDev) console.log('[Auth] Token verification failed:', error?.message);
       return null;
     }
 

@@ -15,6 +15,8 @@ import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject, canAccessProject } from '@/lib/auth';
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -47,26 +49,38 @@ type TeamMember = {
  * Hydrate projects with team member information
  */
 async function hydrateProjectsWithTeamMembers(projects: Project[]): Promise<ProjectWithMembers[]> {
-  return Promise.all(
-    projects.map(async (project) => {
-      let teamMembers: TeamMember[] = [];
+  const teamIds = Array.from(
+    new Set(projects.map(p => p.team_id).filter(Boolean))
+  ) as string[];
 
-      if (project.team_id) {
-        try {
-          const { data } = await supabaseAdmin
-            .from('team_members')
-            .select('user_id, role, joined_at')
-            .eq('team_id', project.team_id);
+  if (teamIds.length === 0) {
+    return projects.map(project => ({ ...project, team_members: [] }));
+  }
 
-          teamMembers = data || [];
-        } catch (err) {
-          console.warn(`[Projects] Warning loading team_members for project ${project.id}:`, err);
-        }
-      }
+  try {
+    const { data } = await supabaseAdmin
+      .from('team_members')
+      .select('team_id, user_id, role, joined_at')
+      .in('team_id', teamIds);
 
-      return { ...project, team_members: teamMembers };
-    })
-  );
+    const byTeam = (data || []).reduce((acc: Record<string, TeamMember[]>, row: any) => {
+      if (!acc[row.team_id]) acc[row.team_id] = [];
+      acc[row.team_id].push({
+        user_id: row.user_id,
+        role: row.role,
+        joined_at: row.joined_at,
+      });
+      return acc;
+    }, {});
+
+    return projects.map(project => ({
+      ...project,
+      team_members: project.team_id ? (byTeam[project.team_id] || []) : [],
+    }));
+  } catch (err) {
+    console.warn('[Projects] Warning loading team_members for projects:', err);
+    return projects.map(project => ({ ...project, team_members: [] }));
+  }
 }
 
 /**
@@ -172,12 +186,12 @@ async function getSharedProjects(userId: string, ownedProjectIds: string[]): Pro
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/projects] Request started');
+    if (isDev) console.log('[GET /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[GET /api/projects] Unauthorized request');
+      if (isDev) console.log('[GET /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -185,16 +199,16 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = auth.userId;
-    console.log('[GET /api/projects] Authenticated user:', userId);
+    if (isDev) console.log('[GET /api/projects] Authenticated user:', userId);
 
     // Fetch owned projects
     const ownedProjects = await getOwnedProjects(userId);
-    console.log('[GET /api/projects] Found', ownedProjects.length, 'owned projects');
+    if (isDev) console.log('[GET /api/projects] Found', ownedProjects.length, 'owned projects');
 
     // Fetch shared projects
     const ownedProjectIds = ownedProjects.map(p => p.id);
     const sharedProjects = await getSharedProjects(userId, ownedProjectIds);
-    console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
+    if (isDev) console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
 
     // Hydrate with team member info
     const myProjectsHydrated = await hydrateProjectsWithTeamMembers(ownedProjects);
@@ -228,12 +242,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/projects] Request started');
+    if (isDev) console.log('[POST /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[POST /api/projects] Unauthorized request');
+      if (isDev) console.log('[POST /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -268,7 +282,7 @@ export async function POST(req: NextRequest) {
 
     // Handle auto team assignment
     if (teamId === 'auto') {
-      console.log('[POST /api/projects] Auto-assigning team');
+      if (isDev) console.log('[POST /api/projects] Auto-assigning team');
 
       // Find user's first team
       const { data: userTeams } = await supabaseAdmin
@@ -280,7 +294,7 @@ export async function POST(req: NextRequest) {
 
       if (userTeams?.team_id) {
         teamId = userTeams.team_id;
-        console.log('[POST /api/projects] Using existing team:', teamId);
+        if (isDev) console.log('[POST /api/projects] Using existing team:', teamId);
       } else {
         // Create personal workspace
         const { data: newTeam, error: teamError } = await supabaseAdmin
@@ -301,7 +315,7 @@ export async function POST(req: NextRequest) {
         }
 
         teamId = newTeam.id;
-        console.log('[POST /api/projects] Created new team:', teamId);
+        if (isDev) console.log('[POST /api/projects] Created new team:', teamId);
 
         // Add user as team member
         await supabaseAdmin
@@ -350,7 +364,7 @@ export async function POST(req: NextRequest) {
       console.warn('[POST /api/projects] Warning adding project membership:', err);
     }
 
-    console.log('[POST /api/projects] Project created:', project.id);
+    if (isDev) console.log('[POST /api/projects] Project created:', project.id);
     return NextResponse.json({ project }, { status: 201 });
 
   } catch (err: any) {
@@ -372,12 +386,12 @@ export async function POST(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    console.log('[PATCH /api/projects] Request started');
+    if (isDev) console.log('[PATCH /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[PATCH /api/projects] Unauthorized request');
+      if (isDev) console.log('[PATCH /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -412,7 +426,7 @@ export async function PATCH(req: NextRequest) {
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, projectId);
     if (!canModify) {
-      console.log('[PATCH /api/projects] User not authorized to modify project');
+      if (isDev) console.log('[PATCH /api/projects] User not authorized to modify project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to modify this project' },
         { status: 403 }
@@ -447,7 +461,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    console.log('[PATCH /api/projects] Project updated:', projectId);
+    if (isDev) console.log('[PATCH /api/projects] Project updated:', projectId);
     return NextResponse.json({ project }, { status: 200 });
 
   } catch (err: any) {
@@ -469,12 +483,12 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/projects] Request started');
+    if (isDev) console.log('[DELETE /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[DELETE /api/projects] Unauthorized request');
+      if (isDev) console.log('[DELETE /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -506,7 +520,7 @@ export async function DELETE(req: NextRequest) {
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, projectId);
     if (!canModify) {
-      console.log('[DELETE /api/projects] User not authorized to delete project');
+      if (isDev) console.log('[DELETE /api/projects] User not authorized to delete project');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this project' },
         { status: 403 }
@@ -527,7 +541,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    console.log('[DELETE /api/projects] Project deleted:', projectId);
+    if (isDev) console.log('[DELETE /api/projects] Project deleted:', projectId);
     return NextResponse.json({ success: true }, { status: 200 });
 
   } catch (err: any) {

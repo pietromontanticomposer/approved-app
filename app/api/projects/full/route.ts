@@ -16,9 +16,11 @@ import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
 
+const isDev = process.env.NODE_ENV !== "production";
+
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/projects/full] Fast aggregated load started');
+    if (isDev) console.log('[GET /api/projects/full] Fast aggregated load started');
     const startTime = Date.now();
     const url = new URL(req.url);
     const projectIdFilter = url.searchParams.get('projectId') || null;
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
     // Step 1: Get user's projects (owned + shared) IN PARALLEL
     let baseProjects: any[] = [];
     if (projectIdFilter) {
-      console.log(`[GET /api/projects/full] Single project mode for`, projectIdFilter);
+      if (isDev) console.log(`[GET /api/projects/full] Single project mode for`, projectIdFilter);
       const { data: singleProject, error: singleError } = await supabaseAdmin
         .from('projects')
         .select('*')
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
       }
 
       if (!hasAccess) {
-        console.log(`[GET /api/projects/full] User ${userId} denied for project ${projectIdFilter}`);
+        if (isDev) console.log(`[GET /api/projects/full] User ${userId} denied for project ${projectIdFilter}`);
         return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
 
@@ -109,7 +111,7 @@ export async function GET(req: NextRequest) {
 
     const projectIds = baseProjects.map(p => p.id);
     if (projectIds.length === 0) {
-      console.log(`[GET /api/projects/full] No projects found (${Date.now() - startTime}ms)`);
+      if (isDev) console.log(`[GET /api/projects/full] No projects found (${Date.now() - startTime}ms)`);
       return NextResponse.json({ projects: [] }, { status: 200 });
     }
 
@@ -362,14 +364,18 @@ export async function GET(req: NextRequest) {
     }));
 
     const elapsed = Date.now() - startTime;
-    console.log(`[GET /api/projects/full] ✅ Loaded ${enrichedProjects.length} projects with all data in ${elapsed}ms`);
-    console.log(`  - Total cues: ${allCues?.length || 0}`);
-    console.log(`  - Total versions: ${allVersions.length}`);
-    console.log(`  - Total comments: ${allComments.length}`);
-    console.log(`  - Total references: ${allReferences.length}`);
+    if (isDev) {
+      console.log(`[GET /api/projects/full] ✅ Loaded ${enrichedProjects.length} projects with all data in ${elapsed}ms`);
+      console.log(`  - Total cues: ${allCues?.length || 0}`);
+      console.log(`  - Total versions: ${allVersions.length}`);
+      console.log(`  - Total comments: ${allComments.length}`);
+      console.log(`  - Total references: ${allReferences.length}`);
+    }
     const totalCueNotes = (projectNotes || []).filter(n => !!n.cue_id).length;
-    console.log(`  - Total project notes: ${projectNotes?.length || 0}`);
-    console.log(`  - Total cue notes: ${totalCueNotes}`);
+    if (isDev) {
+      console.log(`  - Total project notes: ${projectNotes?.length || 0}`);
+      console.log(`  - Total cue notes: ${totalCueNotes}`);
+    }
 
     return NextResponse.json({
       projects: enrichedProjects,

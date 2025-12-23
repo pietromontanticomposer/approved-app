@@ -30,10 +30,13 @@ export async function GET(req: Request) {
     if (linkData.expires_at && new Date(linkData.expires_at) < new Date()) return NextResponse.json({ error: "Invite expired" }, { status: 410 });
 
     // Fetch team and project names
+    const authUsers = typeof supabaseAdmin.schema === "function"
+      ? supabaseAdmin.schema("auth").from("users")
+      : supabaseAdmin.from("auth.users");
     const [{ data: team }, { data: project }, { data: invitedBy }] = await Promise.all([
       supabaseAdmin.from('teams').select('id,name').eq('id', linkData.team_id).maybeSingle(),
       linkData.project_id ? supabaseAdmin.from('projects').select('id,name').eq('id', linkData.project_id).maybeSingle() : Promise.resolve({ data: null }),
-      linkData.invited_by ? supabaseAdmin.from('auth.users').select('id,email').eq('id', linkData.invited_by).maybeSingle() : Promise.resolve({ data: null })
+      linkData.invited_by ? authUsers.select('id,email').eq('id', linkData.invited_by).maybeSingle() : Promise.resolve({ data: null })
     ]);
 
     const result = {

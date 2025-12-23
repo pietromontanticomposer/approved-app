@@ -12,6 +12,7 @@ import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
 import { resolveMediaUrl, detectMediaType, parseWaveformData } from "@/lib/mediaUrlResolver";
 
 export const runtime = "nodejs";
+const isDev = process.env.NODE_ENV !== "production";
 
 const isUuid = (value: string) =>
   typeof value === "string" &&
@@ -25,7 +26,7 @@ const isUuid = (value: string) =>
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/versions] Request started');
+    if (isDev) console.log('[GET /api/versions] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
       .eq("cue_id", cueId)
       .order("index_in_cue", { ascending: true });
 
-    console.log('[GET /api/versions] result', { cueId, count: versions?.length, error });
+    if (isDev) console.log('[GET /api/versions] result', { cueId, count: versions?.length, error });
 
     if (error) {
       console.error("[GET /api/versions] Error:", error);
@@ -114,7 +115,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/versions] Request started');
+    if (isDev) console.log('[POST /api/versions] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -190,7 +191,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log('[POST /api/versions] Version created:', data.id);
+    if (isDev) console.log('[POST /api/versions] Version created:', data.id);
     return NextResponse.json({ version: data }, { status: 201 });
   } catch (err: any) {
     console.error("[POST /api/versions] Error", err);
@@ -200,7 +201,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    console.log('[PATCH /api/versions] Request started');
+    if (isDev) console.log('[PATCH /api/versions] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -261,7 +262,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log('[PATCH /api/versions] Version updated:', data.id);
+    if (isDev) console.log('[PATCH /api/versions] Version updated:', data.id);
     return NextResponse.json({ version: data }, { status: 200 });
   } catch (err: any) {
     console.error("[PATCH /api/versions] Error", err);
