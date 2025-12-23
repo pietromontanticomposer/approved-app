@@ -36,6 +36,7 @@ let renderNotesPanelScheduled = false;
 const projectLoadPromises = new Map();
 let cueDragImageEl = null;
 const previewResizeObservers = new WeakMap();
+const cueNotesLoadInFlight = new Set();
 
 function onWaveSurferReady(cb) {
   if (typeof WaveSurfer !== 'undefined') {
@@ -2079,6 +2080,54 @@ function reorderCueDom(project) {
     cueListEl.appendChild(node);
   });
   return true;
+}
+
+function refreshCueNotesInline() {
+  if (!cueListEl) return;
+  cueListEl.querySelectorAll('.cue-notes-list[data-cue-id]').forEach(list => {
+    const cueId = list.getAttribute('data-cue-id');
+    if (!cueId) return;
+    renderCueNotesInline(cueId, list);
+  });
+}
+
+async function ensureCueNotesLoaded(project) {
+  if (!project || !project.id) return;
+  if (project.cueNotes && Object.keys(project.cueNotes).length) return;
+
+  const cached = projectNotesStore[project.id];
+  if (cached && cached.cue && Object.keys(cached.cue).length) {
+    project.cueNotes = cloneCueNotesMap(cached.cue);
+    refreshCueNotesInline();
+    return;
+  }
+
+  if (cueNotesLoadInFlight.has(project.id)) return;
+  cueNotesLoadInFlight.add(project.id);
+
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/notes?projectId=${project.id}`, { headers });
+    if (!res.ok) throw new Error(`Failed to load cue notes (${res.status})`);
+    const data = await res.json();
+    const notes = Array.isArray(data.notes) ? data.notes : [];
+    const cueMap = {};
+    notes.forEach(note => {
+      if (!note.cue_id) return;
+      if (!cueMap[note.cue_id]) cueMap[note.cue_id] = [];
+      cueMap[note.cue_id].push(note);
+    });
+    project.cueNotes = cueMap;
+    if (!projectNotesStore[project.id]) {
+      projectNotesStore[project.id] = { general: [], cue: {}, loadedAt: Date.now() };
+    }
+    projectNotesStore[project.id].cue = cloneCueNotesMap(cueMap);
+    refreshCueNotesInline();
+  } catch (err) {
+    console.warn('[Notes] Failed to load cue notes inline', err);
+  } finally {
+    cueNotesLoadInFlight.delete(project.id);
+  }
 }
 
 // =======================
@@ -4429,6 +4478,7 @@ function renderCueList(options = {}) {
   });
 
   applyCuesCollapsedState();
+  ensureCueNotesLoaded(project);
 }
 
 function renderVersionPreviews() {
