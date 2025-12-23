@@ -1472,7 +1472,7 @@ body.resizing {
 }
 
 .player-preview {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.85), rgba(2, 6, 23, 0.9));
+  background: radial-gradient(circle at 10% 20%, var(--surface-3), var(--bg-core) 70%);
   margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1483,7 +1483,7 @@ body.resizing {
 
 #waveform {
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.7), rgba(2, 6, 23, 0.85));
+  background: radial-gradient(circle at 12% 18%, var(--surface-3), var(--bg-core) 70%);
 }
 
 .confirm-input {
