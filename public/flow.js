@@ -37,6 +37,7 @@ const projectLoadPromises = new Map();
 let cueDragImageEl = null;
 const previewResizeObservers = new WeakMap();
 const cueNotesLoadInFlight = new Set();
+const commentsLoadInFlight = new Set();
 
 function onWaveSurferReady(cb) {
   if (typeof WaveSurfer !== 'undefined') {
@@ -2981,6 +2982,51 @@ function showConfirm(message) {
   });
 }
 
+function normalizeCommentRows(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  return safeRows.map(rc => ({
+    id: rc.id,
+    time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
+    author: rc.author || 'Client',
+    actorId: rc.actor_id || null,
+    text: rc.text || '',
+    created_at: rc.created_at
+  }));
+}
+
+async function ensureVersionCommentsLoaded(projectId, version) {
+  if (!projectId || !version || version.commentsLoaded) return;
+  if (commentsLoadInFlight.has(version.id)) return;
+  commentsLoadInFlight.add(version.id);
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `/api/comments?versionId=${encodeURIComponent(version.id)}&projectId=${encodeURIComponent(projectId)}`,
+      { headers }
+    );
+    if (!res.ok) throw new Error(`Failed to load comments (${res.status})`);
+    const data = await res.json();
+    const rows = normalizeCommentRows(data.comments || []);
+    if (Array.isArray(version.comments) && version.comments.length) {
+      const byId = new Map();
+      version.comments.forEach(c => {
+        if (c && c.id) byId.set(c.id, c);
+      });
+      rows.forEach(c => {
+        if (c && c.id) byId.set(c.id, c);
+      });
+      version.comments = Array.from(byId.values());
+    } else {
+      version.comments = rows;
+    }
+    version.commentsLoaded = true;
+  } catch (err) {
+    console.warn('[Comments] Failed to load comments', err);
+  } finally {
+    commentsLoadInFlight.delete(version.id);
+  }
+}
+
 function renderComments() {
   const ctx = getActiveContext();
   if (!ctx || !ctx.version.media) {
@@ -2991,6 +3037,15 @@ function renderComments() {
   }
 
   const { version } = ctx;
+  if (!version.commentsLoaded) {
+    commentsListEl.innerHTML = `<li class="comments-loading">${tr("misc.loading", {}, "Loading…")}</li>`;
+    commentsSummaryEl.textContent = tr("misc.loading", {}, "Loading…");
+    ensureVersionCommentsLoaded(state.activeProjectId, version).then(() => {
+      renderComments();
+      updateReviewUI(getActiveProject(), version);
+    });
+    return;
+  }
   const arr = version.comments;
 
   commentsListEl.innerHTML = "";
@@ -3239,7 +3294,10 @@ async function loadProjectCues(projectId) {
 
     try {
       log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-      const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
+      const response = await fetch(
+        `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0`,
+        { headers }
+      );
       if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
       const payload = await response.json();
@@ -3257,6 +3315,10 @@ async function loadProjectCues(projectId) {
             if (version && version.media && version.media.waveform) {
               version.media.waveformSaved = true;
             }
+            if (!Array.isArray(version.comments)) {
+              version.comments = [];
+            }
+            version.commentsLoaded = false;
           });
         }
       });
@@ -3341,6 +3403,7 @@ async function loadProjectCuesLegacy(projectId, headers) {
                   }
                 : null,
               comments: [],
+              commentsLoaded: false,
               deliverables: [],
               status: v.status || "in_review"
             };
@@ -3352,14 +3415,8 @@ async function loadProjectCuesLegacy(projectId, headers) {
               if (commentResp.ok) {
                 const commentData = await commentResp.json();
                 const rows = commentData.comments || [];
-                ver.comments = rows.map(rc => ({
-                  id: rc.id,
-                  time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
-                  author: rc.author || 'Client',
-                  actorId: rc.actor_id || null,
-                  text: rc.text || '',
-                  created_at: rc.created_at
-                }));
+                ver.comments = normalizeCommentRows(rows);
+                ver.commentsLoaded = true;
               }
             } catch (e) {
               console.warn('[Flow] Failed to load comments for version (legacy)', v.id, e);
@@ -6259,10 +6316,14 @@ function refreshTranslationsOnly() {
     updateReviewUI(project, ctx.version);
     const statusKey = normalizeVersionStatus(ctx.version.status || "in_review");
     playerBadgeEl.textContent = getStatusLabel(statusKey);
-    const commentCount = ctx.version.comments.length;
-    commentsSummaryEl.textContent = commentCount
-      ? tr("comments.count", { n: commentCount })
-      : tr("comments.noComments");
+    if (!ctx.version.commentsLoaded) {
+      commentsSummaryEl.textContent = tr("misc.loading", {}, "Loading…");
+    } else {
+      const commentCount = ctx.version.comments.length;
+      commentsSummaryEl.textContent = commentCount
+        ? tr("comments.count", { n: commentCount })
+        : tr("comments.noComments");
+    }
   } else {
     renderComments();
     if (playerBadgeEl && playerBadgeEl.dataset.status === "reference") {
