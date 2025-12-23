@@ -21,6 +21,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendor/minified assets should not be linted.
+    "public/vendor/**",
   ]),
 ]);
 
