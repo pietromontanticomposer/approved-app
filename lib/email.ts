@@ -1,8 +1,6 @@
 import nodemailer from 'nodemailer';
 
-// SMTP configuration (Gmail)
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
+// Gmail SMTP configuration
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 
@@ -14,15 +12,15 @@ let transporter: any = null;
 function getTransporter() {
   if (transporter) return transporter;
 
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  if (!SMTP_USER || !SMTP_PASS) {
     console.warn('[Email] SMTP not configured');
     return null;
   }
 
+  // Use Gmail service directly - nodemailer handles the connection details
+  // This avoids DNS resolution issues on serverless platforms like Vercel
   transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT || 587,
-    secure: SMTP_PORT === 465,
+    service: 'gmail',
     auth: {
       user: SMTP_USER,
       pass: SMTP_PASS,
