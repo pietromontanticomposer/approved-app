@@ -9,17 +9,6 @@ const state = {
   playerMode: "review" // "review" | "refs"
 };
 
-const isDev = typeof window !== "undefined" && (
-  window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1"
-);
-const log = (...args) => {
-  if (!isDev) return;
-  if (typeof console !== "undefined" && typeof console.log === "function") {
-    console.log(...args);
-  }
-};
-
 let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
@@ -29,49 +18,33 @@ const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
 const waveformPersisted = new Set();
 const waveformPersistInFlight = new Set();
-const waveSurferWait = { pending: [], timer: null, attempts: 0 };
-let renderVersionPreviewsScheduled = false;
-let renderVersionPreviewsRetryTimer = null;
-let renderNotesPanelScheduled = false;
-const projectLoadPromises = new Map();
-let cueDragImageEl = null;
-const previewResizeObservers = new WeakMap();
-const cueNotesLoadInFlight = new Set();
 
-function onWaveSurferReady(cb) {
-  if (typeof WaveSurfer !== 'undefined') {
-    cb();
-    return;
-  }
-  waveSurferWait.pending.push(cb);
-  if (waveSurferWait.timer) return;
-  const tick = () => {
-    if (typeof WaveSurfer !== 'undefined') {
-      const pending = waveSurferWait.pending.slice();
-      waveSurferWait.pending.length = 0;
-      waveSurferWait.timer = null;
-      pending.forEach(fn => {
-        try { fn(); } catch (e) {}
+// Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
+const waveformQueue = [];
+let waveformGenerating = 0;
+const MAX_CONCURRENT_WAVEFORMS = 2; // Only generate 2 waveforms at a time
+
+function processWaveformQueue() {
+  while (waveformQueue.length > 0 && waveformGenerating < MAX_CONCURRENT_WAVEFORMS) {
+    const task = waveformQueue.shift();
+    if (task && typeof task.execute === 'function') {
+      waveformGenerating++;
+      task.execute().finally(() => {
+        waveformGenerating--;
+        processWaveformQueue();
       });
-      return;
     }
-    waveSurferWait.attempts += 1;
-    if (waveSurferWait.attempts > 25) {
-      waveSurferWait.timer = null;
-      waveSurferWait.pending.length = 0;
-      console.warn('[WaveSurfer] Timed out waiting for library load');
-      return;
-    }
-    waveSurferWait.timer = setTimeout(tick, 200);
-  };
-  waveSurferWait.timer = setTimeout(tick, 200);
+  }
 }
 
-function clearCueDragImage() {
-  if (cueDragImageEl) {
-    cueDragImageEl.remove();
-    cueDragImageEl = null;
-  }
+function queueWaveformGeneration(version, container, execute) {
+  // Skip if already queued or generating
+  const existingIdx = waveformQueue.findIndex(t => t.versionId === version.id);
+  if (existingIdx >= 0) return;
+  if (miniWaves[version.id]) return;
+
+  waveformQueue.push({ versionId: version.id, version, container, execute });
+  processWaveformQueue();
 }
 
 async function persistWaveformPeaks(version, peaks) {
@@ -1162,38 +1135,6 @@ function getProjectById(id) {
   return state.projects.find(x => x.id === id) || null;
 }
 
-function scheduleProjectPrefetch(activeId) {
-  if (!state.projects || state.projects.length <= 1) return;
-  const ids = state.projects.map(p => p.id).filter(Boolean);
-  let index = 0;
-
-  const nextId = () => {
-    while (index < ids.length) {
-      const id = ids[index++];
-      if (id === activeId) continue;
-      const p = getProjectById(id);
-      if (!p || (p.cues && p.cues.length)) continue;
-      if (projectLoadPromises.has(id)) continue;
-      return id;
-    }
-    return null;
-  };
-
-  const run = () => {
-    const id = nextId();
-    if (!id) return;
-    loadProjectCues(id, { render: false }).finally(() => {
-      setTimeout(run, 400);
-    });
-  };
-
-  if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(() => setTimeout(run, 600));
-  } else {
-    setTimeout(run, 800);
-  }
-}
-
 async function selectProject(projectId) {
   const project = getProjectById(projectId);
   if (!project) return;
@@ -1202,17 +1143,14 @@ async function selectProject(projectId) {
 
   // If project cues are not loaded yet (shouldn't happen with /api/projects/full)
   // load them now
-  renderAll();
   if (!project.cues || project.cues.length === 0) {
-    loadProjectCues(projectId).catch(err => {
-      console.warn('[Flow] Failed to load cues for project selection', err);
-    });
+    await loadProjectCues(projectId);
   }
-  if (!projectNotesStore[projectId]) {
-    loadProjectNotes(projectId).catch(err => {
-      console.warn('[Flow] Failed to load notes for project selection', err);
-    });
-  }
+
+  renderAll();
+  loadProjectNotes(projectId).catch(err => {
+    console.warn('[Flow] Failed to load notes for project selection', err);
+  });
 }
 
 function getCue(project, cueId) {
@@ -1329,7 +1267,7 @@ function updateNamesInDOM() {
 // PROJECT CRUD
 // =======================
 async function createNewProject() {
-  log("[FlowPreview] createNewProject");
+  console.log("[FlowPreview] createNewProject");
   const defaultName = "New project";
   const name = await showPromptDialog({
     title: tr("project.createPrompt", {}, "Project name"),
@@ -1370,7 +1308,7 @@ async function createNewProject() {
       projects = [...my, ...shared];
     }
 
-    log("[Flow] Loaded projects:", projects.length);
+    console.log("[Flow] Loaded projects:", projects.length);
 
     // Populate state with projects from DB (preserve owner/team_members)
     state.projects = projects.map(p => ({
@@ -1519,7 +1457,7 @@ async function createCueFromFile(file) {
       const serverCueId = payload && (payload.cueId || (payload.cue && payload.cue.id));
       if (serverCueId) {
         // Replace the temporary client id with server-generated UUID so future calls use the correct id
-        log('[Flow] Cue saved to database (server id):', serverCueId, 'clientTempId:', cue.id);
+        console.log('[Flow] Cue saved to database (server id):', serverCueId, 'clientTempId:', cue.id);
         // Update cue object and project references
         const oldId = cue.id;
         cue.id = serverCueId;
@@ -1527,7 +1465,7 @@ async function createCueFromFile(file) {
         const ci = project.cues.findIndex(c => c.id === oldId);
         if (ci >= 0) project.cues[ci].id = serverCueId;
       } else {
-        log('[Flow] Cue saved to database (no server id returned), client id kept:', cue.id);
+        console.log('[Flow] Cue saved to database (no server id returned), client id kept:', cue.id);
       }
     }
   } catch (err) {
@@ -1756,16 +1694,16 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
         // Real progress from 0 to 95% during upload
         const percent = Math.round((e.loaded / e.total) * 95);
         gentlyAdvanceUpload(jobId, percent, tr("upload.uploading"));
-        log(`[Upload] Progress: ${percent}%`);
+        console.log(`[Upload] Progress: ${percent}%`);
       }
     });
     
     xhr.addEventListener("load", async () => {
-      log("[Upload] HTTP transfer complete, processing response");
+      console.log("[Upload] HTTP transfer complete, processing response");
       try {
         if (xhr.status === 200 || xhr.status === 201) {
           const result = JSON.parse(xhr.responseText || "{}");
-          log("[Upload] Server response received:", result);
+          console.log("[Upload] Server response received:", result);
           updateUploadJob(jobId, 98, tr("upload.finalizing"));
 
           // Update version with the signed URL from server
@@ -1798,11 +1736,18 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
                   version.media.url = result.mediaUrl || version.media.url;
                   version.isUploading = false;
                   version.uploadProgress = 100;
-                  log("[Upload] Version updated with URL:", version.media.url);
+                  console.log("[Upload] Version updated with URL:", version.media.url);
 
                   const saved = await saveVersionToDatabase(project.id, cue.id, version, result.path);
                   if (saved) {
                     markUploadJobComplete(jobId, tr("upload.completed"));
+                    // Generate and upload preview images (waveform/thumbnail) in background
+                    const mediaType = version.media.type;
+                    const mediaUrl = version.media.url || result.path;
+                    if (mediaType && mediaUrl) {
+                      generateAndUploadPreviews(project.id, cue.id, version.id, mediaType, mediaUrl)
+                        .catch(err => console.warn('[Preview] Background generation failed:', err));
+                    }
                   } else {
                     markUploadJobError(jobId, tr("upload.error"));
                   }
@@ -1865,7 +1810,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
       console.warn('[Upload] Failed to get auth session:', e);
     }
 
-    log("[Upload] Starting upload:", file.name, `(${Math.round(file.size / 1024)} KB)`);
+    console.log("[Upload] Starting upload:", file.name, `(${Math.round(file.size / 1024)} KB)`);
     xhr.send(formData);
     
   } catch (err) {
@@ -1909,7 +1854,7 @@ async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
       return false;
     }
 
-    log('[Flow] Version saved to database:', version.id);
+    console.log('[Flow] Version saved to database:', version.id);
     return true;
   } catch (err) {
     console.error('[Flow] Exception saving version:', err);
@@ -2103,66 +2048,6 @@ function applyCuesCollapsedState() {
   }
 }
 
-function reorderCueDom(project) {
-  if (!project || !cueListEl) return false;
-  const nodes = project.cues.map(cue =>
-    cueListEl.querySelector(`details.cue-block[data-cue-id="${cue.id}"]`)
-  ).filter(Boolean);
-  if (!nodes.length) return false;
-  nodes.forEach(node => {
-    cueListEl.appendChild(node);
-  });
-  return true;
-}
-
-function refreshCueNotesInline() {
-  if (!cueListEl) return;
-  cueListEl.querySelectorAll('.cue-notes-list[data-cue-id]').forEach(list => {
-    const cueId = list.getAttribute('data-cue-id');
-    if (!cueId) return;
-    renderCueNotesInline(cueId, list);
-  });
-}
-
-async function ensureCueNotesLoaded(project) {
-  if (!project || !project.id) return;
-  if (project.cueNotes && Object.keys(project.cueNotes).length) return;
-
-  const cached = projectNotesStore[project.id];
-  if (cached && cached.cue && Object.keys(cached.cue).length) {
-    project.cueNotes = cloneCueNotesMap(cached.cue);
-    refreshCueNotesInline();
-    return;
-  }
-
-  if (cueNotesLoadInFlight.has(project.id)) return;
-  cueNotesLoadInFlight.add(project.id);
-
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`/api/notes?projectId=${project.id}`, { headers });
-    if (!res.ok) throw new Error(`Failed to load cue notes (${res.status})`);
-    const data = await res.json();
-    const notes = Array.isArray(data.notes) ? data.notes : [];
-    const cueMap = {};
-    notes.forEach(note => {
-      if (!note.cue_id) return;
-      if (!cueMap[note.cue_id]) cueMap[note.cue_id] = [];
-      cueMap[note.cue_id].push(note);
-    });
-    project.cueNotes = cueMap;
-    if (!projectNotesStore[project.id]) {
-      projectNotesStore[project.id] = { general: [], cue: {}, loadedAt: Date.now() };
-    }
-    projectNotesStore[project.id].cue = cloneCueNotesMap(cueMap);
-    refreshCueNotesInline();
-  } catch (err) {
-    console.warn('[Notes] Failed to load cue notes inline', err);
-  } finally {
-    cueNotesLoadInFlight.delete(project.id);
-  }
-}
-
 // =======================
 // MINI WAVEFORM (CUE VERSIONS)
 // =======================
@@ -2177,7 +2062,25 @@ function createMiniWave(version, container) {
   container.style.position = "relative";
   container.style.overflow = "hidden";
 
-  // First check if we have peaks in version.media.waveform
+  // PRIORITY 1: Check if we have a saved waveform IMAGE (fastest - just load the image)
+  if (version.media.waveformImageUrl) {
+    container.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = getProxiedUrl(version.media.waveformImageUrl);
+    img.style.width = "100%";
+    img.style.height = "36px";
+    img.style.objectFit = "cover";
+    img.style.borderRadius = "4px";
+    img.onerror = () => {
+      // If image fails to load, fall back to waveform generation
+      version.media.waveformImageUrl = null;
+      createMiniWave(version, container);
+    };
+    container.appendChild(img);
+    return;
+  }
+
+  // PRIORITY 2: Check if we have peaks in version.media.waveform
   let peaks = getWaveformPeaks(version.media.waveform);
 
   // Also check if peaks were extracted by WaveSurfer and cached
@@ -2200,80 +2103,89 @@ function createMiniWave(version, container) {
   }
 
   // No peaks available - need WaveSurfer to generate them
-  // But first check if we already have a WaveSurfer instance loading/ready
-  if (miniWaves[version.id]) {
-    // Already have a WaveSurfer instance - don't recreate
-    // If the container was replaced, destroy and recreate
-    if (container.querySelector("canvas")) return;
-    try {
-      miniWaves[version.id].destroy();
-    } catch (e) {}
-    delete miniWaves[version.id];
-  }
+  // Show placeholder while loading
+  container.innerHTML = '<div class="waveform-loading" style="height:36px;background:rgba(15,23,42,0.4);border-radius:4px;display:flex;align-items:center;justify-content:center;"><span style="color:rgba(148,163,184,0.6);font-size:10px;">Loading...</span></div>';
 
-  container.innerHTML = "";
-
-  // Check if WaveSurfer is available
-  if (typeof WaveSurfer === 'undefined') {
-    console.warn('[createMiniWave] WaveSurfer not loaded yet');
-    container.classList.add("is-placeholder");
-    container.innerHTML = `<span class="preview-label placeholder">Audio</span>`;
-    onWaveSurferReady(() => {
-      if (!container.isConnected) return;
-      createMiniWave(version, container);
-    });
-    return;
-  }
-
-  const ws = WaveSurfer.create({
-    container,
-    height: 36,
-    waveColor: "rgba(148,163,184,0.8)",
-    progressColor: "rgba(56,189,248,1)",
-    cursorWidth: 0,
-    barWidth: 2,
-    barGap: 1,
-    interact: false,
-    responsive: true,
-    normalize: true
-  });
-
-  miniWaves[version.id] = ws;
-
-  const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-  ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
-
-  ws.on("ready", () => {
-    if (!version.media.duration) {
-      version.media.duration = ws.getDuration();
-    }
-
-      const metaEl = document.querySelector(
-        `.version-row[data-version-id="${version.id}"] .version-meta`
-      );
-
-      if (metaEl) {
-        metaEl.textContent = getVersionMetaText(version);
-      }
-
-    ws.drawBuffer();
-
-    // Extract peaks and cache them so we don't need to reload audio next time
-    try {
-      const backend = ws.backend;
-      if (backend && backend.getPeaks) {
-        const extractedPeaks = backend.getPeaks(256);
-        if (extractedPeaks && extractedPeaks.length) {
-          // Store peaks on the version object for future use
-          version.media.waveform = extractedPeaks;
-          // Also cache the peaks in parse cache
-          waveformParseCache.set(version.id, extractedPeaks);
-          persistWaveformPeaks(version, extractedPeaks);
+  // Queue waveform generation to avoid overloading
+  queueWaveformGeneration(version, container, () => {
+    return new Promise((resolve) => {
+      // Check if already have a WaveSurfer instance loading/ready
+      if (miniWaves[version.id]) {
+        if (container.querySelector("canvas")) {
+          resolve();
+          return;
         }
+        try {
+          miniWaves[version.id].destroy();
+        } catch (e) {}
+        delete miniWaves[version.id];
       }
-    } catch (e) {
-      console.warn('[MiniWave] Could not extract peaks', e);
-    }
+
+      container.innerHTML = "";
+
+      // Check if WaveSurfer is available
+      if (typeof WaveSurfer === 'undefined') {
+        console.warn('[createMiniWave] WaveSurfer not loaded yet');
+        resolve();
+        return;
+      }
+
+      const ws = WaveSurfer.create({
+        container,
+        height: 36,
+        waveColor: "rgba(148,163,184,0.8)",
+        progressColor: "rgba(56,189,248,1)",
+        cursorWidth: 0,
+        barWidth: 2,
+        barGap: 1,
+        interact: false,
+        responsive: true,
+        normalize: true
+      });
+
+      miniWaves[version.id] = ws;
+
+      const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
+      ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
+
+      ws.on("ready", () => {
+        if (!version.media.duration) {
+          version.media.duration = ws.getDuration();
+        }
+
+        const metaEl = document.querySelector(
+          `.version-row[data-version-id="${version.id}"] .version-meta`
+        );
+
+        if (metaEl) {
+          metaEl.textContent = getVersionMetaText(version);
+        }
+
+        ws.drawBuffer();
+
+        // Extract peaks and cache them so we don't need to reload audio next time
+        try {
+          const backend = ws.backend;
+          if (backend && backend.getPeaks) {
+            const extractedPeaks = backend.getPeaks(256);
+            if (extractedPeaks && extractedPeaks.length) {
+              // Store peaks on the version object for future use
+              version.media.waveform = extractedPeaks;
+              // Also cache the peaks in parse cache
+              waveformParseCache.set(version.id, extractedPeaks);
+              persistWaveformPeaks(version, extractedPeaks);
+            }
+          }
+        } catch (e) {
+          console.warn('[MiniWave] Could not extract peaks', e);
+        }
+        resolve();
+      });
+
+      ws.on("error", () => {
+        resolve();
+      });
+    });
   });
 }
 
@@ -2309,11 +2221,6 @@ function createRefMiniWave(refVersion, container) {
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
     console.warn('[createRefMiniWave] WaveSurfer not loaded yet');
-    container.innerHTML = `<span class="preview-label placeholder">Audio</span>`;
-    onWaveSurferReady(() => {
-      if (!container.isConnected) return;
-      createRefMiniWave(refVersion, container);
-    });
     return;
   }
 
@@ -2357,12 +2264,12 @@ function createRefMiniWave(refVersion, container) {
 function generateVideoThumbnailRaw(url) {
   return new Promise(resolve => {
     if (!url) {
-      log("[generateVideoThumbnailRaw] No URL provided");
+      console.log("[generateVideoThumbnailRaw] No URL provided");
       return resolve(null);
     }
 
     const startTs = Date.now();
-    log("[generateVideoThumbnailRaw] Starting with URL:", url);
+    console.log("[generateVideoThumbnailRaw] Starting with URL:", url);
 
     const video = document.createElement("video");
     // Prefer anonymous CORS for canvas extraction; Supabase buckets should allow CORS for this to work.
@@ -2405,7 +2312,7 @@ function generateVideoThumbnailRaw(url) {
     }
 
     video.addEventListener("loadedmetadata", () => {
-      log("[generateVideoThumbnailRaw] loadedmetadata event fired, duration:", video.duration);
+      console.log("[generateVideoThumbnailRaw] loadedmetadata event fired, duration:", video.duration);
       try {
         const t = Math.min(video.duration * 0.2, video.duration - 0.1);
         video.currentTime = isFinite(t) && t > 0 ? t : 0;
@@ -2416,7 +2323,7 @@ function generateVideoThumbnailRaw(url) {
     });
 
     video.addEventListener("seeked", () => {
-      log("[generateVideoThumbnailRaw] seeked event fired");
+      console.log("[generateVideoThumbnailRaw] seeked event fired");
       try {
         const w = video.videoWidth || 320;
         const h = video.videoHeight || 180;
@@ -2426,7 +2333,7 @@ function generateVideoThumbnailRaw(url) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const dataURL = canvas.toDataURL("image/png");
-        log("[generateVideoThumbnailRaw] Generated thumbnail in", Date.now() - startTs, "ms");
+        console.log("[generateVideoThumbnailRaw] Generated thumbnail in", Date.now() - startTs, "ms");
         resolve_once(dataURL);
       } catch (e) {
         console.error("[generateVideoThumbnailRaw] Error drawing canvas:", e);
@@ -2437,12 +2344,12 @@ function generateVideoThumbnailRaw(url) {
     video.addEventListener("error", (e) => {
       const errMsg = e.target?.error?.message || "Unknown error";
       console.warn("[generateVideoThumbnailRaw] Video CORS/load error:", errMsg);
-      log("[generateVideoThumbnailRaw] Failed in", Date.now() - startTs, "ms");
+      console.log("[generateVideoThumbnailRaw] Failed in", Date.now() - startTs, "ms");
       resolve_once(null);
     });
 
     video.addEventListener("canplay", () => {
-      log("[generateVideoThumbnailRaw] canplay event fired");
+      console.log("[generateVideoThumbnailRaw] canplay event fired");
       // Try to seek if we haven't fired seeked yet
       if (!resolved) {
         try {
@@ -2454,7 +2361,7 @@ function generateVideoThumbnailRaw(url) {
 
     // Set a timeout - if metadata isn't loaded in 4s, give up
     timeoutId = setTimeout(() => {
-      log("[generateVideoThumbnailRaw] Timeout - video did not load metadata after", Date.now() - startTs, "ms");
+      console.log("[generateVideoThumbnailRaw] Timeout - video did not load metadata after", Date.now() - startTs, "ms");
       resolve_once(null);
     }, 4000);
   });
@@ -2464,6 +2371,181 @@ function generateVideoThumbnailRaw(url) {
 function generateVideoThumbnailFromUrl(version) {
   const url = version.media?.url;
   return generateVideoThumbnailRaw(url);
+}
+
+// =======================
+// PREVIEW GENERATION & UPLOAD
+// =======================
+
+/**
+ * Generate waveform as PNG image data URL
+ * Uses Web Audio API to analyze audio and render to canvas
+ */
+async function generateWaveformImage(audioUrl, width = 200, height = 40) {
+  return new Promise(async (resolve) => {
+    try {
+      console.log('[Waveform] Generating image from:', audioUrl);
+      const startTs = Date.now();
+
+      // Fetch audio data
+      const response = await fetch(getProxiedUrl(audioUrl));
+      if (!response.ok) {
+        console.warn('[Waveform] Failed to fetch audio');
+        return resolve(null);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      // Decode audio
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      let audioBuffer;
+      try {
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      } catch (e) {
+        console.warn('[Waveform] Failed to decode audio:', e);
+        audioContext.close();
+        return resolve(null);
+      }
+
+      // Get audio data
+      const channelData = audioBuffer.getChannelData(0);
+      const samples = channelData.length;
+      const samplesPerPixel = Math.floor(samples / width);
+
+      // Calculate peaks
+      const peaks = [];
+      for (let i = 0; i < width; i++) {
+        const start = i * samplesPerPixel;
+        const end = Math.min(start + samplesPerPixel, samples);
+        let max = 0;
+        for (let j = start; j < end; j++) {
+          const abs = Math.abs(channelData[j]);
+          if (abs > max) max = abs;
+        }
+        peaks.push(max);
+      }
+
+      audioContext.close();
+
+      // Render to canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, width, height);
+
+      // Waveform bars
+      ctx.fillStyle = '#ffc107';
+      const barWidth = 2;
+      const gap = 1;
+      const centerY = height / 2;
+
+      for (let i = 0; i < peaks.length; i++) {
+        const x = i * (barWidth + gap);
+        if (x >= width) break;
+        const barHeight = Math.max(2, peaks[i] * (height - 4));
+        ctx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
+      }
+
+      const dataUrl = canvas.toDataURL('image/png');
+      console.log('[Waveform] Generated in', Date.now() - startTs, 'ms');
+      resolve(dataUrl);
+    } catch (err) {
+      console.error('[Waveform] Error generating image:', err);
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Upload a preview image (waveform or thumbnail) to storage
+ */
+async function uploadPreviewImage(projectId, versionId, previewType, imageData) {
+  if (!projectId || !versionId || !imageData) return null;
+
+  try {
+    console.log('[Preview] Uploading', previewType, 'for version', versionId);
+
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    const response = await fetch('/api/upload-preview', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        projectId,
+        versionId,
+        previewType,
+        imageData
+      })
+    });
+
+    if (!response.ok) {
+      console.warn('[Preview] Upload failed:', response.status);
+      return null;
+    }
+
+    const result = await response.json();
+    console.log('[Preview] Uploaded successfully:', result.path);
+    return result.path;
+  } catch (err) {
+    console.error('[Preview] Upload error:', err);
+    return null;
+  }
+}
+
+/**
+ * Generate and upload all previews for a version after media upload completes
+ */
+async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType, mediaUrl) {
+  console.log('[Preview] Starting preview generation for', mediaType, versionId);
+
+  if (mediaType === 'video') {
+    // Generate and upload video thumbnail
+    const thumbnailData = await generateVideoThumbnailRaw(mediaUrl);
+    if (thumbnailData) {
+      const savedPath = await uploadPreviewImage(projectId, versionId, 'thumbnail', thumbnailData);
+      if (savedPath) {
+        // Update local version data
+        const project = getProjectById(projectId);
+        if (project) {
+          const cue = project.cues.find(c => c.id === cueId);
+          if (cue) {
+            const version = cue.versions.find(v => v.id === versionId);
+            if (version && version.media) {
+              version.media.thumbnailUrl = savedPath;
+              version.media.thumbnailSaved = true;
+            }
+          }
+        }
+        renderVersionPreviews();
+      }
+    }
+  } else if (mediaType === 'audio') {
+    // Generate and upload waveform image
+    const waveformData = await generateWaveformImage(mediaUrl);
+    if (waveformData) {
+      const savedPath = await uploadPreviewImage(projectId, versionId, 'waveform', waveformData);
+      if (savedPath) {
+        // Update local version data
+        const project = getProjectById(projectId);
+        if (project) {
+          const cue = project.cues.find(c => c.id === cueId);
+          if (cue) {
+            const version = cue.versions.find(v => v.id === versionId);
+            if (version && version.media) {
+              version.media.waveformImageUrl = savedPath;
+              version.media.waveformSaved = true;
+            }
+          }
+        }
+        renderVersionPreviews();
+      }
+    }
+  }
 }
 
 // =======================
@@ -2535,10 +2617,6 @@ function loadAudioPlayer(project, cue, version) {
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
     console.warn('[loadAudioPlayer] WaveSurfer not loaded yet');
-    onWaveSurferReady(() => {
-      if (!version || !version.media || !playerMediaEl.isConnected) return;
-      loadAudioPlayer(project, cue, version);
-    });
     return;
   }
 
@@ -2566,7 +2644,7 @@ function loadAudioPlayer(project, cue, version) {
 
   mainWave.on && mainWave.on("ready", () => {
     try {
-      log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
+      console.log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
     } catch (e) {}
   });
 
@@ -2729,10 +2807,6 @@ function renderReferencePlayer(project) {
     // Check if WaveSurfer is available
     if (typeof WaveSurfer === 'undefined') {
       console.warn('[showReferenceInPlayer] WaveSurfer not loaded yet');
-      onWaveSurferReady(() => {
-        if (!playerMediaEl.isConnected) return;
-        renderReferencePlayer(project);
-      });
       return;
     }
 
@@ -3257,89 +3331,75 @@ function renderComments() {
 // =======================
 // LOAD PROJECT DATA FROM API
 // =======================
-async function loadProjectCues(projectId, options = {}) {
+async function loadProjectCues(projectId) {
   const project = getProjectById(projectId);
   if (!project) return;
-  if (projectLoadPromises.has(projectId)) {
-    return projectLoadPromises.get(projectId);
-  }
 
-  const loader = (async () => {
-    const headers =
-      (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
-        ? window.flowAuth.getAuthHeaders()
-        : { 'Content-Type': 'application/json' };
+  const headers =
+    (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
+      ? window.flowAuth.getAuthHeaders()
+      : { 'Content-Type': 'application/json' };
 
-    try {
-      log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-      const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
-      if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
+  try {
+    console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
+    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
+    if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
-      const payload = await response.json();
-      const projectData = (payload.projects || []).find(p => p.id === projectId);
-      if (!projectData) throw new Error('Project missing in aggregated response');
+    const payload = await response.json();
+    const projectData = (payload.projects || []).find(p => p.id === projectId);
+    if (!projectData) throw new Error('Project missing in aggregated response');
 
-      project.cues = projectData.cues || [];
-      project.cues.forEach(cue => {
-        if (typeof cue.maxRevisions !== "number" || cue.maxRevisions <= 0) {
-          const localMax = loadCueMaxRevisions(cue.id);
-          if (localMax) cue.maxRevisions = localMax;
-        }
-        if (Array.isArray(cue.versions)) {
-          cue.versions.forEach(version => {
-            if (version && version.media && version.media.waveform) {
-              version.media.waveformSaved = true;
-            }
-          });
-        }
-      });
-      if (project.cues.length > 0) {
-        project.activeCueId = project.cues[0].id;
-        const firstVersion = project.cues[0].versions && project.cues[0].versions[0];
-        project.activeVersionId = firstVersion ? firstVersion.id : null;
-      } else {
-        project.activeCueId = null;
-        project.activeVersionId = null;
+    project.cues = projectData.cues || [];
+    project.cues.forEach(cue => {
+      if (typeof cue.maxRevisions !== "number" || cue.maxRevisions <= 0) {
+        const localMax = loadCueMaxRevisions(cue.id);
+        if (localMax) cue.maxRevisions = localMax;
       }
-
-      project.references = sanitizeProjectReferences(projectData.references);
-      project.cueNotes = projectData.cueNotes || {};
-      project.notes = projectData.notes || [];
-      projectNotesStore[projectId] = {
-        general: [...(project.notes || [])],
-        cue: cloneCueNotesMap(project.cueNotes || {}),
-        loadedAt: Date.now()
-      };
-      if (!project.activeReferenceId && project.references.length) {
-        project.activeReferenceId = project.references[0].id;
+      if (Array.isArray(cue.versions)) {
+        cue.versions.forEach(version => {
+          if (version && version.media && version.media.waveform) {
+            version.media.waveformSaved = true;
+          }
+        });
       }
-
-      if (options.render !== false) {
-        renderAll();
-      }
-      log("[Flow] Project cues loaded successfully via /api/projects/full");
-      return;
-    } catch (err) {
-      console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
+    });
+    if (project.cues.length > 0) {
+      project.activeCueId = project.cues[0].id;
+      const firstVersion = project.cues[0].versions && project.cues[0].versions[0];
+      project.activeVersionId = firstVersion ? firstVersion.id : null;
+    } else {
+      project.activeCueId = null;
+      project.activeVersionId = null;
     }
 
-    await loadProjectCuesLegacy(projectId, headers, options);
-  })();
+    project.references = sanitizeProjectReferences(projectData.references);
+    project.cueNotes = projectData.cueNotes || {};
+    project.notes = projectData.notes || [];
+    if (!project.activeReferenceId && project.references.length) {
+      project.activeReferenceId = project.references[0].id;
+    }
 
-  projectLoadPromises.set(projectId, loader);
-  try {
-    return await loader;
-  } finally {
-    projectLoadPromises.delete(projectId);
+    refreshAllNames();
+    renderReferences();
+    renderAll();
+    console.log("[Flow] Project cues loaded successfully via /api/projects/full");
+    loadProjectNotes(projectId).catch(err => {
+      console.warn('[Flow] Failed to preload notes', err);
+    });
+    return;
+  } catch (err) {
+    console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
   }
+
+  await loadProjectCuesLegacy(projectId, headers);
 }
 
-async function loadProjectCuesLegacy(projectId, headers, options = {}) {
+async function loadProjectCuesLegacy(projectId, headers) {
   const project = getProjectById(projectId);
   if (!project) return;
 
   try {
-    log("[Flow] Legacy cue loader running for project:", projectId);
+    console.log("[Flow] Legacy cue loader running for project:", projectId);
     const response = await fetch(`/api/cues?projectId=${encodeURIComponent(projectId)}`, { headers });
     if (!response.ok) {
       console.error("[Flow] Legacy loader failed to fetch cues:", response.statusText);
@@ -3427,13 +3487,12 @@ async function loadProjectCuesLegacy(projectId, headers, options = {}) {
     }
 
     await loadProjectReferencesLegacy(projectId, headers);
-    if (options.render !== false) {
-      renderAll();
-      loadProjectNotes(projectId).catch(err => {
-        console.warn('[Flow] Failed to preload notes (legacy path)', err);
-      });
-    }
-    log("[Flow] Project cues loaded via legacy path");
+    refreshAllNames();
+    renderAll();
+    loadProjectNotes(projectId).catch(err => {
+      console.warn('[Flow] Failed to preload notes (legacy path)', err);
+    });
+    console.log("[Flow] Project cues loaded via legacy path");
   } catch (err) {
     console.error("[Flow] Legacy cue loader failed:", err);
   }
@@ -3457,6 +3516,8 @@ async function loadProjectReferencesLegacy(projectId, headers) {
     if (!project.activeReferenceId && project.references.length) {
       project.activeReferenceId = project.references[0].id;
     }
+
+    renderReferences();
   } catch (err) {
     console.error("[Flow] Error loading references", err);
   }
@@ -3548,7 +3609,7 @@ function addCommentFromInput() {
         try { resp = await r.json(); } catch(e) { resp = { error: 'invalid_json' }; }
       }
 
-      log('[addComment] server response', resp);
+      console.log('[addComment] server response', resp);
       if (!resp || resp.error) {
         console.error('[addComment] failed to save', resp && resp.error);
         try { showAlert('Errore salvataggio commento: ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
@@ -3649,7 +3710,7 @@ async function persistCueOrder(project) {
 
 function renderCueList(options = {}) {
   const project = getActiveProject();
-  log("renderCueList: project", project && project.id, "cuesCount", project && project.cues && project.cues.length);
+  console.log("renderCueList: project", project && project.id, "cuesCount", project && project.cues && project.cues.length);
 
   // Clean up WaveSurfer instances since their containers will be destroyed
   cleanupMiniWaves();
@@ -3698,7 +3759,7 @@ function renderCueList(options = {}) {
   // Badge already shows the count via updateCountBadge above
 
   project.cues.forEach(cue => {
-    log("[FlowPreview] Creating cue element with menu for:", cue.id, cue.name);
+    console.log("[FlowPreview] Creating cue element with menu for:", cue.id, cue.name);
     const details = document.createElement("details");
     details.className = "cue-block";
     details.dataset.cueId = cue.id;
@@ -3760,7 +3821,7 @@ function renderCueList(options = {}) {
 
     // IMPORTANT: Add event listeners immediately while dd, btn, menu are in scope for this cue
     btn.addEventListener("click", e => {
-      log("[FlowPreview] Cue menu button clicked for cue:", cue.id);
+      console.log("[FlowPreview] Cue menu button clicked for cue:", cue.id);
       e.preventDefault();
       e.stopPropagation();
       const wasOpen = dd.classList.contains("open");
@@ -3769,13 +3830,13 @@ function renderCueList(options = {}) {
         .forEach(x => x.classList.remove("open"));
       if (!wasOpen) {
         dd.classList.add("open");
-        log("[FlowPreview] Cue menu opened");
+        console.log("[FlowPreview] Cue menu opened");
       }
     });
 
     menu.querySelectorAll("button").forEach(b => {
       b.addEventListener("click", async e => {
-        log("[FlowPreview] Cue menu action clicked:", b.dataset.action, "for cue:", cue.id);
+        console.log("[FlowPreview] Cue menu action clicked:", b.dataset.action, "for cue:", cue.id);
         e.preventDefault();
         e.stopPropagation();
         dd.classList.remove("open");
@@ -3817,15 +3878,15 @@ function renderCueList(options = {}) {
             cancelLabel: tr("action.cancel")
           });
           if (!confirmed) return;
-          log("[FlowPreview] Delete cue action triggered for:", cue.id);
+          console.log("[FlowPreview] Delete cue action triggered for:", cue.id);
           try {
-            log("[FlowPreview] Sending DELETE request for cue:", cue.id);
+            console.log("[FlowPreview] Sending DELETE request for cue:", cue.id);
             const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
             const res = await fetch(`/api/cues?id=${encodeURIComponent(cue.id)}&projectId=${state.activeProjectId}`, {
               method: 'DELETE',
               headers
             });
-            log("[FlowPreview] DELETE response status:", res.status);
+            console.log("[FlowPreview] DELETE response status:", res.status);
             if (!res.ok) {
               console.error('[FlowPreview] Failed to delete cue', await res.text());
               showAlert('Errore nella cancellazione della cue');
@@ -3904,7 +3965,7 @@ function renderCueList(options = {}) {
       });
     });
 
-    log("[FlowPreview] Event listeners added for cue menu:", cue.id, "btn:", btn, "menu:", menu);
+    console.log("[FlowPreview] Event listeners added for cue menu:", cue.id, "btn:", btn, "menu:", menu);
 
     right.appendChild(status);
     right.appendChild(dd);
@@ -3940,22 +4001,12 @@ function renderCueList(options = {}) {
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("application/x-approved-cue", cue.id);
           e.dataTransfer.setData("text/plain", cue.id);
-          clearCueDragImage();
-          const ghost = summary.cloneNode(true);
-          const wrap = document.createElement("div");
-          wrap.className = "cue-drag-ghost";
-          wrap.appendChild(ghost);
-          wrap.style.width = `${summary.getBoundingClientRect().width}px`;
-          document.body.appendChild(wrap);
-          cueDragImageEl = wrap;
-          e.dataTransfer.setDragImage(wrap, 24, 24);
         } catch (err) {}
         details.classList.add("dragging");
       });
       summary.addEventListener("dragend", () => {
         draggedCueId = null;
         details.classList.remove("dragging");
-        clearCueDragImage();
         document
           .querySelectorAll("details.cue-block.drag-over")
           .forEach(el => el.classList.remove("drag-over"));
@@ -3967,7 +4018,7 @@ function renderCueList(options = {}) {
       try {
         const wasOpen = cue.isOpen;
         cue.isOpen = !!details.open;
-        log('renderCueList: details.toggle', { cueId: cue.id, detailsOpen: details.open, wasOpen });
+        console.log('renderCueList: details.toggle', { cueId: cue.id, detailsOpen: details.open, wasOpen });
 
         // Only auto-select first version when opening a previously closed cue
         if (details.open && !wasOpen) {
@@ -4168,7 +4219,7 @@ function renderCueList(options = {}) {
 
       // Manage menu button (⋯)
       manageMenuBtn.addEventListener("click", e => {
-        log("[FlowPreview] Version manage menu clicked for version:", version.id);
+        console.log("[FlowPreview] Version manage menu clicked for version:", version.id);
         e.preventDefault();
         e.stopPropagation();
         const wasOpen = manageMenuWrap.classList.contains("open");
@@ -4177,14 +4228,14 @@ function renderCueList(options = {}) {
           .forEach(x => x.classList.remove("open"));
         if (!wasOpen) {
           manageMenuWrap.classList.add("open");
-          log("[FlowPreview] Version manage menu opened");
+          console.log("[FlowPreview] Version manage menu opened");
         }
       });
 
       // Manage menu actions (rename/delete)
       manageMenu.querySelectorAll("button").forEach(btn => {
         btn.addEventListener("click", async e => {
-          log("[FlowPreview] Version action clicked:", btn.dataset.action, "for version:", version.id);
+          console.log("[FlowPreview] Version action clicked:", btn.dataset.action, "for version:", version.id);
           e.preventDefault();
           e.stopPropagation();
           manageMenuWrap.classList.remove("open");
@@ -4243,9 +4294,9 @@ function renderCueList(options = {}) {
               cancelLabel: tr("action.cancel")
             });
             if (!confirmed) return;
-            log("[FlowPreview] Delete version triggered for:", version.id);
+            console.log("[FlowPreview] Delete version triggered for:", version.id);
             try {
-              log("[FlowPreview] Sending DELETE request for version:", version.id);
+              console.log("[FlowPreview] Sending DELETE request for version:", version.id);
               const authHeaders =
                 window.flowAuth && typeof window.flowAuth.getAuthHeaders === "function"
                   ? window.flowAuth.getAuthHeaders()
@@ -4259,7 +4310,7 @@ function renderCueList(options = {}) {
                   projectId: state.activeProjectId
                 })
               });
-              log("[FlowPreview] DELETE version response status:", res.status);
+              console.log("[FlowPreview] DELETE version response status:", res.status);
               if (!res.ok) {
                 console.error("[FlowPreview] Failed to delete version", await res.text());
                 showAlert("Errore nella cancellazione della versione");
@@ -4314,7 +4365,7 @@ function renderCueList(options = {}) {
         });
       });
 
-      log("[FlowPreview] Event listeners added for version menu:", version.id, "manageMenuBtn:", manageMenuBtn);
+      console.log("[FlowPreview] Event listeners added for version menu:", version.id, "manageMenuBtn:", manageMenuBtn);
 
       top.appendChild(dd2);
       top.appendChild(manageMenuWrap);
@@ -4442,9 +4493,9 @@ function renderCueList(options = {}) {
 
     // Debug: log cue/DOM open state after insertion
     try {
-      log("renderCueList:", { cueId: cue.id, cueIsOpen: cue.isOpen, detailsOpen: details.open, versions: (cue.versions||[]).length, projectActiveCue: project.activeCueId });
+      console.log("renderCueList:", { cueId: cue.id, cueIsOpen: cue.isOpen, detailsOpen: details.open, versions: (cue.versions||[]).length, projectActiveCue: project.activeCueId });
     } catch (err) {
-      log("renderCueList: debug log failed", err);
+      console.log("renderCueList: debug log failed", err);
     }
 
     details.addEventListener("dragover", e => {
@@ -4503,11 +4554,7 @@ function renderCueList(options = {}) {
         c.index_in_project = idx;
       });
 
-      const didReorder = reorderCueDom(projectNow);
-      if (!didReorder) {
-        renderCueList();
-        renderVersionPreviews();
-      }
+      renderCueList();
       persistCueOrder(projectNow).catch(err => {
         console.warn('[CueOrder] Persist failed', err);
       });
@@ -4515,19 +4562,9 @@ function renderCueList(options = {}) {
   });
 
   applyCuesCollapsedState();
-  ensureCueNotesLoaded(project);
 }
 
 function renderVersionPreviews() {
-  if (renderVersionPreviewsScheduled) return;
-  renderVersionPreviewsScheduled = true;
-  requestAnimationFrame(() => {
-    renderVersionPreviewsScheduled = false;
-    renderVersionPreviewsInner();
-  });
-}
-
-function renderVersionPreviewsInner() {
   const project = getActiveProject();
   if (!project || cuesCollapsed) return;
 
@@ -4542,37 +4579,15 @@ function renderVersionPreviewsInner() {
         prev.clientWidth || prev.offsetWidth || 0
       );
       if (targetWidth < 30) {
-        if (typeof ResizeObserver !== "undefined" && !previewResizeObservers.has(prev)) {
-          const ro = new ResizeObserver(() => {
-            if (!prev.isConnected) {
-              ro.disconnect();
-              previewResizeObservers.delete(prev);
-              return;
-            }
-            const w = Math.max(0, prev.clientWidth || prev.offsetWidth || 0);
-            if (w >= 30) {
-              ro.disconnect();
-              previewResizeObservers.delete(prev);
-              renderVersionPreviews();
-            }
-          });
-          ro.observe(prev);
-          previewResizeObservers.set(prev, ro);
-        }
-        const retryCount = parseInt(prev.dataset.waveRetry || "0", 10);
-        if (retryCount < 10) {
-          prev.dataset.waveRetry = String(retryCount + 1);
-          if (!renderVersionPreviewsRetryTimer) {
-            renderVersionPreviewsRetryTimer = setTimeout(() => {
-              renderVersionPreviewsRetryTimer = null;
-              renderVersionPreviews();
-            }, 120);
-          }
+        if (!prev.dataset.waveRetry) {
+          prev.dataset.waveRetry = "1";
+          setTimeout(() => {
+            if (!prev.isConnected) return;
+            delete prev.dataset.waveRetry;
+            renderVersionPreviews();
+          }, 60);
         }
         return;
-      }
-      if (prev.dataset.waveRetry) {
-        delete prev.dataset.waveRetry;
       }
 
       // Skip if waveform already exists for this version (audio) and is valid
@@ -4779,15 +4794,6 @@ function handleFileDropOnVersion(project, cue, version, file) {
 // NOTES PANEL RENDER
 // =======================
 function renderNotesPanel() {
-  if (renderNotesPanelScheduled) return;
-  renderNotesPanelScheduled = true;
-  requestAnimationFrame(() => {
-    renderNotesPanelScheduled = false;
-    renderNotesPanelInner();
-  });
-}
-
-function renderNotesPanelInner() {
   if (!generalNotesListEl && !cueNotesListEl && !cueNotesHeadingEl) return;
 
   const project = getActiveProject();
@@ -5666,7 +5672,7 @@ function renderPlayer() {
     currentPlayerCueId === cue.id;
 
   if (!sameVersion) {
-    log('[renderPlayer] Loading version:', {
+    console.log('[renderPlayer] Loading version:', {
       versionId: version.id,
       mediaType: version.media.type,
       mediaUrl: version.media.url,
@@ -6002,45 +6008,6 @@ function setShareInviteMessage(text, isError) {
   shareInviteMessageEl.style.color = isError ? "#fca5a5" : "#9ca3af";
 }
 
-function renderInviteLinkMessage(link) {
-  if (!shareInviteMessageEl) return;
-  shareInviteMessageEl.innerHTML = "";
-  const wrap = document.createElement("div");
-  wrap.style.display = "flex";
-  wrap.style.gap = "8px";
-  wrap.style.alignItems = "center";
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.value = link;
-  input.readOnly = true;
-  input.style.flex = "1";
-  input.style.minWidth = "0";
-  input.style.padding = "6px 8px";
-  input.style.borderRadius = "8px";
-  input.style.border = "1px solid #1f2937";
-  input.style.background = "transparent";
-  input.style.color = "#cbd5e1";
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "ghost-btn tiny";
-  btn.textContent = tr("share.copyLink");
-  btn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      showAlert(tr("share.copySuccess", {}, "Link copiato"));
-    } catch (err) {
-      showAlert(tr("share.copyError", {}, "Impossibile copiare il link"));
-    }
-  });
-
-  wrap.appendChild(input);
-  wrap.appendChild(btn);
-  shareInviteMessageEl.appendChild(wrap);
-  shareInviteMessageEl.style.color = "#9ca3af";
-}
-
 async function handleShareInvite() {
   const project = getActiveProject();
   if (!project) {
@@ -6061,6 +6028,10 @@ async function handleShareInvite() {
   }
 
   const email = (shareInviteEmailEl && shareInviteEmailEl.value || "").trim();
+  if (!email) {
+    setShareInviteMessage(tr("share.inviteEmailRequired"), true);
+    return;
+  }
 
   const role = (shareInviteRoleEl && shareInviteRoleEl.value) || "viewer";
   if (shareInviteBtn) shareInviteBtn.disabled = true;
@@ -6068,14 +6039,15 @@ async function handleShareInvite() {
   try {
     const headers = await getAuthHeaders();
     headers["Content-Type"] = "application/json";
-    const res = await fetch("/api/projects/share", {
+    const res = await fetch("/api/invites", {
       method: "POST",
       headers,
       body: JSON.stringify({
+        team_id: project.team_id,
         project_id: project.id,
+        email,
         role,
-        email: email || null,
-        invite: true
+        is_link_invite: false
       })
     });
 
@@ -6087,13 +6059,7 @@ async function handleShareInvite() {
     }
 
     if (shareInviteEmailEl) shareInviteEmailEl.value = "";
-    const inviteUrl = data.invite_url || data.link || "";
-    if (inviteUrl) {
-      renderInviteLinkMessage(inviteUrl);
-    } else {
-      setShareInviteMessage(tr("share.inviteSuccess"), false);
-    }
-    refreshSharedWithPanel(true);
+    setShareInviteMessage(tr("share.inviteSuccess"), false);
   } catch (err) {
     console.warn("[Share] Invite error", err);
     setShareInviteMessage(tr("share.inviteError"), true);
@@ -6102,7 +6068,7 @@ async function handleShareInvite() {
   }
 }
 
-function renderSharedWithList(payload, opts) {
+function renderSharedWithList(items, opts) {
   if (!sharedWithListEl) return;
   sharedWithListEl.innerHTML = "";
 
@@ -6123,10 +6089,7 @@ function renderSharedWithList(payload, opts) {
     return;
   }
 
-  const members = Array.isArray(payload) ? payload : (payload && payload.members) || [];
-  const pending = payload && !Array.isArray(payload) ? (payload.pending || []) : [];
-
-  if (!members.length && !pending.length) {
+  if (!items || items.length === 0) {
     const li = document.createElement("li");
     li.className = "share-empty";
     li.textContent = tr("share.peopleEmpty");
@@ -6134,98 +6097,17 @@ function renderSharedWithList(payload, opts) {
     return;
   }
 
-  if (members.length) {
-    const head = document.createElement("li");
-    head.className = "share-empty";
-    head.textContent = tr("share.membersTitle", {}, "Members");
-    sharedWithListEl.appendChild(head);
-    members.forEach((item) => {
-      const li = document.createElement("li");
-      li.className = "share-person";
-      const name = item.display_name || item.email || item.member_id || tr("misc.user");
-      const role = item.role || "viewer";
-      li.innerHTML = `
-        <span class="share-person-name">${escapeHtml(name)}</span>
-        <span class="share-person-role">${escapeHtml(role)}</span>
-      `;
-      sharedWithListEl.appendChild(li);
-    });
-  }
-
-  if (pending.length) {
-    const head = document.createElement("li");
-    head.className = "share-empty";
-    head.textContent = tr("share.pendingInvitesTitle", {}, "Pending invites");
-    sharedWithListEl.appendChild(head);
-    pending.forEach((inv) => {
-      const li = document.createElement("li");
-      li.className = "share-person";
-      const label = inv.email || tr("share.linkInviteLabel", {}, "Link invite");
-      const role = inv.role || "viewer";
-      const created = inv.created_at ? new Date(inv.created_at).toLocaleDateString() : "";
-      const expires = inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : "";
-      const meta = expires ? `${created} → ${expires}` : created;
-      li.innerHTML = `
-        <span class="share-person-name">${escapeHtml(label)}</span>
-        <span class="share-person-role">${escapeHtml(role)}</span>
-      `;
-
-      const actions = document.createElement("div");
-      actions.style.display = "flex";
-      actions.style.gap = "6px";
-      actions.style.marginLeft = "auto";
-
-      if (inv.invite_url) {
-        const copyBtn = document.createElement("button");
-        copyBtn.type = "button";
-        copyBtn.className = "ghost-btn tiny";
-        copyBtn.textContent = tr("share.copyLink");
-        copyBtn.addEventListener("click", async () => {
-          try {
-            await navigator.clipboard.writeText(inv.invite_url);
-            showAlert(tr("share.copySuccess", {}, "Link copiato"));
-          } catch (err) {
-            showAlert(tr("share.copyError", {}, "Impossibile copiare il link"));
-          }
-        });
-        actions.appendChild(copyBtn);
-      }
-
-      if (inv.invite_id) {
-        const revokeBtn = document.createElement("button");
-        revokeBtn.type = "button";
-        revokeBtn.className = "ghost-btn tiny";
-        revokeBtn.textContent = tr("share.revokeInvite", {}, "Revoke");
-        revokeBtn.addEventListener("click", async () => {
-          try {
-            const headers = await getAuthHeaders();
-            const res = await fetch(`/api/invites?invite_id=${encodeURIComponent(inv.invite_id)}`, {
-              method: "DELETE",
-              headers
-            });
-            if (!res.ok) {
-              showAlert(tr("share.revokeError", {}, "Impossibile revocare"));
-              return;
-            }
-            refreshSharedWithPanel(true);
-          } catch (err) {
-            showAlert(tr("share.revokeError", {}, "Impossibile revocare"));
-          }
-        });
-        actions.appendChild(revokeBtn);
-      }
-
-      if (meta) {
-        const metaSpan = document.createElement("span");
-        metaSpan.className = "share-person-role";
-        metaSpan.textContent = meta;
-        actions.appendChild(metaSpan);
-      }
-
-      li.appendChild(actions);
-      sharedWithListEl.appendChild(li);
-    });
-  }
+  items.forEach((item) => {
+    const li = document.createElement("li");
+    li.className = "share-person";
+    const name = item.display_name || item.email || item.member_id || tr("misc.user");
+    const role = item.role || "viewer";
+    li.innerHTML = `
+      <span class="share-person-name">${escapeHtml(name)}</span>
+      <span class="share-person-role">${escapeHtml(role)}</span>
+    `;
+    sharedWithListEl.appendChild(li);
+  });
 }
 
 async function refreshSharedWithPanel(force) {
@@ -6285,9 +6167,8 @@ async function refreshSharedWithPanel(force) {
     }
     const data = await res.json();
     const items = Array.isArray(data.shared_with) ? data.shared_with : [];
-    const pending = Array.isArray(data.pending_invites) ? data.pending_invites : [];
-    sharedWithCache = { projectId: project.id, items: { members: items, pending } };
-    renderSharedWithList({ members: items, pending });
+    sharedWithCache = { projectId: project.id, items };
+    renderSharedWithList(items);
   } catch (err) {
     console.warn("[Share] Failed to load shared-with list", err);
     renderSharedWithList([], { messageKey: "share.peopleEmpty" });
@@ -6554,7 +6435,7 @@ if (autoRenameToggle) {
   autoRenameToggle.addEventListener("change", e => {
     state.autoRename = e.target.checked;
     localStorage.setItem("auto-rename", state.autoRename ? "true" : "false");
-    log("[AutoRename] Toggle:", state.autoRename);
+    console.log("[AutoRename] Toggle:", state.autoRename);
     updateNamingControlsVisibility();
     refreshAllNames();
     updateNamesInDOM();
@@ -7017,11 +6898,11 @@ document.addEventListener("click", e => {
 // =======================
 async function initializeFromSupabase() {
   if (hasInitializedFromSupabase) {
-    log("[Flow] initializeFromSupabase already ran - skipping");
+    console.log("[Flow] initializeFromSupabase already ran - skipping");
     return;
   }
   hasInitializedFromSupabase = true;
-  log("[Flow] initializeFromSupabase() called");
+  console.log("[Flow] initializeFromSupabase() called");
   
   try {
     // Fetch projects from API (include auth headers when available)
@@ -7060,7 +6941,7 @@ async function initializeFromSupabase() {
       // ignore header detection errors and proceed anonymously
     }
 
-    log("[Flow] Fetching project list via /api/projects...");
+    console.log("[Flow] Fetching project list via /api/projects...");
     const listStartTime = Date.now();
 
     let response = await fetch("/api/projects", { headers: fetchHeaders });
@@ -7073,7 +6954,7 @@ async function initializeFromSupabase() {
 
     let data = await response.json();
     const listElapsed = Date.now() - listStartTime;
-    log(`[Flow] Loaded project list in ${listElapsed}ms`);
+    console.log(`[Flow] Loaded project list in ${listElapsed}ms`);
 
     // If the initial fetch returned the public all-projects list (no actor info)
     // and we have a client `flowAuth` available, try to initAuth() then retry once.
@@ -7093,14 +6974,14 @@ async function initializeFromSupabase() {
             const isDemoToken = typeof authVal === 'string' && authVal.includes('demo');
             const isDemoActor = typeof actorVal === 'string' && actorVal.startsWith('demo');
             if (isDemoToken || isDemoActor) {
-              log('[Flow] flowAuth initialized into demo mode; skipping retry to avoid overriding actor-resolved data');
+              console.log('[Flow] flowAuth initialized into demo mode; skipping retry to avoid overriding actor-resolved data');
             } else {
               let newHeaders = { 'Content-Type': 'application/json' };
               if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
               response = await fetch('/api/projects', { headers: newHeaders });
               data = await response.json();
               didRetry = true;
-              log('[Flow] Retried /api/projects after flowAuth.initAuth()');
+              console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
             }
           } catch (e) {
             // ignore retry errors
@@ -7120,7 +7001,7 @@ async function initializeFromSupabase() {
       projects = [...myProjects, ...sharedProjects];
     }
 
-    log("[Flow] Loaded projects:", projects.length);
+    console.log("[Flow] Loaded projects:", projects.length);
 
     const sharedIds = new Set(sharedProjects.map(p => p.id));
     if (sharedIds.size === 0 && projects.some(p => p.is_shared)) {
@@ -7167,15 +7048,15 @@ async function initializeFromSupabase() {
     }
 
     // Refresh names and render immediately
+    refreshAllNames();
     renderAll();
-    log("[Flow] Project list ready. Active project:", state.activeProjectId);
+    console.log("[Flow] Project list ready. Active project:", state.activeProjectId);
 
     // Immediately load cues/versions/comments for the active project
     if (bootProjectId) {
       await loadProjectCues(bootProjectId);
-      scheduleProjectPrefetch(bootProjectId);
     } else {
-      log("[Flow] No projects found for this user.");
+      console.log("[Flow] No projects found for this user.");
     }
 
   } catch (err) {
@@ -7411,7 +7292,7 @@ async function saveProjectNote(text) {
     if (!project.notes) project.notes = [];
     project.notes.unshift(createdNote);
     renderNotesPanel();
-    log('[Notes] Project note saved');
+    console.log('[Notes] Project note saved');
   } catch (err) {
     console.error('[Notes] Error saving project note:', err);
     showAlert('Errore durante il salvataggio della nota');
@@ -7489,7 +7370,7 @@ async function saveCueNote(cueId, text) {
     }
 
     renderNotesPanel();
-    log('[Notes] Cue note saved');
+    console.log('[Notes] Cue note saved');
   } catch (err) {
     console.error('[Notes] Error saving cue note:', err);
     showAlert('Errore durante il salvataggio della nota');
@@ -7801,12 +7682,12 @@ setTimeout(initNotesUI, 100);
 // END NOTES FUNCTIONALITY
 // ==========================================
 
-log("[Flow] Script loaded, waiting for page.tsx to initialize...");
+console.log("[Flow] Script loaded, waiting for page.tsx to initialize...");
 
 // Fallback auto-init if the page never calls us (e.g. auth bootstrap fails silently)
 window.addEventListener("DOMContentLoaded", () => {
   if (!hasInitializedFromSupabase) {
-    log("[Flow] Auto-init fallback triggered");
+    console.log("[Flow] Auto-init fallback triggered");
     initializeFromSupabase().catch(err => {
       console.error("[Flow] Auto-init fallback error", err);
     });
@@ -7816,7 +7697,7 @@ window.addEventListener("DOMContentLoaded", () => {
 // Extra safety: delayed auto-init in case DOMContentLoaded already fired before script load
 setTimeout(() => {
   if (!hasInitializedFromSupabase) {
-    log("[Flow] Delayed auto-init fallback");
+    console.log("[Flow] Delayed auto-init fallback");
     initializeFromSupabase().catch(err => {
       console.error("[Flow] Delayed auto-init error", err);
     });
@@ -7828,7 +7709,7 @@ setTimeout(() => {
 // =======================
 // Re-render dynamic content when language changes
 window.addEventListener("language-changed", (e) => {
-  log("[Flow] Language changed to:", e.detail && e.detail.language);
+  console.log("[Flow] Language changed to:", e.detail && e.detail.language);
   // Re-render all dynamic UI components with new translations
   renderProjectList();
   refreshTranslationsOnly();

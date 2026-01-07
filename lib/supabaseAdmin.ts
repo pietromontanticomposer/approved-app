@@ -33,67 +33,15 @@ if (supabaseUrl && supabaseServiceKey) {
     const q: any = {
       _table: tableName,
       _select: '*',
-      _where: [] as Array<{k:string,v:any,op:'eq'|'in'}>,
-      _order: [] as Array<{k:string,ascending:boolean}>,
+      _where: [] as Array<{k:string,v:any}>,
       _limit: null as number | null,
       select(cols?: string) { q._select = cols || '*'; return q; },
-      eq(k: string, v: any) { q._where.push({k,v,op:'eq'}); return q; },
-      in(k: string, v: any[]) { q._where.push({k,v,op:'in'}); return q; },
-      order(k: string, opts?: { ascending?: boolean }) {
-        q._order.push({ k, ascending: opts?.ascending !== false });
-        return q;
-      },
+      eq(k: string, v: any) { q._where.push({k,v}); return q; },
       limit(n: number) { q._limit = n; return q; },
-      _matchesWhere: (r: Row) => q._where.every(w => {
-        if (w.op === 'eq') return String(r[w.k]) === String(w.v);
-        if (!Array.isArray(w.v)) return false;
-        return w.v.map(String).includes(String(r[w.k]));
-      }),
-      _applyFilters: (rows: Row[]) => {
-        const filtered = rows.filter(r => q._matchesWhere(r));
-        if (q._order.length === 0) return filtered;
-        const ordered = [...filtered];
-        ordered.sort((a, b) => {
-          for (const rule of q._order) {
-            const av = a[rule.k];
-            const bv = b[rule.k];
-            if (av === bv) continue;
-            const cmp = av > bv ? 1 : -1;
-            return rule.ascending ? cmp : -cmp;
-          }
-          return 0;
-        });
-        return ordered;
-      },
-      _applySelect: (rows: Row[]) => {
-        if (q._select === '*' || !q._select) return rows.map(clone);
-        const cols = q._select.split(',').map((c: string) => c.trim()).filter(Boolean);
-        return rows.map((r: Row) => {
-          const out: Row = {};
-          for (const c of cols) out[c] = r[c];
-          return out;
-        });
-      },
-      _executeSelect: () => {
-        const rows = db[tableName] || [];
-        const filtered = q._applyFilters(rows);
-        const limited = q._limit ? filtered.slice(0, q._limit) : filtered;
-        return { data: q._applySelect(limited), error: null };
-      },
-      then: (resolve: any, reject: any) => {
-        try {
-          const res = q._executeSelect();
-          return Promise.resolve(res).then(resolve, reject);
-        } catch (err) {
-          return Promise.reject(err).then(resolve, reject);
-        }
-      },
       maybeSingle: async () => {
         const rows = db[tableName] || [];
-        const filtered = q._applyFilters(rows);
-        const row = filtered.length > 0 ? filtered[0] : null;
-        const selected = row ? q._applySelect([row])[0] : null;
-        return { data: selected, error: null };
+        const filtered = rows.filter(r => q._where.every(w => String(r[w.k]) === String(w.v)));
+        return { data: filtered.length>0 ? clone(filtered[0]) : null, error: null };
       },
       insert: (payload: any) => {
         const rows = db[tableName] || (db[tableName] = []);
@@ -120,12 +68,12 @@ if (supabaseUrl && supabaseServiceKey) {
             const rows = db[tableName] || [];
             let updatedCount = 0;
             for (const r of rows) {
-              if (q._matchesWhere(r) && String(r[k]) === String(v)) {
+              if (q._where.every(w => String(r[w.k]) === String(w.v)) && String(r[k]) === String(v)) {
                 Object.assign(r, payload);
                 updatedCount++;
               }
             }
-            return { data: updatedCount>0 ? rows.filter(r => (q._matchesWhere(r) && String(r[k]) === String(v))) : [], error: null };
+            return { data: updatedCount>0 ? rows.filter(r => (q._where.every(w => String(r[w.k]) === String(w.v)) && String(r[k]) === String(v))) : [], error: null };
           }
         };
       },
@@ -144,10 +92,8 @@ if (supabaseUrl && supabaseServiceKey) {
       },
       single: async () => {
         const rows = db[tableName] || [];
-        const filtered = q._applyFilters(rows);
-        const row = filtered[0] || null;
-        const selected = row ? q._applySelect([row])[0] : null;
-        return { data: selected, error: null };
+        const filtered = rows.filter(r => q._where.every(w => String(r[w.k]) === String(w.v)));
+        return { data: filtered[0] || null, error: null };
       }
     };
     return q;

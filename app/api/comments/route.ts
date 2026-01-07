@@ -15,21 +15,6 @@ import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-type Comment = {
-  id: string;
-  version_id: string;
-  time_seconds: number;
-  author: string | null;
-  actor_id: string | null;
-  text: string;
-  created_at: string;
-  updated_at: string;
-};
-
 const isDev = process.env.NODE_ENV !== "production";
 
 // ============================================================================

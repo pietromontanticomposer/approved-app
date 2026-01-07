@@ -1,7 +1,7 @@
 // app/invite/[token]/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
 export default function InvitePage() {
@@ -9,7 +9,6 @@ export default function InvitePage() {
   const params = useParams();
   const token = params.token as string;
 
-  const [supabase, setSupabase] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
   const [invite, setInvite] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -17,11 +16,7 @@ export default function InvitePage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    initializeInvite();
-  }, [token]);
-
-  const initializeInvite = async () => {
+  const initializeInvite = useCallback(async () => {
     try {
       // Prevent calling RPC when token is missing or string "null"
       if (!token || token === "null") {
@@ -33,7 +28,6 @@ export default function InvitePage() {
       // Import Supabase client
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
       const client = getSupabaseClient();
-      setSupabase(client);
 
       // Check if user is authenticated
       const { data: { user: currentUser } } = await client.auth.getUser();
@@ -70,7 +64,11 @@ export default function InvitePage() {
       setError("Errore durante il caricamento dell'invito.");
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    initializeInvite();
+  }, [initializeInvite]);
 
   const handleAcceptInvite = async () => {
     if (!user) {

@@ -299,7 +299,11 @@ export async function GET(req: NextRequest) {
           displayName: v.media_display_name || v.media_original_name || 'Media',
           duration: v.media_duration || v.duration,
           thumbnailUrl: v.media_thumbnail_url,
-          waveform: v.waveform || v.media_waveform_data
+          thumbnailSaved: !!v.media_thumbnail_url,
+          waveform: v.media_waveform_data || null,
+          waveformSaved: !!v.media_waveform_data,
+          waveformImageUrl: v.media_waveform_image_url || null,
+          waveformImageSaved: !!v.media_waveform_image_url
         } : null,
         comments: commentsByVersion[v.id] || [],
         deliverables: versionFilesByVersion[v.id] || []

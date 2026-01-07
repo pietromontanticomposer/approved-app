@@ -12,7 +12,6 @@ import { verifyAuth } from '@/lib/auth';
 import { sendInviteEmail } from '@/lib/email';
 
 export const runtime = "nodejs";
-const isDev = process.env.NODE_ENV !== "production";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -24,7 +23,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function GET(req: NextRequest) {
   try {
-    if (isDev) console.log('[GET /api/invites] Request started');
+    console.log('[GET /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -79,7 +78,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    if (isDev) console.log('[POST /api/invites] Request started');
+    console.log('[POST /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -135,17 +134,52 @@ export async function POST(req: NextRequest) {
     // Build invite url
     const inviteUrl = `${safeOrigin}/invite/${data.invite_id}`;
 
-    // If this was a nominal email invite, attempt to send the invite email
-    let emailStatus: "sent" | "failed" | "skipped" = "skipped";
-    let emailError: string | null = null;
+    // If this was a nominal email invite, attempt to send the invite email (best-effort)
+    let emailSent = false;
+    let emailError = null;
     if (!is_link_invite && email) {
       try {
-        await sendInviteEmail(email, inviteUrl, auth.email || null);
-        emailStatus = "sent";
+        console.log('[POST /api/invites] Preparing to send email to:', email);
+        console.log('[POST /api/invites] SMTP_HOST:', process.env.SMTP_HOST || 'NOT SET');
+        console.log('[POST /api/invites] SMTP_USER:', process.env.SMTP_USER || 'NOT SET');
+        console.log('[POST /api/invites] SMTP_PASS:', process.env.SMTP_PASS ? 'SET (hidden)' : 'NOT SET');
+
+        // Get inviter name and project name for better email
+        let inviterName = null;
+        let projectName = null;
+
+        // Get inviter's email/name
+        const { data: inviter } = await supabaseAdmin
+          .from('users')
+          .select('email, full_name')
+          .eq('id', actorId)
+          .single();
+        if (inviter) {
+          inviterName = inviter.full_name || inviter.email?.split('@')[0] || null;
+        }
+        console.log('[POST /api/invites] Inviter name:', inviterName);
+
+        // Get project name if project_id provided
+        if (project_id) {
+          const { data: project } = await supabaseAdmin
+            .from('projects')
+            .select('name')
+            .eq('id', project_id)
+            .single();
+          if (project) {
+            projectName = project.name;
+          }
+        }
+        console.log('[POST /api/invites] Project name:', projectName);
+        console.log('[POST /api/invites] Invite URL:', inviteUrl);
+
+        await sendInviteEmail(email, inviteUrl, inviterName, projectName, role);
+        emailSent = true;
+        console.log('[POST /api/invites] Email sent successfully to', email);
       } catch (e: any) {
-        emailStatus = "failed";
-        emailError = e?.message || "send failed";
-        console.warn('[POST /api/invites] sendInviteEmail failed', e);
+        console.error('[POST /api/invites] sendInviteEmail FAILED:', e);
+        console.error('[POST /api/invites] Error stack:', e?.stack);
+        emailError = e?.message || 'Unknown error';
       }
     }
 
@@ -153,8 +187,9 @@ export async function POST(req: NextRequest) {
       success: true,
       invite_id: data.invite_id,
       invite_url: inviteUrl,
-      email_status: emailStatus,
+      email_sent: emailSent,
       email_error: emailError,
+      smtp_configured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
     });
   } catch (error: any) {
     console.error("Error creating invite:", error);
@@ -168,7 +203,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    if (isDev) console.log('[DELETE /api/invites] Request started');
+    console.log('[DELETE /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

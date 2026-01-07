@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
 export default function SharePage() {
@@ -17,45 +17,7 @@ export default function SharePage() {
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    initializeShare();
-  }, [token]);
-
-  useEffect(() => {
-    // Initialize Supabase client on the browser and get current user
-    import('@/lib/supabaseClient').then(mod => {
-      const client = mod.getSupabaseClient();
-      setSupabase(client);
-
-      // Try to read current user/session
-      (async () => {
-        try {
-          const { data } = await client.auth.getUser();
-          if (data && (data as any).user) setUser((data as any).user);
-        } catch (e) {
-          console.warn('[Share] supabase getUser failed', e);
-        }
-      })();
-
-      // Listen for auth changes
-      const { data: sub } = client.auth.onAuthStateChange((event: any, session: any) => {
-        if (session && session.access_token) {
-          client.auth.getUser().then(res => {
-            if (res?.data?.user) setUser(res.data.user);
-          }).catch(() => {});
-        } else {
-          setUser(null);
-        }
-      });
-
-      // cleanup
-      return () => {
-        try { sub?.subscription?.unsubscribe?.(); } catch (e) {}
-      };
-    }).catch(err => console.warn('[Share] failed to init supabase', err));
-  }, []);
-
-  const initializeShare = async () => {
+  const initializeShare = useCallback(async () => {
     try {
       // We expect links in the form /share/{shareId}?token={token}
       const shareId = token;
@@ -104,9 +66,69 @@ export default function SharePage() {
       setError('Errore durante il caricamento del link.');
       setLoading(false);
     }
-  };
+  }, [token]);
 
-  const handleOpen = async () => {
+  useEffect(() => {
+    initializeShare();
+  }, [initializeShare]);
+
+  useEffect(() => {
+    // Initialize Supabase client on the browser and get current user
+    import('@/lib/supabaseClient').then(mod => {
+      const client = mod.getSupabaseClient();
+      setSupabase(client);
+
+      // Try to read current user/session
+      (async () => {
+        try {
+          const { data } = await client.auth.getUser();
+          if (data && (data as any).user) setUser((data as any).user);
+        } catch (e) {
+          console.warn('[Share] supabase getUser failed', e);
+        }
+      })();
+
+      // Listen for auth changes
+      const { data: sub } = client.auth.onAuthStateChange((event: any, session: any) => {
+        if (session && session.access_token) {
+          client.auth.getUser().then(res => {
+            if (res?.data?.user) setUser(res.data.user);
+          }).catch(() => {});
+        } else {
+          setUser(null);
+        }
+      });
+
+      // cleanup
+      return () => {
+        try { sub?.subscription?.unsubscribe?.(); } catch {}
+      };
+    }).catch(err => console.warn('[Share] failed to init supabase', err));
+  }, []);
+
+  const sendMagicLink = useCallback(async (addr: string) => {
+    if (!supabase) {
+      setError('Impossibile inizializzare l\'autenticazione');
+      return;
+    }
+    setSending(true);
+    try {
+      const redirectTo = window.location.href.split('#')[0];
+      const res = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo } });
+      if (res.error) {
+        setError(res.error.message || 'Errore durante l\'invio del link');
+      } else {
+        setSuccess(true);
+      }
+    } catch (e: any) {
+      console.error('[Share] sendMagicLink error', e);
+      setError(e?.message || 'Errore durante l\'invio del link');
+    } finally {
+      setSending(false);
+    }
+  }, [supabase]);
+
+  const handleOpen = useCallback(async () => {
     const shareId = token;
     const params = new URLSearchParams(window.location.search);
     const tokenQuery = params.get('token') || '';
@@ -160,29 +182,7 @@ export default function SharePage() {
       console.error('[Share] redeem error', err);
       setError('Errore durante l\'apertura del progetto');
     }
-  };
-
-  const sendMagicLink = async (addr: string) => {
-    if (!supabase) {
-      setError('Impossibile inizializzare l\'autenticazione');
-      return;
-    }
-    setSending(true);
-    try {
-      const redirectTo = window.location.href.split('#')[0];
-      const res = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo } });
-      if (res.error) {
-        setError(res.error.message || 'Errore durante l\'invio del link');
-      } else {
-        setSuccess(true);
-      }
-    } catch (e: any) {
-      console.error('[Share] sendMagicLink error', e);
-      setError(e?.message || 'Errore durante l\'invio del link');
-    } finally {
-      setSending(false);
-    }
-  };
+  }, [email, router, sendMagicLink, supabase, token, user]);
 
   // Auto-redeem when user is already logged in and share details loaded
   useEffect(() => {
@@ -193,7 +193,7 @@ export default function SharePage() {
       }, 200);
       return () => clearTimeout(t);
     }
-  }, [user, loading, share, success]);
+  }, [user, loading, share, success, handleOpen]);
 
   if (loading) {
     return <div style={{ padding: 40 }}>Caricamento link…</div>;

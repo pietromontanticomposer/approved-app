@@ -15,6 +15,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* DNS prefetch and preconnect for external resources */}
+        <link rel="dns-prefetch" href="https://waaigankcctijalvlppk.supabase.co" />
+        <link rel="preconnect" href="https://waaigankcctijalvlppk.supabase.co" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://unpkg.com" />
+        <link rel="preconnect" href="https://unpkg.com" crossOrigin="anonymous" />
+        {/* Preload critical external scripts */}
+        <link rel="preload" href="https://unpkg.com/@supabase/supabase-js@2" as="script" />
+        <link rel="preload" href="https://unpkg.com/wavesurfer.js@6" as="script" />
+      </head>
       <body style={{ margin: 0, padding: 0 }}>
         {children}
         <SupabaseSyncBridge />

@@ -18,22 +18,6 @@ import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
 const isDev = process.env.NODE_ENV !== "production";
 
 // ============================================================================
-// TYPES
-// ============================================================================
-
-type Cue = {
-  id: string;
-  project_id: string;
-  index_in_project: number;
-  original_name: string | null;
-  name: string | null;
-  display_name: string | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-};
-
-// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 

@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.ts,.tsx",
     "maildev": "maildev --smtp=1025 --web 1080",
-    "test:email": "node dev-scripts/e2e_robust.js"
+    "test:email": "node scripts/e2e_robust.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.2",
@@ -19,6 +19,7 @@
     "pg": "^8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "resend": "^6.6.0",
     "uuid": "^13.0.0",
     "wavesurfer.js": "^6.6.4"
   },
@@ -30,7 +31,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.7",
     "localtunnel": "^2.0.2",
-    "maildev": "^2.2.1",
     "ngrok": "^5.0.0-beta.2",
     "playwright": "^1.57.0",
     "postgres": "^3.4.7",

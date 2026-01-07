@@ -131,10 +131,14 @@ export async function GET(req: Request) {
     if (acceptRanges) headers.set('Accept-Ranges', acceptRanges);
     const contentRange = res.headers.get('content-range');
     if (contentRange) headers.set('Content-Range', contentRange);
-    // Cache control: prefer upstream value if present
+    // Cache control: aggressive caching for media files (immutable content)
     const upstreamCache = res.headers.get('cache-control');
-    headers.set('Cache-Control', upstreamCache || 'public, max-age=3600');
+    // Media files are immutable - cache for 1 year with stale-while-revalidate
+    headers.set('Cache-Control', upstreamCache || 'public, max-age=31536000, immutable, stale-while-revalidate=86400');
     headers.set('Access-Control-Allow-Origin', '*');
+    // Add ETag if available for conditional requests
+    const etag = res.headers.get('etag');
+    if (etag) headers.set('ETag', etag);
 
     return new NextResponse(res.body, { status: res.status, headers });
   } catch (err: any) {

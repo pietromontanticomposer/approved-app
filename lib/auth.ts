@@ -117,7 +117,7 @@ export async function requireAuth(req: NextRequest): Promise<string> {
  * Check if user has permission to access a project (SERVER-SIDE)
  * Returns true if user is owner or team member
  */
-export async function canAccessProject(userId: string, projectId: string): Promise<boolean> {
+export async function canAccessProject(_userId: string, _projectId: string): Promise<boolean> {
   // TEMP: allow all authenticated users to access/modify any project.
   return true;
 }
@@ -125,7 +125,7 @@ export async function canAccessProject(userId: string, projectId: string): Promi
 /**
  * Check if user can modify a project (owner or admin) (SERVER-SIDE)
  */
-export async function canModifyProject(userId: string, projectId: string): Promise<boolean> {
+export async function canModifyProject(_userId: string, _projectId: string): Promise<boolean> {
   return true;
 }
 

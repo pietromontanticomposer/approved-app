@@ -20,13 +20,6 @@ export default function Page() {
     // Reset sign-out flag on fresh page load to allow bootstrap
     (window as any).__isSigningOut = false;
 
-    try {
-      const storedTheme = localStorage.getItem("approved_theme");
-      if (storedTheme) {
-        document.documentElement.setAttribute("data-theme", storedTheme);
-      }
-    } catch {}
-
     // Initialize supabase client immediately
     const initSupabase = async () => {
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
@@ -46,26 +39,7 @@ export default function Page() {
 
     window.addEventListener('open-share-modal', handleOpenShareModal);
 
-    let cancelled = false;
-    const retryInit = async () => {
-      for (let i = 0; i < 40; i++) {
-        if (cancelled) return;
-        if (typeof (window as any).initializeFromSupabase === 'function') {
-          try {
-            (window as any).initializeFromSupabase();
-          } catch (e) {
-            console.warn('[HomePage] initializeFromSupabase retry failed', e);
-          }
-          return;
-        }
-        await new Promise(r => setTimeout(r, 100));
-      }
-    };
-
-    retryInit();
-
     return () => {
-      cancelled = true;
       window.removeEventListener('open-share-modal', handleOpenShareModal);
     };
   }, []);
@@ -406,7 +380,7 @@ export default function Page() {
             window.safeFetchProjectsFallback = window.safeFetchProjectsFallback || (async function(){
               console.warn('[InitStub] safeFetchProjectsFallback called before implementation');
               try {
-                const res = await fetch('/api/projects', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+                const res = await fetch('/api/projects?debug=1', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
                 if (res.ok) return res.json();
               } catch (e) {
                 console.warn('[InitStub] fallback fetch failed', e);

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import postgres from 'postgres';
 
 const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL || '';
@@ -7,7 +7,7 @@ const connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL
  * POST /api/migrate-notes
  * Creates the project_notes table
  */
-export async function POST(req: NextRequest) {
+export async function POST() {
   if (!connectionString) {
     return NextResponse.json(
       { error: 'No database connection string configured' },

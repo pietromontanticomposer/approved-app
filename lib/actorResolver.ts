@@ -37,10 +37,7 @@ export async function resolveActorId(candidate: string | null): Promise<string |
 
       // Fallback: query auth.users directly
       try {
-        const authUsers = typeof supabaseAdmin.schema === "function"
-          ? supabaseAdmin.schema("auth").from("users")
-          : supabaseAdmin.from("auth.users");
-        const { data } = await authUsers.select('id,email').eq('email', candidate).limit(1).maybeSingle();
+        const { data } = await supabaseAdmin.from('auth.users').select('id,email').eq('email', candidate).limit(1).maybeSingle();
         if (data && data.id) return data.id;
       } catch (e) {
         // ignore
@@ -52,3 +49,4 @@ export async function resolveActorId(candidate: string | null): Promise<string |
 
   return null;
 }
+

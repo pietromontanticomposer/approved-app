@@ -1,7 +1,7 @@
 // app/components/ShareModal.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -27,13 +27,7 @@ export default function ShareModal({
   const [activeTab, setActiveTab] = useState<"email" | "link">("email");
   const [invites, setInvites] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadInvites();
-    }
-  }, [isOpen, teamId]);
-
-  const getAuthHeaders = async () => {
+  const getAuthHeaders = useCallback(async () => {
     try {
       // Prefer flowAuth helper if available
       const win: any = window as any;
@@ -47,7 +41,7 @@ export default function ShareModal({
             if (!headers['x-actor-id'] && session.user && session.user.id) headers['x-actor-id'] = session.user.id;
             return headers;
           }
-        } catch (e) {
+        } catch {
           // fallback to supabase client below
         }
       }
@@ -61,20 +55,20 @@ export default function ShareModal({
             try {
               const session = (await win.supabaseClient.auth.getSession())?.data?.session;
               if (session?.access_token) headers['authorization'] = 'Bearer ' + session.access_token;
-            } catch (e) {}
+            } catch {}
             return headers;
           }
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     return { 'Content-Type': 'application/json' };
-  };
+  }, []);
 
-  const loadInvites = async () => {
+  const loadInvites = useCallback(async () => {
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/invites?team_id=${teamId}`, { headers });
@@ -85,7 +79,13 @@ export default function ShareModal({
     } catch (error) {
       console.error("Error loading invites:", error);
     }
-  };
+  }, [getAuthHeaders, teamId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadInvites();
+    }
+  }, [isOpen, loadInvites]);
 
   const handleInviteByEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,12 +112,15 @@ export default function ShareModal({
         throw new Error(data.error || "Failed to create invite");
       }
 
-      if (data.email_status === "failed") {
-        const err = data.email_error || "configura SMTP/Resend";
+      if (data.email_sent === false) {
+        const err = data.email_error || "configura SMTP";
+        const smtpStatus = data.smtp_configured ? "SMTP configurato" : "SMTP NON configurato";
         const link = data.invite_url ? ` Link: ${data.invite_url}` : "";
-        setMessage(`❌ Invito creato ma email non inviata (${err}).${link}`);
+        setMessage(`❌ Invito creato ma email non inviata (${err}). ${smtpStatus}.${link}`);
+      } else if (data.email_sent === true) {
+        setMessage(`✅ Email inviata a ${email}`);
       } else {
-        setMessage(`✅ Invito inviato a ${email}`);
+        setMessage(`✅ Invito creato per ${email}`);
       }
       setEmail("");
       loadInvites();

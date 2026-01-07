@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const json = JSON.stringify(project);
     const buffer = Buffer.from(json, "utf-8");
 
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from("media")
       .upload(path, buffer, { contentType: "application/json", upsert: true });
 
