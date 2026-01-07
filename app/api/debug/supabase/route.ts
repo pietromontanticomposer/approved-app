@@ -11,6 +11,11 @@ export async function GET(req: Request) {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       APP_ALLOW_FAKE_SUPABASE: !!process.env.APP_ALLOW_FAKE_SUPABASE,
+      SMTP_HOST: !!process.env.SMTP_HOST,
+      SMTP_USER: !!process.env.SMTP_USER,
+      SMTP_PASS: !!process.env.SMTP_PASS,
+      FROM_NAME: !!process.env.FROM_NAME,
+      FROM_ADDRESS: !!process.env.FROM_ADDRESS,
     };
 
     let canQuery = false;
