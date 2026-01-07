@@ -6059,7 +6059,17 @@ async function handleShareInvite() {
     }
 
     if (shareInviteEmailEl) shareInviteEmailEl.value = "";
-    setShareInviteMessage(tr("share.inviteSuccess"), false);
+
+    // Check if email was actually sent
+    if (data.email_sent === true) {
+      setShareInviteMessage("✅ Email inviata a " + email, false);
+    } else if (data.email_sent === false) {
+      const errMsg = data.email_error || "errore SMTP";
+      const smtpStatus = data.smtp_configured ? "SMTP configurato" : "SMTP NON configurato";
+      setShareInviteMessage("❌ Invito creato ma email non inviata (" + errMsg + "). " + smtpStatus + ". Link: " + (data.invite_url || ""), true);
+    } else {
+      setShareInviteMessage(tr("share.inviteSuccess"), false);
+    }
   } catch (err) {
     console.warn("[Share] Invite error", err);
     setShareInviteMessage(tr("share.inviteError"), true);
