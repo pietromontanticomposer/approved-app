@@ -72,8 +72,11 @@ export default function InvitePage() {
 
   const handleAcceptInvite = async () => {
     if (!user) {
-      // Save token and redirect to login
+      // Save token and invite email, then redirect to login
       localStorage.setItem("pending_invite", token);
+      if (invite?.email) {
+        localStorage.setItem("pending_invite_email", invite.email);
+      }
       router.push("/login");
       return;
     }

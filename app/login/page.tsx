@@ -16,6 +16,8 @@ export default function LoginPage() {
   const [isResetPassword, setIsResetPassword] = useState(false);
   const [useMagicLink, setUseMagicLink] = useState(false);
   const [supabase, setSupabase] = useState<any>(null);
+  const [inviteEmail, setInviteEmail] = useState<string | null>(null);
+  const [emailLocked, setEmailLocked] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -35,9 +37,41 @@ export default function LoginPage() {
       setIsResetPassword(true);
     }
 
+    // Check for pending invite email
+    const pendingInviteEmail = localStorage.getItem("pending_invite_email");
+    if (pendingInviteEmail) {
+      setInviteEmail(pendingInviteEmail);
+      setEmail(pendingInviteEmail);
+      setEmailLocked(true);
+      // Check if this email exists in the system
+      checkEmailExists(pendingInviteEmail);
+    }
+
     // Check if already logged in
     checkExistingSession();
   }, []);
+
+  const checkEmailExists = async (emailToCheck: string) => {
+    try {
+      const resp = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailToCheck }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.exists === false) {
+        // Email doesn't exist, show signup form
+        setIsSignUp(true);
+        setMessage("Crea un account per accettare l'invito");
+      } else if (resp.ok && data.exists === true) {
+        // Email exists, show login form
+        setIsSignUp(false);
+        setMessage("Accedi per accettare l'invito");
+      }
+    } catch (err) {
+      console.error('[Login] Error checking email:', err);
+    }
+  };
 
   const checkExistingSession = async () => {
     try {
@@ -115,6 +149,7 @@ export default function LoginPage() {
         const pendingInvite = localStorage.getItem("pending_invite");
         if (pendingInvite) {
           localStorage.removeItem("pending_invite");
+          localStorage.removeItem("pending_invite_email");
           router.push(`/invite/${pendingInvite}`);
           return;
         }
@@ -376,19 +411,26 @@ export default function LoginPage() {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => !emailLocked && setEmail(e.target.value)}
                 required
                 placeholder="you@example.com"
+                readOnly={emailLocked}
                 style={{
                   width: "100%",
                   padding: "0.75rem",
                   borderRadius: "4px",
-                  border: "1px solid #333",
-                  background: "#0a0a0a",
+                  border: emailLocked ? "1px solid #0066ff" : "1px solid #333",
+                  background: emailLocked ? "#0a1a2a" : "#0a0a0a",
                   color: "#fff",
-                  fontSize: "1rem"
+                  fontSize: "1rem",
+                  cursor: emailLocked ? "not-allowed" : "text"
                 }}
               />
+              {emailLocked && (
+                <p style={{ color: "#0066ff", fontSize: "0.8rem", marginTop: "0.25rem" }}>
+                  Email dell'invito - non modificabile
+                </p>
+              )}
             </div>
 
             {!useMagicLink && (
@@ -539,24 +581,26 @@ export default function LoginPage() {
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setUseMagicLink(false);
-              }}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "transparent",
-                color: "#999",
-                border: "none",
-                fontSize: "0.9rem",
-                cursor: "pointer"
-              }}
-            >
-              {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
-            </button>
+            {!emailLocked && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setUseMagicLink(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "0.75rem",
+                  background: "transparent",
+                  color: "#999",
+                  border: "none",
+                  fontSize: "0.9rem",
+                  cursor: "pointer"
+                }}
+              >
+                {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+              </button>
+            )}
           </form>
         )}
 
