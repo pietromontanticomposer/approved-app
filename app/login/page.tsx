@@ -608,7 +608,7 @@ export default function LoginPage() {
           <div style={{
             marginTop: "1rem",
             padding: "0.75rem",
-            background: message.includes("Check") || message.includes("confirm") ? "#1a4d1a" : "#4d1a1a",
+            background: message.includes("✉️") || message.includes("Check") || message.includes("confirm") || message.includes("Crea un account") || message.includes("Accedi per") ? "#1a4d1a" : "#4d1a1a",
             borderRadius: "4px",
             color: "#fff",
             fontSize: "0.9rem"

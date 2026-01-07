@@ -1,22 +1,18 @@
 import nodemailer from 'nodemailer';
 
-// Gmail SMTP configuration
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
-
-const FROM_NAME = process.env.FROM_NAME || 'Approved';
-const FROM_ADDRESS = process.env.FROM_ADDRESS || 'noreply@approved.app';
-
 let transporter: any = null;
 
 function getTransporter() {
-  if (transporter) return transporter;
+  // Read env vars at runtime, not at module load time
+  const SMTP_USER = process.env.SMTP_USER;
+  const SMTP_PASS = process.env.SMTP_PASS;
 
   if (!SMTP_USER || !SMTP_PASS) {
-    console.warn('[Email] SMTP not configured');
+    console.warn('[Email] SMTP not configured - SMTP_USER:', !!SMTP_USER, 'SMTP_PASS:', !!SMTP_PASS);
     return null;
   }
 
+  // Recreate transporter each time to ensure fresh env vars
   // Use Gmail service directly - nodemailer handles the connection details
   // This avoids DNS resolution issues on serverless platforms like Vercel
   transporter = nodemailer.createTransport({
@@ -30,13 +26,19 @@ function getTransporter() {
   return transporter;
 }
 
+function getFromAddress() {
+  const FROM_NAME = process.env.FROM_NAME || 'Approved';
+  const FROM_ADDRESS = process.env.FROM_ADDRESS || 'noreply@approved.app';
+  return `${FROM_NAME} <${FROM_ADDRESS}>`;
+}
+
 export async function sendConfirmationEmail(email: string, actionLink: string) {
   const t = getTransporter();
   if (!t) {
     throw new Error('SMTP not configured');
   }
 
-  const from = `${FROM_NAME} <${FROM_ADDRESS}>`;
+  const from = getFromAddress();
   const subject = 'Conferma il tuo account Approved';
 
   const text = `Ciao!\n\nConferma il tuo account cliccando qui: ${actionLink}\n\nSe non hai richiesto questa email, ignora.`;
@@ -70,7 +72,7 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
     throw new Error('SMTP not configured');
   }
 
-  const from = `${FROM_NAME} <${FROM_ADDRESS}>`;
+  const from = getFromAddress();
   const subject = invitedBy
     ? `${invitedBy} ti ha invitato a collaborare su Approved`
     : `Sei stato invitato a collaborare su Approved`;
