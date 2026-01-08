@@ -1778,7 +1778,8 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
             console.log('[Upload] Response headers:\n', xhr.getAllResponseHeaders());
           } catch (e) {}
 
-          alert(`ERRORE UPLOAD ${xhr.status}:\n${errorDetail}\n\nVerifica console (F12) per dettagli`);
+          console.error('[Upload] Full error response:', response);
+          alert(`ERRORE UPLOAD ${xhr.status}:\n${errorDetail}\n\nVerifica console (F12) per dettagli Supabase`);
           markUploadJobError(jobId, `Errore ${xhr.status}`);
         }
       } catch (e) {

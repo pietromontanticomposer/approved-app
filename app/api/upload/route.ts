@@ -494,7 +494,17 @@ export async function POST(req: NextRequest) {
       // If it's an authorization/forbidden error surface 403 so client sees same code
       if (providerStatus === 403) {
         return NextResponse.json(
-          { error: `Forbidden: ${bodyMessage}`, details: (error as any)?.details || null },
+          {
+            error: `Forbidden: ${bodyMessage}`,
+            details: (error as any)?.details || null,
+            hint: (error as any)?.hint || null,
+            supabaseError: {
+              message: error.message,
+              status: (error as any)?.status,
+              statusCode: (error as any)?.statusCode,
+              error: (error as any)?.error,
+            }
+          },
           { status: 403 }
         );
       }

@@ -5,7 +5,7 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 import ShareModal from "./components/ShareModal";
 
-// Force rebuild - Jan 8 2026 - Fix 403 upload (cache bust v7 - use flowAuth.getSession)
+// Force rebuild - Jan 8 2026 - v8 - Enhanced error logging for Supabase Storage
 
 export default function Page() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -410,11 +410,11 @@ export default function Page() {
         src="https://unpkg.com/wavesurfer.js@6"
         strategy="beforeInteractive"
       />
-      <Script src="/i18n.js?v=7" strategy="afterInteractive" />
-      <Script src="/flow-auth.js?v=7" strategy="afterInteractive" />
-      <Script src="/share-handler.js?v=7" strategy="afterInteractive" />
+      <Script src="/i18n.js?v=8" strategy="afterInteractive" />
+      <Script src="/flow-auth.js?v=8" strategy="afterInteractive" />
+      <Script src="/share-handler.js?v=8" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=7"
+        src="/flow.js?v=8"
         strategy="afterInteractive"
         onLoad={() => {
           console.log('[PageInit] Scripts loaded');
