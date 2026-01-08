@@ -2440,8 +2440,8 @@ async function generateWaveformImage(audioUrl, width = 200, height = 40) {
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(0, 0, width, height);
 
-      // Waveform bars
-      ctx.fillStyle = '#ffc107';
+      // Waveform bars - cyan color
+      ctx.fillStyle = '#38bdf8';
       const barWidth = 2;
       const gap = 1;
       const centerY = height / 2;

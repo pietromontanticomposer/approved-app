@@ -1462,17 +1462,7 @@ body.resizing {
   color: var(--text-muted);
 }
 
-.review-actions {
-  display: flex;
-  gap: 8px;
-  margin: 6px 0 10px;
-}
-
-.decision-actions {
-  display: flex;
-  gap: 8px;
-  margin: 0 0 10px;
-}
+/* Removed duplicate styles - see line 2490+ for main styles */
 
 .player-preview {
   background: var(--panel-bg);
@@ -2487,72 +2477,54 @@ body.resizing {
   justify-content: center;
 }
 
-/* Review actions layout */
+/* Review actions layout - Collaborator view */
 .review-actions,
 .decision-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: flex;
   align-items: center;
-  padding: 6px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  width: fit-content;
-}
-
-/* Review action buttons - Collaborator view - inline compact style */
-.review-actions,
-.decision-actions {
-  display: inline-flex;
-  gap: 8px;
-  margin: 0;
+  gap: 10px;
+  margin: 12px 0;
 }
 
 .review-actions .ghost-btn.small,
 .decision-actions .ghost-btn.small,
 .decision-actions .primary-btn.small {
-  min-height: 32px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-weight: 500;
-  font-size: 12px;
-  letter-spacing: 0;
+  min-height: 38px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
   transition: all 0.15s ease;
   width: auto;
+  flex-shrink: 0;
 }
 
-/* "Ho finito di commentare" button - subtle style */
+/* "Ho finito di commentare" button */
 .review-actions .ghost-btn.small {
-  background: transparent;
-  border: 1px solid rgba(100, 116, 139, 0.4);
-  color: var(--text-muted);
-}
-
-.review-actions .ghost-btn.small:hover {
-  background: rgba(51, 65, 85, 0.5);
-  border-color: rgba(100, 116, 139, 0.6);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   color: var(--text);
 }
 
-/* "Approva" button - green success style */
+.review-actions .ghost-btn.small:hover {
+  background: var(--surface-3);
+  border-color: var(--border);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+/* "Approved" button - emerald green */
 .decision-actions .primary-btn.small {
-  background: #059669;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
   border: none;
-  box-shadow: none;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
   color: white;
+  font-weight: 700;
 }
 
 .decision-actions .primary-btn.small:hover {
-  background: #10b981;
-}
-
-.decision-actions .ghost-btn.small {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.decision-actions .ghost-btn.small:hover {
-  background: var(--surface-2);
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
