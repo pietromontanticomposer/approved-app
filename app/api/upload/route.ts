@@ -216,14 +216,9 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
       return;
     }
 
-    // Get uploader name
-    const { data: uploader } = await supabaseAdmin
-      .from('users')
-      .select('email, name')
-      .eq('id', uploaderId)
-      .single();
-
-    const uploaderName = uploader?.name || uploader?.email || 'Un membro del team';
+    // Get uploader name from Supabase Auth
+    const { data: uploaderAuth, error: uploaderError } = await supabaseAdmin.auth.admin.getUserById(uploaderId);
+    const uploaderName = uploaderAuth?.user?.user_metadata?.name || uploaderAuth?.user?.email || 'Un membro del team';
 
     // Get all collaborators (project_members) except the uploader
     const { data: members, error: membersError } = await supabaseAdmin

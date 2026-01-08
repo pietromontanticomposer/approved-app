@@ -1962,12 +1962,21 @@ function createVersionForCue(project, cue, file) {
 
   cue.versions.push(version);
   cue.status = computeCueStatus(cue);
-  
+
   // Start async upload to Supabase for media files
   if (version.media) {
-    uploadFileToSupabase(file, project.id, cue.id, version.id);
+    (async () => {
+      // Save version to database BEFORE uploading file
+      const saved = await saveVersionToDatabase(project.id, cue.id, version, null);
+      if (!saved) {
+        console.error('[Flow] Failed to save version metadata');
+        return;
+      }
+      // Then upload the file
+      uploadFileToSupabase(file, project.id, cue.id, version.id);
+    })();
   }
-  
+
   return version;
 }
 
