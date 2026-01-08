@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from("versions")
-      .insert({
+      .upsert({
         id: version_id,
         cue_id,
         index_in_cue: version.index || 0,
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
         media_duration: version.media_duration || null,
         media_thumbnail_path: version.media_thumbnail_path || null,
         media_thumbnail_url: version.media_thumbnail_url || null,
-      })
+      }, { onConflict: 'id' })
       .select()
       .single();
 
