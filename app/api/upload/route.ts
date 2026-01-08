@@ -302,14 +302,19 @@ export async function POST(req: NextRequest) {
     if (isDev) console.log('[POST /api/upload] Request started');
 
     // SECURITY: Verify authentication
+    const authHeader = req.headers.get('authorization');
+    console.log('[POST /api/upload] Auth header present:', !!authHeader);
+
     const auth = await verifyAuth(req);
     if (!auth) {
-      if (isDev) console.log('[POST /api/upload] Unauthorized request');
+      console.error('[POST /api/upload] Unauthorized - no valid auth token');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
       );
     }
+
+    console.log('[POST /api/upload] Authenticated user:', auth.userId);
 
     const userId = auth.userId;
 
@@ -392,14 +397,18 @@ export async function POST(req: NextRequest) {
 
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, projectId);
-    console.log('[POST /api/upload] canModifyProject check:', { userId, projectId, canModify });
+    console.log('[POST /api/upload] Permission check:', { userId, projectId, canModify });
+
     if (!canModify) {
-      console.log('[POST /api/upload] User not authorized to modify project:', { userId, projectId });
+      const errorMsg = `User ${userId} forbidden from uploading to project ${projectId}`;
+      console.error('[POST /api/upload] FORBIDDEN:', errorMsg);
       return NextResponse.json(
-        { error: 'Forbidden - you do not have permission to upload files to this project' },
+        { error: `Forbidden - you do not have permission to upload files to this project. User: ${userId}, Project: ${projectId}` },
         { status: 403 }
       );
     }
+
+    console.log('[POST /api/upload] Permission check PASSED');
 
     // Sanitize filename
     const sanitizedName = sanitizeFilename(file.name || `upload-${Date.now()}`);

@@ -1758,6 +1758,12 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
           }
         } else {
           console.error("[Upload] Error:", xhr.status, xhr.responseText);
+          let errorDetail = xhr.responseText;
+          try {
+            const errorJson = JSON.parse(xhr.responseText);
+            errorDetail = errorJson.error || xhr.responseText;
+          } catch (e) {}
+          alert(`ERRORE UPLOAD ${xhr.status}:\n${errorDetail}\n\nVerifica console (F12) per dettagli`);
           markUploadJobError(jobId, `Errore ${xhr.status}`);
         }
       } catch (e) {
@@ -1778,14 +1784,31 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
 
     xhr.open("POST", "/api/upload");
 
+    let hasAuth = false;
     try {
       if (window.supabaseClient) {
         const { data: { session } } = await window.supabaseClient.auth.getSession();
         if (session?.access_token) {
           xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
+          hasAuth = true;
+          console.log("[Upload] Auth header set - user:", session.user?.id);
+        } else {
+          console.warn("[Upload] No session/token found!");
         }
+      } else {
+        console.warn("[Upload] No supabaseClient available!");
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("[Upload] Auth error:", e);
+    }
+
+    if (!hasAuth) {
+      alert("ERRORE: Non sei autenticato! Ricarica la pagina e fai login.");
+      markUploadJobError(jobId, "Non autenticato");
+      activeUploads = Math.max(0, activeUploads - 1);
+      scheduleHideUploadPanel();
+      return;
+    }
 
     console.log("[Upload] Starting:", file.name, `(${Math.round(file.size / 1024)} KB)`);
     xhr.send(formData);
