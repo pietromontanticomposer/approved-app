@@ -1846,13 +1846,19 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
 
 async function saveVersionToDatabase(projectId, cueId, version, storagePath) {
   try {
+    // Don't save blob: URLs to database - they are temporary browser URLs
+    let mediaUrl = version.media && version.media.url ? version.media.url : null;
+    if (mediaUrl && mediaUrl.startsWith('blob:')) {
+      mediaUrl = null; // Will be resolved from storage_path
+    }
+
     const versionData = {
       id: version.id,
       index: version.index,
       status: version.status,
       media_type: version.media && version.media.type ? version.media.type : null,
       media_storage_path: storagePath || null,
-      media_url: version.media && version.media.url ? version.media.url : null,
+      media_url: mediaUrl,
       media_original_name: version.media && version.media.originalName ? version.media.originalName : null,
       media_display_name: version.media && (version.media.displayName || version.media.originalName) ? (version.media.displayName || version.media.originalName) : null,
       media_duration: version.media && version.media.duration ? version.media.duration : null,

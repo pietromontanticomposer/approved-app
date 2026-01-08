@@ -103,6 +103,8 @@ export async function resolveMediaUrl(
 ): Promise<string | null> {
   if (!raw) return null;
   if (raw.startsWith("data:")) return raw;
+  // Ignore blob: URLs - they are temporary browser-only URLs
+  if (raw.startsWith("blob:")) return null;
 
   if (isAbsoluteUrl(raw)) {
     try {
