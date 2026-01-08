@@ -118,3 +118,59 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
   console.log('[Email] Invite sent via SMTP to', email, '- MessageId:', info.messageId);
   return info;
 }
+
+export async function sendNewVersionNotification(
+  email: string,
+  projectName: string,
+  fileName: string,
+  uploadedBy: string,
+  projectLink: string
+) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error('SMTP not configured');
+  }
+
+  const from = getFromAddress();
+  const subject = `Nuovo file caricato su "${projectName}"`;
+
+  const text = `Ciao!\n\n${uploadedBy} ha caricato un nuovo file su "${projectName}":\n\nFile: ${fileName}\n\nVai al progetto per ascoltarlo e lasciare i tuoi commenti: ${projectLink}\n\nBuon lavoro!`;
+
+  const html = `
+    <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; color:#111; max-width:600px; margin:0 auto; padding:20px; background:#fafafa;">
+      <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <h2 style="color:#0b62ff; margin-top:0;">Approved</h2>
+        <p style="font-size:16px; color:#333;">
+          <strong>${uploadedBy}</strong> ha caricato un nuovo file su <strong>"${projectName}"</strong>
+        </p>
+        <div style="background:#f5f5f5; border-left:4px solid #0b62ff; padding:16px; margin:20px 0; border-radius:4px;">
+          <p style="margin:0; color:#666; font-size:14px;">📁 File caricato:</p>
+          <p style="margin:8px 0 0 0; font-weight:600; color:#111; font-size:15px;">${fileName}</p>
+        </div>
+        <p style="margin:24px 0;">
+          <a href="${projectLink}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+            Vai al progetto
+          </a>
+        </p>
+        <p style="color:#666;font-size:0.9rem;">
+          Ascolta il file e lascia i tuoi commenti per aiutare il team a migliorare il progetto.
+        </p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+        <p style="color:#999;font-size:0.85rem;margin-bottom:0;">
+          Ricevi questa email perché sei collaboratore del progetto "${projectName}".
+        </p>
+      </div>
+    </div>
+  `;
+
+  const info = await t.sendMail({
+    from,
+    to: email,
+    subject,
+    text,
+    html,
+  });
+
+  console.log('[Email] New version notification sent to', email, '- MessageId:', info.messageId);
+  return info;
+}

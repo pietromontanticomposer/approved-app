@@ -14,6 +14,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject } from '@/lib/auth';
+import { sendNewVersionNotification } from '@/lib/email';
 
 export const runtime = "nodejs";
 const isDev = process.env.NODE_ENV !== "production";
@@ -186,6 +187,90 @@ function guessMimeType(ext: string): string {
  */
 function isAllowedFileType(mimeType: string): boolean {
   return ALLOWED_MIME_TYPES.includes(mimeType);
+}
+
+// ============================================================================
+// NOTIFICATION HELPERS
+// ============================================================================
+
+/**
+ * Send email notifications to all collaborators of a project
+ * This runs asynchronously and doesn't block the upload response
+ */
+async function notifyCollaborators(projectId: string, uploaderId: string, fileName: string) {
+  try {
+    // Get project details
+    const { data: project, error: projectError } = await supabaseAdmin
+      .from('projects')
+      .select('name, owner_id, is_shared')
+      .eq('id', projectId)
+      .single();
+
+    if (projectError || !project) {
+      console.warn('[Notification] Project not found:', projectId);
+      return;
+    }
+
+    // Only send notifications for shared projects
+    if (!project.is_shared) {
+      return;
+    }
+
+    // Get uploader name
+    const { data: uploader } = await supabaseAdmin
+      .from('users')
+      .select('email, name')
+      .eq('id', uploaderId)
+      .single();
+
+    const uploaderName = uploader?.name || uploader?.email || 'Un membro del team';
+
+    // Get all collaborators (project_members) except the uploader
+    const { data: members, error: membersError } = await supabaseAdmin
+      .from('project_members')
+      .select('user_id, users!inner(email, name)')
+      .eq('project_id', projectId)
+      .neq('user_id', uploaderId);
+
+    if (membersError) {
+      console.error('[Notification] Failed to fetch members:', membersError);
+      return;
+    }
+
+    if (!members || members.length === 0) {
+      console.log('[Notification] No collaborators to notify for project:', projectId);
+      return;
+    }
+
+    // Build project link
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://approved-app-eight.vercel.app';
+    const projectLink = `${appUrl}/?project=${projectId}`;
+
+    // Send email to each collaborator
+    const emailPromises = members.map(async (member: any) => {
+      const email = member.users?.email;
+      if (!email) return;
+
+      try {
+        await sendNewVersionNotification(
+          email,
+          project.name || 'Progetto senza nome',
+          fileName,
+          uploaderName,
+          projectLink
+        );
+        console.log('[Notification] Email sent to:', email);
+      } catch (err) {
+        console.error('[Notification] Failed to send email to', email, ':', err);
+      }
+    });
+
+    await Promise.allSettled(emailPromises);
+    console.log(`[Notification] Sent ${emailPromises.length} notification emails for project ${projectId}`);
+
+  } catch (err) {
+    console.error('[Notification] Error in notifyCollaborators:', err);
+  }
 }
 
 // ============================================================================
@@ -364,6 +449,11 @@ export async function POST(req: NextRequest) {
         mediaUrl: publicData?.publicUrl,
       }, { status: 201 });
     }
+
+    // Send email notifications to collaborators (fire and forget - don't block response)
+    notifyCollaborators(projectId, userId, file.name).catch(err => {
+      console.error('[POST /api/upload] Failed to notify collaborators:', err);
+    });
 
     return NextResponse.json({
       success: true,
