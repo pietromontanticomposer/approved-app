@@ -1801,20 +1801,29 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
 
     let hasAuth = false;
     try {
-      if (window.supabaseClient) {
-        const { data: { session } } = await window.supabaseClient.auth.getSession();
-        if (session?.access_token) {
-          xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
-          if (session.user?.id) {
-            xhr.setRequestHeader('x-actor-id', session.user.id);
-          }
-          hasAuth = true;
-          console.log("[Upload] Auth headers set - user:", session.user?.id);
-        } else {
-          console.warn("[Upload] No session/token found!");
+      // Try to get session from flowAuth first (handles demo mode)
+      let session = null;
+      if (window.flowAuth && typeof window.flowAuth.getSession === 'function') {
+        session = window.flowAuth.getSession();
+        console.log("[Upload] Got session from flowAuth:", !!session);
+      }
+
+      // Fallback to supabaseClient if no flowAuth session
+      if (!session && window.supabaseClient) {
+        const result = await window.supabaseClient.auth.getSession();
+        session = result?.data?.session;
+        console.log("[Upload] Got session from supabaseClient:", !!session);
+      }
+
+      if (session?.access_token) {
+        xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
+        if (session.user?.id) {
+          xhr.setRequestHeader('x-actor-id', session.user.id);
         }
+        hasAuth = true;
+        console.log("[Upload] Auth headers set - token:", session.access_token, "user:", session.user?.id);
       } else {
-        console.warn("[Upload] No supabaseClient available!");
+        console.warn("[Upload] No session/token found!");
       }
     } catch (e) {
       console.error("[Upload] Auth error:", e);
