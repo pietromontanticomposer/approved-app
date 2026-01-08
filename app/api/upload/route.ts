@@ -228,9 +228,9 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
     // Get all collaborators (project_members) except the uploader
     const { data: members, error: membersError } = await supabaseAdmin
       .from('project_members')
-      .select('user_id, users!inner(email, name)')
+      .select('member_id')
       .eq('project_id', projectId)
-      .neq('user_id', uploaderId);
+      .neq('member_id', uploaderId);
 
     if (membersError) {
       console.error('[Notification] Failed to fetch members:', membersError);
@@ -248,8 +248,17 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
 
     // Send email to each collaborator
     const emailPromises = members.map(async (member: any) => {
-      const email = member.users?.email;
-      if (!email) return;
+      const memberId = member.member_id;
+      if (!memberId) return;
+
+      // Get user email from Supabase Auth
+      const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.getUserById(memberId);
+      if (authError || !authUser?.user?.email) {
+        console.warn('[Notification] Could not find email for member:', memberId);
+        return;
+      }
+
+      const email = authUser.user.email;
 
       try {
         await sendNewVersionNotification(
