@@ -47,9 +47,19 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
   try {
     // Extract Bearer token from Authorization header
     const authHeader = req.headers.get('authorization');
+    const actorIdHeader = req.headers.get('x-actor-id');
+
+    console.log('[Auth] verifyAuth called:', {
+      hasAuthHeader: !!authHeader,
+      hasActorId: !!actorIdHeader,
+      env_APP_ALLOW_PUBLIC_USER: process.env.APP_ALLOW_PUBLIC_USER,
+      env_NODE_ENV: process.env.NODE_ENV,
+    });
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       const allowPublic =
         process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+      console.log('[Auth] No auth header - allowPublic:', allowPublic);
       if (allowPublic) {
         return {
           userId: 'public-user',
@@ -68,17 +78,25 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
 
     // DEMO MODE: If token is "demo", trust x-actor-id header
     // This allows local development without real Supabase auth
+    // Also works in production when APP_ALLOW_PUBLIC_USER=1
     if (token === 'demo') {
+      const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+
+      if (!allowPublic) {
+        console.log('[Auth] Demo token not allowed in production without APP_ALLOW_PUBLIC_USER=1');
+        return null;
+      }
+
       const actorId = req.headers.get('x-actor-id');
       if (actorId && actorId.length > 0) {
-        if (isDev) console.log('[Auth] Demo mode - using x-actor-id:', actorId);
+        console.log('[Auth] Demo mode active - using x-actor-id:', actorId);
         return {
           userId: actorId,
           email: 'demo@approved.local',
           isAuthenticated: true,
         };
       }
-      if (isDev) console.log('[Auth] Demo mode but no x-actor-id header');
+      console.log('[Auth] Demo mode but no x-actor-id header');
       return null;
     }
 
