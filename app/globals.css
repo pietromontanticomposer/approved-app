@@ -2501,62 +2501,58 @@ body.resizing {
   width: fit-content;
 }
 
-/* Review action buttons - Collaborator view */
+/* Review action buttons - Collaborator view - inline compact style */
 .review-actions,
 .decision-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  display: inline-flex;
+  gap: 8px;
+  margin: 0;
 }
 
 .review-actions .ghost-btn.small,
 .decision-actions .ghost-btn.small,
 .decision-actions .primary-btn.small {
-  min-height: 44px;
-  padding: 0 24px;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.2px;
-  transition: all 0.2s ease;
-  width: 100%;
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0;
+  transition: all 0.15s ease;
+  width: auto;
 }
 
 /* "Ho finito di commentare" button - subtle style */
 .review-actions .ghost-btn.small {
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(71, 85, 105, 0.5);
-  color: var(--text);
+  background: transparent;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  color: var(--text-muted);
 }
 
 .review-actions .ghost-btn.small:hover {
-  background: rgba(51, 65, 85, 0.9);
-  border-color: rgba(100, 116, 139, 0.7);
-  transform: translateY(-1px);
+  background: rgba(51, 65, 85, 0.5);
+  border-color: rgba(100, 116, 139, 0.6);
+  color: var(--text);
 }
 
 /* "Approva" button - green success style */
 .decision-actions .primary-btn.small {
-  background: linear-gradient(180deg, #059669, #047857);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+  background: #059669;
+  border: none;
+  box-shadow: none;
   color: white;
 }
 
 .decision-actions .primary-btn.small:hover {
-  background: linear-gradient(180deg, #10b981, #059669);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
-  transform: translateY(-1px);
+  background: #10b981;
 }
 
 .decision-actions .ghost-btn.small {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 
 .decision-actions .ghost-btn.small:hover {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
