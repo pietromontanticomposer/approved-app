@@ -301,6 +301,18 @@ export async function POST(req: NextRequest) {
   try {
     if (isDev) console.log('[POST /api/upload] Request started');
 
+    // Diagnostic: log presence/length of important environment variables (do not log values)
+    try {
+      console.log('[POST /api/upload] ENV DIAGNOSTIC:', {
+        NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY_length: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length : 0,
+        SUPABASE_SERVICE_ROLE_KEY_length: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0,
+        NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'media',
+      });
+    } catch (e) {
+      console.warn('[POST /api/upload] ENV diagnostic failed:', e);
+    }
+
     // SECURITY: Verify authentication
     const authHeader = req.headers.get('authorization');
     console.log('[POST /api/upload] Auth header present:', !!authHeader);
@@ -446,9 +458,29 @@ export async function POST(req: NextRequest) {
       });
 
     if (error) {
-      console.error("[POST /api/upload] Supabase storage error:", error);
+      // Richer diagnostic logging to capture provider status and details
+      console.error("[POST /api/upload] Supabase storage error:", {
+        message: error.message,
+        status: (error as any)?.status || null,
+        details: (error as any)?.details || null,
+        hint: (error as any)?.hint || null,
+        raw: error,
+      });
+
+      // If provider returned a status (e.g., 403), propagate it for easier debugging
+      const providerStatus = (error as any)?.status;
+      const bodyMessage = (error as any)?.message || 'Failed to upload file';
+
+      // If it's an authorization/forbidden error surface 403 so client sees same code
+      if (providerStatus === 403) {
+        return NextResponse.json(
+          { error: `Forbidden: ${bodyMessage}`, details: (error as any)?.details || null },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json(
-        { error: `Failed to upload file: ${error.message}` },
+        { error: `Failed to upload file: ${bodyMessage}`, details: (error as any)?.details || null },
         { status: 500 }
       );
     }

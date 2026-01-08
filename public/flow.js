@@ -1758,11 +1758,26 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
           }
         } else {
           console.error("[Upload] Error:", xhr.status, xhr.responseText);
+          // Try to parse JSON body to extract structured error information
           let errorDetail = xhr.responseText;
           try {
             const errorJson = JSON.parse(xhr.responseText);
-            errorDetail = errorJson.error || xhr.responseText;
+            if (errorJson.error) {
+              errorDetail = errorJson.error + (errorJson.details ? (' - ' + JSON.stringify(errorJson.details)) : '');
+            } else {
+              errorDetail = JSON.stringify(errorJson);
+            }
+          } catch (e) {
+            // leave errorDetail as raw text
+          }
+
+          // Log response headers for debugging (e.g., to see provider info)
+          try {
+            const headers = {};
+            for (let i = 0; i < xhr.getAllResponseHeaders().split('\r\n').length; i++) {}
+            console.log('[Upload] Response headers:\n', xhr.getAllResponseHeaders());
           } catch (e) {}
+
           alert(`ERRORE UPLOAD ${xhr.status}:\n${errorDetail}\n\nVerifica console (F12) per dettagli`);
           markUploadJobError(jobId, `Errore ${xhr.status}`);
         }
