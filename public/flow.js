@@ -1693,152 +1693,110 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
   activeUploads++;
   registerUploadJob(jobId, file.name, file.size);
   updateUploadJob(jobId, 0, tr("upload.preparing"));
-  
+
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("projectId", projectId);
-    formData.append("cueId", cueId);
-    formData.append("versionId", versionId);
-
-    // Add upload type and cue name for email notifications
-    if (options.uploadType) {
-      formData.append("uploadType", options.uploadType);
+    // DIRECT UPLOAD TO SUPABASE - bypasses Vercel limits completely
+    const supabase = window.supabaseClient;
+    if (!supabase) {
+      throw new Error('Supabase client not initialized');
     }
-    if (options.cueName) {
-      formData.append("cueName", options.cueName);
+
+    // Build storage path
+    const timestamp = Date.now();
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
+    const storagePath = `projects/${projectId}/cues/${cueId}/versions/${versionId}/${timestamp}-${sanitizedName}`;
+
+    console.log("[Upload] Starting direct Supabase upload:", file.name, `(${Math.round(file.size / 1024)} KB)`, storagePath);
+
+    // Upload directly to Supabase Storage
+    updateUploadJob(jobId, 5, tr("upload.uploading"));
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('media')
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (uploadError) {
+      console.error("[Upload] Supabase storage error:", uploadError);
+      throw new Error(uploadError.message || 'Upload failed');
     }
-    
-    const xhr = new XMLHttpRequest();
-    
-    // Track upload progress accurately
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        // Real progress from 0 to 95% during upload
-        const percent = Math.round((e.loaded / e.total) * 95);
-        gentlyAdvanceUpload(jobId, percent, tr("upload.uploading"));
-        console.log(`[Upload] Progress: ${percent}%`);
-      }
-    });
-    
-    xhr.addEventListener("load", async () => {
-      console.log("[Upload] HTTP transfer complete, processing response");
-      try {
-        if (xhr.status === 200 || xhr.status === 201) {
-          const result = JSON.parse(xhr.responseText || "{}");
-          console.log("[Upload] Server response received:", result);
-          updateUploadJob(jobId, 98, tr("upload.finalizing"));
 
-          // Update version with the signed URL from server
-          const project = getProjectById(projectId);
-          if (project) {
-            const cue = project.cues.find(c => c.id === cueId);
-            if (cue) {
-              const version = cue.versions.find(v => v.id === versionId);
-              if (version) {
-                if (options.deliverableId) {
-                  const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
-                  if (!deliverable) {
-                    markUploadJobError(jobId, "File tecnico non trovato");
-                  } else {
-                    const storagePath = result.path || null;
-                    if (storagePath) {
-                      deliverable.url = getProxiedUrl(storagePath);
-                    } else if (result.mediaUrl) {
-                      deliverable.url = getProxiedUrl(result.mediaUrl);
-                    }
-                    try {
-                      await saveDeliverableToDatabase(project.id, version.id, deliverable, storagePath || result.mediaUrl || deliverable.url);
-                      markUploadJobComplete(jobId, tr("upload.completed"));
-                      renderVersionPreviews();
-                    } catch (err) {
-                      markUploadJobError(jobId, tr("upload.error"));
-                    }
-                  }
-                } else if (version.media) {
-                  version.media.url = result.mediaUrl || version.media.url;
-                  version.isUploading = false;
-                  version.uploadProgress = 100;
-                  console.log("[Upload] Version updated with URL:", version.media.url);
+    console.log("[Upload] File uploaded to storage:", uploadData.path);
+    updateUploadJob(jobId, 90, tr("upload.finalizing"));
 
-                  const saved = await saveVersionToDatabase(project.id, cue.id, version, result.path);
-                  if (saved) {
-                    markUploadJobComplete(jobId, tr("upload.completed"));
-                    // Generate and upload preview images (waveform/thumbnail) in background
-                    const mediaType = version.media.type;
-                    const mediaUrl = version.media.url || result.path;
-                    if (mediaType && mediaUrl) {
-                      generateAndUploadPreviews(project.id, cue.id, version.id, mediaType, mediaUrl)
-                        .catch(err => console.warn('[Preview] Background generation failed:', err));
-                    }
-                  } else {
-                    markUploadJobError(jobId, tr("upload.error"));
-                  }
+    // Get signed URL for the uploaded file
+    const { data: signedData } = await supabase.storage
+      .from('media')
+      .createSignedUrl(storagePath, 7200); // 2 hours
 
-                  renderVersionPreviews();
-                  renderPlayer();
-                } else {
-                  markUploadJobError(jobId, tr("upload.error"));
-                }
-              } else {
+    const mediaUrl = signedData?.signedUrl || null;
+    console.log("[Upload] Signed URL created:", mediaUrl ? 'yes' : 'no');
+
+    // Update local state and database
+    const project = getProjectById(projectId);
+    if (project) {
+      const cue = project.cues.find(c => c.id === cueId);
+      if (cue) {
+        const version = cue.versions.find(v => v.id === versionId);
+        if (version) {
+          if (options.deliverableId) {
+            const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
+            if (deliverable) {
+              deliverable.url = getProxiedUrl(storagePath);
+              try {
+                await saveDeliverableToDatabase(project.id, version.id, deliverable, storagePath);
+                markUploadJobComplete(jobId, tr("upload.completed"));
+                renderVersionPreviews();
+              } catch (err) {
+                console.error("[Upload] Failed to save deliverable:", err);
                 markUploadJobError(jobId, tr("upload.error"));
+              }
+            }
+          } else if (version.media) {
+            version.media.url = mediaUrl || getProxiedUrl(storagePath);
+            version.isUploading = false;
+            version.uploadProgress = 100;
+
+            const saved = await saveVersionToDatabase(project.id, cue.id, version, storagePath);
+            if (saved) {
+              markUploadJobComplete(jobId, tr("upload.completed"));
+              // Generate thumbnail/waveform in background
+              const mediaType = version.media.type;
+              if (mediaType) {
+                generateAndUploadPreviews(project.id, cue.id, version.id, mediaType, version.media.url)
+                  .catch(err => console.warn('[Preview] Background generation failed:', err));
               }
             } else {
               markUploadJobError(jobId, tr("upload.error"));
             }
-          } else {
-            markUploadJobError(jobId, tr("upload.error"));
-          }
-        } else {
-          console.error("[Upload] Server error:", xhr.status, xhr.statusText);
-          markUploadJobError(jobId, tr("upload.serverError", { code: xhr.status }));
-        }
-      } catch (parseErr) {
-        console.error("[Upload] Failed to process response:", parseErr);
-        markUploadJobError(jobId, tr("upload.invalidResponse"));
-      } finally {
-        activeUploads = Math.max(0, activeUploads - 1);
-        scheduleHideUploadPanel();
-      }
-    });
-    
-    xhr.addEventListener("error", () => {
-      console.error("[Upload] Network error during upload");
-      markUploadJobError(jobId, tr("upload.networkError"));
-      activeUploads = Math.max(0, activeUploads - 1);
-      scheduleHideUploadPanel();
-    });
-    
-    xhr.addEventListener("abort", () => {
-      console.warn("[Upload] Upload aborted");
-      markUploadJobError(jobId, tr("upload.cancelled"));
-      activeUploads = Math.max(0, activeUploads - 1);
-      scheduleHideUploadPanel();
-    });
-    
-    xhr.open("POST", "/api/upload");
 
-    // Add authentication headers
-    try {
-      if (window.supabaseClient) {
-        const { data: { session } } = await window.supabaseClient.auth.getSession();
-        if (session && session.access_token) {
-          xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
-        }
-        if (session && session.user && session.user.id) {
-          xhr.setRequestHeader('x-actor-id', session.user.id);
+            renderVersionPreviews();
+            renderPlayer();
+          }
         }
       }
-    } catch (e) {
-      console.warn('[Upload] Failed to get auth session:', e);
     }
 
-    console.log("[Upload] Starting upload:", file.name, `(${Math.round(file.size / 1024)} KB)`);
-    xhr.send(formData);
-    
+    // Send notification (fire and forget)
+    if (options.uploadType) {
+      fetch('/api/notify-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId,
+          fileName: file.name,
+          uploadType: options.uploadType,
+          cueName: options.cueName
+        })
+      }).catch(() => {});
+    }
+
   } catch (err) {
     console.error("[Upload] Exception:", err);
-    markUploadJobError(jobId, tr("upload.unexpectedError"));
+    markUploadJobError(jobId, err.message || tr("upload.unexpectedError"));
+  } finally {
     activeUploads = Math.max(0, activeUploads - 1);
     scheduleHideUploadPanel();
   }
