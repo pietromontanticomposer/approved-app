@@ -28,6 +28,9 @@
         }
       ]
     }
-  ]
+  ],
+  "security": {
+    "attackModeBypassSecret": "approved-upload-bypass-2026"
+  }
 }
 
