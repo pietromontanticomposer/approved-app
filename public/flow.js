@@ -1024,15 +1024,16 @@ function updateReviewUI(project, version) {
     reviewCompleteBtn.style.display = showReviewComplete ? "inline-flex" : "none";
   }
 
+  // Hide Start revision button - no longer needed, owner just uploads new version
   if (startRevisionBtn) {
-    startRevisionBtn.style.display = isOwner && status === "review_completed" ? "inline-flex" : "none";
+    startRevisionBtn.style.display = "none";
   }
 
   if (statusInReviewBtn) {
     statusInReviewBtn.style.display = "none";
   }
   if (statusApprovedBtn) {
-    statusApprovedBtn.style.display = "none"; // Hide this button entirely
+    statusApprovedBtn.style.display = "none";
   }
 
   if (approveVersionBtn) {
@@ -1042,12 +1043,12 @@ function updateReviewUI(project, version) {
     approveVersionBtn.disabled = !showApprove;
   }
 
-  // REMOVE "Request changes" button - never show it
+  // Hide Request changes button - removed from flow
   if (requestChangesBtn) {
     requestChangesBtn.style.display = "none";
   }
 
-  toggleActionContainer(reviewActionsEl, [reviewCompleteBtn, startRevisionBtn]);
+  toggleActionContainer(reviewActionsEl, [reviewCompleteBtn]);
   toggleActionContainer(decisionActionsEl, [approveVersionBtn]);
 
   setCommentsEnabled(canComment);
