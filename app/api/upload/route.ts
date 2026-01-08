@@ -392,8 +392,9 @@ export async function POST(req: NextRequest) {
 
     // SECURITY: Check if user can modify this project
     const canModify = await canModifyProject(userId, projectId);
+    console.log('[POST /api/upload] canModifyProject check:', { userId, projectId, canModify });
     if (!canModify) {
-      if (isDev) console.log('[POST /api/upload] User not authorized to modify project');
+      console.log('[POST /api/upload] User not authorized to modify project:', { userId, projectId });
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to upload files to this project' },
         { status: 403 }

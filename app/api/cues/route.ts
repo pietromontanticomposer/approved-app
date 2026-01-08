@@ -173,7 +173,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cue_id = uuidv4();
+    // Use client-provided ID if valid UUID, otherwise generate new one
+    const cue_id = cue.id && isUuid(cue.id) ? cue.id : uuidv4();
 
     const buildCuePayload = (includeMax: boolean) => {
       const payload: any = {
