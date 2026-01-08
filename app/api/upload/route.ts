@@ -197,7 +197,15 @@ function isAllowedFileType(mimeType: string): boolean {
  * Send email notifications to all collaborators of a project
  * This runs asynchronously and doesn't block the upload response
  */
-async function notifyCollaborators(projectId: string, uploaderId: string, fileName: string) {
+type UploadType = 'new_cue' | 'new_version' | 'deliverable' | 'unknown';
+
+async function notifyCollaborators(
+  projectId: string,
+  uploaderId: string,
+  fileName: string,
+  uploadType: UploadType = 'unknown',
+  cueName?: string
+) {
   try {
     // Get project details
     const { data: project, error: projectError } = await supabaseAdmin
@@ -259,7 +267,9 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
           project.name || 'Progetto senza nome',
           fileName,
           uploaderName,
-          projectLink
+          projectLink,
+          uploadType,
+          cueName
         );
         console.log('[Notification] Email sent to:', email);
       } catch (err) {
@@ -319,6 +329,8 @@ export async function POST(req: NextRequest) {
     const projectId = form.get("projectId") as string | null;
     const cueId = form.get("cueId") as string | null;
     const versionId = form.get("versionId") as string | null;
+    const uploadType = form.get("uploadType") as string | null; // 'new_cue', 'new_version', 'deliverable'
+    const cueName = form.get("cueName") as string | null;
 
     // Validate required fields
     if (!file) {
@@ -453,7 +465,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Send email notifications to collaborators (fire and forget - don't block response)
-    notifyCollaborators(projectId, userId, file.name).catch(err => {
+    const resolvedUploadType = (uploadType as UploadType) || 'unknown';
+    notifyCollaborators(projectId, userId, file.name, resolvedUploadType, cueName || undefined).catch(err => {
       console.error('[POST /api/upload] Failed to notify collaborators:', err);
     });
 

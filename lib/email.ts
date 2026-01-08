@@ -119,12 +119,16 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
   return info;
 }
 
+export type UploadType = 'new_cue' | 'new_version' | 'deliverable' | 'unknown';
+
 export async function sendNewVersionNotification(
   email: string,
   projectName: string,
   fileName: string,
   uploadedBy: string,
-  projectLink: string
+  projectLink: string,
+  uploadType: UploadType = 'unknown',
+  cueName?: string
 ) {
   const t = getTransporter();
   if (!t) {
@@ -132,19 +136,50 @@ export async function sendNewVersionNotification(
   }
 
   const from = getFromAddress();
-  const subject = `Nuovo file caricato su "${projectName}"`;
 
-  const text = `Ciao!\n\n${uploadedBy} ha caricato un nuovo file su "${projectName}":\n\nFile: ${fileName}\n\nVai al progetto per ascoltarlo e lasciare i tuoi commenti: ${projectLink}\n\nBuon lavoro!`;
+  // Build subject and description based on upload type
+  let subject: string;
+  let typeLabel: string;
+  let typeIcon: string;
+  let actionDescription: string;
+
+  switch (uploadType) {
+    case 'new_cue':
+      subject = `Nuova cue aggiunta su "${projectName}"`;
+      typeLabel = 'Nuova Cue';
+      typeIcon = '🎬';
+      actionDescription = `ha aggiunto una nuova cue${cueName ? ` "<strong>${cueName}</strong>"` : ''} su`;
+      break;
+    case 'new_version':
+      subject = `Nuova versione caricata su "${projectName}"`;
+      typeLabel = cueName ? `Nuova versione per "${cueName}"` : 'Nuova Versione';
+      typeIcon = '🔄';
+      actionDescription = `ha caricato una nuova versione${cueName ? ` per la cue "<strong>${cueName}</strong>"` : ''} su`;
+      break;
+    case 'deliverable':
+      subject = `Nuovo file tecnico su "${projectName}"`;
+      typeLabel = cueName ? `File tecnico per "${cueName}"` : 'File Tecnico';
+      typeIcon = '📦';
+      actionDescription = `ha caricato un file tecnico${cueName ? ` per la cue "<strong>${cueName}</strong>"` : ''} su`;
+      break;
+    default:
+      subject = `Nuovo file caricato su "${projectName}"`;
+      typeLabel = 'Nuovo File';
+      typeIcon = '📁';
+      actionDescription = 'ha caricato un nuovo file su';
+  }
+
+  const text = `Ciao!\n\n${uploadedBy} ${actionDescription.replace(/<[^>]*>/g, '')} "${projectName}":\n\nFile: ${fileName}\n\nVai al progetto per ascoltarlo e lasciare i tuoi commenti: ${projectLink}\n\nBuon lavoro!`;
 
   const html = `
     <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; color:#111; max-width:600px; margin:0 auto; padding:20px; background:#fafafa;">
       <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
         <h2 style="color:#0b62ff; margin-top:0;">Approved</h2>
         <p style="font-size:16px; color:#333;">
-          <strong>${uploadedBy}</strong> ha caricato un nuovo file su <strong>"${projectName}"</strong>
+          <strong>${uploadedBy}</strong> ${actionDescription} <strong>"${projectName}"</strong>
         </p>
         <div style="background:#f5f5f5; border-left:4px solid #0b62ff; padding:16px; margin:20px 0; border-radius:4px;">
-          <p style="margin:0; color:#666; font-size:14px;">📁 File caricato:</p>
+          <p style="margin:0; color:#666; font-size:14px;">${typeIcon} ${typeLabel}:</p>
           <p style="margin:8px 0 0 0; font-weight:600; color:#111; font-size:15px;">${fileName}</p>
         </div>
         <p style="margin:24px 0;">

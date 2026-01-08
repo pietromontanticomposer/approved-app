@@ -1492,7 +1492,7 @@ async function createCueFromFile(file) {
     return;
   }
 
-  const version = createVersionForCue(project, cue, file);
+  const version = createVersionForCue(project, cue, file, { isNewCue: true });
 
   project.activeCueId = cue.id;
   project.activeVersionId = version.id;
@@ -1700,6 +1700,14 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     formData.append("projectId", projectId);
     formData.append("cueId", cueId);
     formData.append("versionId", versionId);
+
+    // Add upload type and cue name for email notifications
+    if (options.uploadType) {
+      formData.append("uploadType", options.uploadType);
+    }
+    if (options.cueName) {
+      formData.append("cueName", options.cueName);
+    }
     
     const xhr = new XMLHttpRequest();
     
@@ -1916,7 +1924,8 @@ async function saveDeliverableToDatabase(projectId, versionId, deliverable, stor
   }
 }
 
-function createVersionForCue(project, cue, file) {
+function createVersionForCue(project, cue, file, options = {}) {
+  const isNewCue = options.isNewCue || false;
   const version = {
     id: uid(),
     index: cue.versions.length,
@@ -1930,6 +1939,12 @@ function createVersionForCue(project, cue, file) {
 
   const type = detectRawType(file.name);
   const url = URL.createObjectURL(file);
+
+  // Determine upload type for email notifications
+  const uploadType = type === "audio" || type === "video"
+    ? (isNewCue ? 'new_cue' : 'new_version')
+    : 'deliverable';
+  const cueName = cue.name || cue.title || '';
 
   if (type === "audio" || type === "video") {
     version.media = {
@@ -1956,7 +1971,7 @@ function createVersionForCue(project, cue, file) {
         console.error('[Flow] Failed to save version metadata for deliverable file');
         return;
       }
-      uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId });
+      uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId, uploadType, cueName });
     })();
   }
 
@@ -1973,7 +1988,7 @@ function createVersionForCue(project, cue, file) {
         return;
       }
       // Then upload the file
-      uploadFileToSupabase(file, project.id, cue.id, version.id);
+      uploadFileToSupabase(file, project.id, cue.id, version.id, { uploadType, cueName });
     })();
   }
 
@@ -4797,7 +4812,7 @@ function handleFileDropOnVersion(project, cue, version, file) {
   version.deliverables.push({
     id: deliverableId,
     name: file.name,
-   size: file.size,
+    size: file.size,
     type,
     url
   });
@@ -4811,7 +4826,8 @@ function handleFileDropOnVersion(project, cue, version, file) {
   renderVersionPreviews();
   renderNotesPanel();
 
-  uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId });
+  const cueName = cue.name || cue.title || '';
+  uploadFileToSupabase(file, project.id, cue.id, version.id, { deliverableId, uploadType: 'deliverable', cueName });
 }
 
 // =======================
