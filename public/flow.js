@@ -1695,108 +1695,104 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
   updateUploadJob(jobId, 0, tr("upload.preparing"));
 
   try {
-    // DIRECT UPLOAD TO SUPABASE - bypasses Vercel limits completely
-    const supabase = window.supabaseClient;
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
-    }
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("projectId", projectId);
+    formData.append("cueId", cueId);
+    formData.append("versionId", versionId);
+    if (options.uploadType) formData.append("uploadType", options.uploadType);
+    if (options.cueName) formData.append("cueName", options.cueName);
 
-    // Build storage path
-    const timestamp = Date.now();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
-    const storagePath = `projects/${projectId}/cues/${cueId}/versions/${versionId}/${timestamp}-${sanitizedName}`;
+    const xhr = new XMLHttpRequest();
 
-    console.log("[Upload] Starting direct Supabase upload:", file.name, `(${Math.round(file.size / 1024)} KB)`, storagePath);
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 95);
+        gentlyAdvanceUpload(jobId, percent, tr("upload.uploading"));
+        console.log(`[Upload] Progress: ${percent}%`);
+      }
+    });
 
-    // Upload directly to Supabase Storage
-    updateUploadJob(jobId, 5, tr("upload.uploading"));
+    xhr.addEventListener("load", async () => {
+      console.log("[Upload] Done, status:", xhr.status);
+      try {
+        if (xhr.status === 200 || xhr.status === 201) {
+          const result = JSON.parse(xhr.responseText || "{}");
+          console.log("[Upload] Result:", result);
+          updateUploadJob(jobId, 98, tr("upload.finalizing"));
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('media')
-      .upload(storagePath, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
+          const project = getProjectById(projectId);
+          if (project) {
+            const cue = project.cues.find(c => c.id === cueId);
+            if (cue) {
+              const version = cue.versions.find(v => v.id === versionId);
+              if (version) {
+                if (options.deliverableId) {
+                  const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
+                  if (deliverable) {
+                    deliverable.url = getProxiedUrl(result.path || result.mediaUrl);
+                    await saveDeliverableToDatabase(project.id, version.id, deliverable, result.path);
+                    markUploadJobComplete(jobId, tr("upload.completed"));
+                    renderVersionPreviews();
+                  }
+                } else if (version.media) {
+                  version.media.url = result.mediaUrl || getProxiedUrl(result.path);
+                  version.isUploading = false;
+                  version.uploadProgress = 100;
 
-    if (uploadError) {
-      console.error("[Upload] Supabase storage error:", uploadError);
-      throw new Error(uploadError.message || 'Upload failed');
-    }
-
-    console.log("[Upload] File uploaded to storage:", uploadData.path);
-    updateUploadJob(jobId, 90, tr("upload.finalizing"));
-
-    // Get signed URL for the uploaded file
-    const { data: signedData } = await supabase.storage
-      .from('media')
-      .createSignedUrl(storagePath, 7200); // 2 hours
-
-    const mediaUrl = signedData?.signedUrl || null;
-    console.log("[Upload] Signed URL created:", mediaUrl ? 'yes' : 'no');
-
-    // Update local state and database
-    const project = getProjectById(projectId);
-    if (project) {
-      const cue = project.cues.find(c => c.id === cueId);
-      if (cue) {
-        const version = cue.versions.find(v => v.id === versionId);
-        if (version) {
-          if (options.deliverableId) {
-            const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
-            if (deliverable) {
-              deliverable.url = getProxiedUrl(storagePath);
-              try {
-                await saveDeliverableToDatabase(project.id, version.id, deliverable, storagePath);
-                markUploadJobComplete(jobId, tr("upload.completed"));
-                renderVersionPreviews();
-              } catch (err) {
-                console.error("[Upload] Failed to save deliverable:", err);
-                markUploadJobError(jobId, tr("upload.error"));
+                  const saved = await saveVersionToDatabase(project.id, cue.id, version, result.path);
+                  if (saved) {
+                    markUploadJobComplete(jobId, tr("upload.completed"));
+                    if (version.media.type) {
+                      generateAndUploadPreviews(project.id, cue.id, version.id, version.media.type, version.media.url)
+                        .catch(err => console.warn('[Preview] Failed:', err));
+                    }
+                  } else {
+                    markUploadJobError(jobId, tr("upload.error"));
+                  }
+                  renderVersionPreviews();
+                  renderPlayer();
+                }
               }
             }
-          } else if (version.media) {
-            version.media.url = mediaUrl || getProxiedUrl(storagePath);
-            version.isUploading = false;
-            version.uploadProgress = 100;
-
-            const saved = await saveVersionToDatabase(project.id, cue.id, version, storagePath);
-            if (saved) {
-              markUploadJobComplete(jobId, tr("upload.completed"));
-              // Generate thumbnail/waveform in background
-              const mediaType = version.media.type;
-              if (mediaType) {
-                generateAndUploadPreviews(project.id, cue.id, version.id, mediaType, version.media.url)
-                  .catch(err => console.warn('[Preview] Background generation failed:', err));
-              }
-            } else {
-              markUploadJobError(jobId, tr("upload.error"));
-            }
-
-            renderVersionPreviews();
-            renderPlayer();
           }
+        } else {
+          console.error("[Upload] Error:", xhr.status, xhr.responseText);
+          markUploadJobError(jobId, `Errore ${xhr.status}`);
+        }
+      } catch (e) {
+        console.error("[Upload] Parse error:", e);
+        markUploadJobError(jobId, tr("upload.error"));
+      } finally {
+        activeUploads = Math.max(0, activeUploads - 1);
+        scheduleHideUploadPanel();
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      console.error("[Upload] Network error");
+      markUploadJobError(jobId, tr("upload.networkError"));
+      activeUploads = Math.max(0, activeUploads - 1);
+      scheduleHideUploadPanel();
+    });
+
+    xhr.open("POST", "/api/upload");
+
+    try {
+      if (window.supabaseClient) {
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (session?.access_token) {
+          xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
         }
       }
-    }
+    } catch (e) {}
 
-    // Send notification (fire and forget)
-    if (options.uploadType) {
-      fetch('/api/notify-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId,
-          fileName: file.name,
-          uploadType: options.uploadType,
-          cueName: options.cueName
-        })
-      }).catch(() => {});
-    }
+    console.log("[Upload] Starting:", file.name, `(${Math.round(file.size / 1024)} KB)`);
+    xhr.send(formData);
 
   } catch (err) {
     console.error("[Upload] Exception:", err);
-    markUploadJobError(jobId, err.message || tr("upload.unexpectedError"));
-  } finally {
+    markUploadJobError(jobId, tr("upload.unexpectedError"));
     activeUploads = Math.max(0, activeUploads - 1);
     scheduleHideUploadPanel();
   }
