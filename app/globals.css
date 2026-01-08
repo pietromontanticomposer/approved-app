@@ -2501,30 +2501,62 @@ body.resizing {
   width: fit-content;
 }
 
-.review-actions .ghost-btn.small,
-.decision-actions .ghost-btn.small,
-.decision-actions .primary-btn.small {
-  min-height: 34px;
-  padding: 0 16px;
-  border-radius: 999px;
-  font-weight: 600;
-  letter-spacing: 0.1px;
+/* Review action buttons - Collaborator view */
+.review-actions,
+.decision-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .review-actions .ghost-btn.small,
+.decision-actions .ghost-btn.small,
+.decision-actions .primary-btn.small {
+  min-height: 44px;
+  padding: 0 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+/* "Ho finito di commentare" button - subtle style */
+.review-actions .ghost-btn.small {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+  color: var(--text);
+}
+
+.review-actions .ghost-btn.small:hover {
+  background: rgba(51, 65, 85, 0.9);
+  border-color: rgba(100, 116, 139, 0.7);
+  transform: translateY(-1px);
+}
+
+/* "Approva" button - green success style */
+.decision-actions .primary-btn.small {
+  background: linear-gradient(180deg, #059669, #047857);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+  color: white;
+}
+
+.decision-actions .primary-btn.small:hover {
+  background: linear-gradient(180deg, #10b981, #059669);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
+}
+
 .decision-actions .ghost-btn.small {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   color: var(--text);
 }
 
-.review-actions .ghost-btn.small:hover,
 .decision-actions .ghost-btn.small:hover {
-  background: var(--surface-2);
+  background: var(--surface-3);
   border-color: var(--border-strong);
-}
-
-.decision-actions .primary-btn.small {
-  background: linear-gradient(180deg, var(--accent-strong), var(--accent-dark));
-  box-shadow: 0 6px 18px rgba(29, 78, 216, 0.35);
 }
