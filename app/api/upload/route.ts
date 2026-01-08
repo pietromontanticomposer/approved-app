@@ -448,6 +448,26 @@ export async function POST(req: NextRequest) {
       versionId,
     });
 
+      // Extra diagnostics: verify bucket accessibility before attempting upload
+      try {
+        if (isDev) console.log('[POST /api/upload] Checking storage bucket accessibility:', STORAGE_BUCKET);
+        const { data: listData, error: listError } = await supabaseAdmin.storage
+          .from(STORAGE_BUCKET)
+          .list('', { limit: 1 });
+
+        if (listError) {
+          console.warn('[POST /api/upload] Bucket list error (diagnostic):', {
+            message: listError.message,
+            status: (listError as any)?.status || null,
+            details: (listError as any)?.details || null,
+          });
+        } else {
+          if (isDev) console.log('[POST /api/upload] Bucket list success (diagnostic):', Array.isArray(listData) ? listData.length : typeof listData);
+        }
+      } catch (e) {
+        console.warn('[POST /api/upload] Exception during bucket diagnostic check:', e);
+      }
+
     // Upload to Supabase storage
     const { data, error } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
