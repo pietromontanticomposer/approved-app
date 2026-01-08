@@ -47,13 +47,14 @@ Location: `public/flow.js` - `updateReviewUI()` function
 ### Email Notification System
 **NEVER DISABLE OR MODIFY WITHOUT EXPLICIT REQUEST**
 
-Location: `app/api/upload/route.ts` (lines 369-371)
+Location: `app/api/upload/route.ts` - `notifyCollaborators()` function
 
-When owner uploads a new file to a shared project:
-- Email sent to ALL collaborators
+When owner uploads a new file to a project with collaborators:
+- Email sent to ALL collaborators (members in `project_members` table except uploader)
 - Subject: `Nuovo file caricato su "{projectName}"`
 - Contains: file name, uploader name, project link
 - Runs asynchronously (fire-and-forget)
+- A project is considered "shared" if it has members in `project_members` besides the uploader
 
 Template location: `lib/email.ts` - `sendNewVersionNotification()`
 

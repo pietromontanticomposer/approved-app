@@ -202,7 +202,7 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
     // Get project details
     const { data: project, error: projectError } = await supabaseAdmin
       .from('projects')
-      .select('name, owner_id, is_shared')
+      .select('name, owner_id')
       .eq('id', projectId)
       .single();
 
@@ -211,19 +211,15 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
       return;
     }
 
-    // Only send notifications for shared projects
-    if (!project.is_shared) {
-      return;
-    }
-
     // Get uploader name from Supabase Auth
-    const { data: uploaderAuth, error: uploaderError } = await supabaseAdmin.auth.admin.getUserById(uploaderId);
+    const { data: uploaderAuth } = await supabaseAdmin.auth.admin.getUserById(uploaderId);
     const uploaderName = uploaderAuth?.user?.user_metadata?.name || uploaderAuth?.user?.email || 'Un membro del team';
 
     // Get all collaborators (project_members) except the uploader
+    // This determines if project is "shared" - if there are members besides the uploader
     const { data: members, error: membersError } = await supabaseAdmin
       .from('project_members')
-      .select('member_id')
+      .select('member_id, role')
       .eq('project_id', projectId)
       .neq('member_id', uploaderId);
 
@@ -236,6 +232,8 @@ async function notifyCollaborators(projectId: string, uploaderId: string, fileNa
       console.log('[Notification] No collaborators to notify for project:', projectId);
       return;
     }
+
+    console.log('[Notification] Found', members.length, 'collaborators to notify for project:', projectId);
 
     // Build project link
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://approved-app-eight.vercel.app';
