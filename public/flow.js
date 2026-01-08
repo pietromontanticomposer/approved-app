@@ -3782,7 +3782,14 @@ function renderCueList(options = {}) {
     metaEl.className = "cue-meta";
     const cueVersionsLabel =
       cue.versions.length === 1 ? tr("misc.version") : tr("misc.versions");
-    metaEl.textContent = `${cue.versions.length} ${cueVersionsLabel}`;
+
+    // Show version count and max revisions
+    const maxRevisions = typeof cue.maxRevisions === "number" ? cue.maxRevisions : (typeof cue.max_revisions === "number" ? cue.max_revisions : null);
+    if (maxRevisions !== null && maxRevisions > 0) {
+      metaEl.textContent = `${cue.versions.length} ${cueVersionsLabel} · ${maxRevisions} ${maxRevisions === 1 ? 'revisione' : 'revisioni'}`;
+    } else {
+      metaEl.textContent = `${cue.versions.length} ${cueVersionsLabel}`;
+    }
 
     left.appendChild(nameEl);
     left.appendChild(metaEl);
