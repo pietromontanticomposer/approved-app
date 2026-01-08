@@ -124,8 +124,14 @@ export async function canAccessProject(_userId: string, _projectId: string): Pro
 
 /**
  * Check if user can modify a project (owner or admin) (SERVER-SIDE)
+ * TEMP: In public/demo mode, allow all modifications
  */
 export async function canModifyProject(_userId: string, _projectId: string): Promise<boolean> {
+  // Always allow in development or when public users are enabled
+  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  if (allowPublic) {
+    return true;
+  }
   return true;
 }
 
