@@ -1790,8 +1790,11 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
         const { data: { session } } = await window.supabaseClient.auth.getSession();
         if (session?.access_token) {
           xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
+          if (session.user?.id) {
+            xhr.setRequestHeader('x-actor-id', session.user.id);
+          }
           hasAuth = true;
-          console.log("[Upload] Auth header set - user:", session.user?.id);
+          console.log("[Upload] Auth headers set - user:", session.user?.id);
         } else {
           console.warn("[Upload] No session/token found!");
         }
