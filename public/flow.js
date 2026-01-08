@@ -799,9 +799,10 @@ function getWaveformPeaks(raw) {
 function renderStaticWaveform(container, peaks, opts = {}) {
   const versionId = opts.versionId;
   const height = opts.height || 36;
-  const color = opts.color || "rgba(148,163,184,0.9)";
-  const bg = opts.background || "rgba(15,23,42,0.4)";
+  const color = opts.color || "rgba(99,102,241,1)"; // Indigo color for visibility
+  const bg = opts.background || "transparent";
   const width = Math.max(1, container.clientWidth || container.offsetWidth || 240);
+  console.log('[renderStaticWaveform] container width:', width, 'height:', height, 'peaks:', peaks?.length);
 
   // Check if we have a cached canvas for this version
   if (versionId && staticWaveformCache.has(versionId)) {
@@ -990,6 +991,14 @@ function isOwnerOfProject(project) {
   return user.id === project.owner_id;
 }
 
+// Check if current user is a collaborator (project shared with them, not owner)
+function isCollaboratorOfProject(project) {
+  if (!project) return false;
+  // If project has is_shared flag and user is logged in but not owner
+  if (project.is_shared && !isOwnerOfProject(project)) return true;
+  return false;
+}
+
 function canAddCommentsForVersion(status) {
   return normalizeVersionStatus(status) === "in_review";
 }
@@ -1003,13 +1012,16 @@ function toggleActionContainer(container, buttons) {
 function updateReviewUI(project, version) {
   const status = normalizeVersionStatus(version.status);
   const isOwner = isOwnerOfProject(project);
+  const isCollaborator = isCollaboratorOfProject(project);
   const canComment = canAddCommentsForVersion(status);
-  const canDecide =
-    !isOwner &&
-    (status === "in_review" || status === "review_completed");
+
+  // Collaborators (clients) can mark review complete and approve
+  const canCollaboratorAct = isCollaborator && (status === "in_review" || status === "review_completed");
 
   if (reviewCompleteBtn) {
-    reviewCompleteBtn.style.display = !isOwner && status === "in_review" ? "inline-flex" : "none";
+    // Collaborators CAN mark review as complete when status is in_review
+    const showReviewComplete = isCollaborator && status === "in_review";
+    reviewCompleteBtn.style.display = showReviewComplete ? "inline-flex" : "none";
   }
 
   if (startRevisionBtn) {
@@ -1020,21 +1032,23 @@ function updateReviewUI(project, version) {
     statusInReviewBtn.style.display = "none";
   }
   if (statusApprovedBtn) {
-    statusApprovedBtn.style.display = !isOwner ? "inline-flex" : "none";
-    statusApprovedBtn.disabled = isOwner || !(status === "in_review" || status === "review_completed");
+    statusApprovedBtn.style.display = "none"; // Hide this button entirely
   }
 
   if (approveVersionBtn) {
-    approveVersionBtn.style.display = canDecide ? "inline-flex" : "none";
-    approveVersionBtn.disabled = !canDecide;
+    // Collaborators CAN approve when status is in_review or review_completed
+    const showApprove = isCollaborator && (status === "in_review" || status === "review_completed");
+    approveVersionBtn.style.display = showApprove ? "inline-flex" : "none";
+    approveVersionBtn.disabled = !showApprove;
   }
+
+  // REMOVE "Request changes" button - never show it
   if (requestChangesBtn) {
-    requestChangesBtn.style.display = canDecide ? "inline-flex" : "none";
-    requestChangesBtn.disabled = !canDecide;
+    requestChangesBtn.style.display = "none";
   }
 
   toggleActionContainer(reviewActionsEl, [reviewCompleteBtn, startRevisionBtn]);
-  toggleActionContainer(decisionActionsEl, [approveVersionBtn, requestChangesBtn]);
+  toggleActionContainer(decisionActionsEl, [approveVersionBtn]);
 
   setCommentsEnabled(canComment);
   if (commentInputEl) {
@@ -2052,6 +2066,7 @@ function applyCuesCollapsedState() {
 // MINI WAVEFORM (CUE VERSIONS)
 // =======================
 function createMiniWave(version, container) {
+  console.log('[createMiniWave] Called for version:', version.id, 'media:', version.media);
   if (!version.media || version.media.type !== "audio") return;
   if (!version.media.url) {
     container.classList.add("is-placeholder");
@@ -2064,6 +2079,7 @@ function createMiniWave(version, container) {
 
   // PRIORITY 1: Check if we have a saved waveform IMAGE (fastest - just load the image)
   if (version.media.waveformImageUrl) {
+    console.log('[createMiniWave] Using waveform image URL');
     container.innerHTML = "";
     const img = document.createElement("img");
     img.src = getProxiedUrl(version.media.waveformImageUrl);
@@ -2081,111 +2097,97 @@ function createMiniWave(version, container) {
   }
 
   // PRIORITY 2: Check if we have peaks in version.media.waveform
+  console.log('[createMiniWave] Checking waveform data:', typeof version.media.waveform, version.media.waveform ? String(version.media.waveform).substring(0, 50) : 'null');
   let peaks = getWaveformPeaks(version.media.waveform);
+  console.log('[createMiniWave] Parsed peaks:', peaks ? `Array(${peaks.length})` : 'null');
 
   // Also check if peaks were extracted by WaveSurfer and cached
   if (!peaks && waveformParseCache.has(version.id)) {
     peaks = waveformParseCache.get(version.id);
   }
 
-  // If we have peaks (from any source), use static canvas rendering
+  // Check if WaveSurfer is available
+  if (typeof WaveSurfer === 'undefined') {
+    console.warn('[createMiniWave] WaveSurfer not loaded yet');
+    return;
+  }
+
+  // Destroy any existing WaveSurfer instance
+  if (miniWaves[version.id]) {
+    try {
+      miniWaves[version.id].destroy();
+    } catch (e) {}
+    delete miniWaves[version.id];
+  }
+
+  container.innerHTML = "";
+
+  // Create WaveSurfer instance with cyan/sky color
+  const ws = WaveSurfer.create({
+    container,
+    height: 36,
+    waveColor: "rgba(56,189,248,0.9)",      // Sky-400 / Cyan
+    progressColor: "rgba(14,165,233,1)",    // Sky-500 for progress
+    cursorWidth: 0,
+    barWidth: 2,
+    barGap: 1,
+    interact: false,
+    responsive: true,
+    normalize: true
+  });
+
+  miniWaves[version.id] = ws;
+
+  // If we have peaks, use them directly (no need to load audio)
   if (peaks) {
-    container.innerHTML = "";
-    renderStaticWaveform(container, peaks, { height: 36, versionId: version.id });
-    // Destroy any existing WaveSurfer instance since we don't need it
-    if (miniWaves[version.id]) {
-      try {
-        miniWaves[version.id].destroy();
-      } catch (e) {}
-      delete miniWaves[version.id];
+    console.log('[createMiniWave] Using saved peaks for WaveSurfer');
+    try {
+      // WaveSurfer can draw from peaks without loading audio
+      ws.load(getProxiedUrl(version.media.url), peaks);
+    } catch (e) {
+      console.warn('[createMiniWave] Failed to load with peaks:', e);
     }
     return;
   }
 
-  // No peaks available - need WaveSurfer to generate them
-  // Show placeholder while loading
-  container.innerHTML = '<div class="waveform-loading" style="height:36px;background:rgba(15,23,42,0.4);border-radius:4px;display:flex;align-items:center;justify-content:center;"><span style="color:rgba(148,163,184,0.6);font-size:10px;">Loading...</span></div>';
+  // No peaks available - need to load audio to generate them
+  console.log('[createMiniWave] No peaks, loading audio...');
+  const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
+  ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
 
-  // Queue waveform generation to avoid overloading
-  queueWaveformGeneration(version, container, () => {
-    return new Promise((resolve) => {
-      // Check if already have a WaveSurfer instance loading/ready
-      if (miniWaves[version.id]) {
-        if (container.querySelector("canvas")) {
-          resolve();
-          return;
+  ws.on("ready", () => {
+    if (!version.media.duration) {
+      version.media.duration = ws.getDuration();
+    }
+
+    const metaEl = document.querySelector(
+      `.version-row[data-version-id="${version.id}"] .version-meta`
+    );
+
+    if (metaEl) {
+      metaEl.textContent = getVersionMetaText(version);
+    }
+
+    ws.drawBuffer();
+
+    // Extract peaks and cache them
+    try {
+      const backend = ws.backend;
+      if (backend && backend.getPeaks) {
+        const extractedPeaks = backend.getPeaks(256);
+        if (extractedPeaks && extractedPeaks.length) {
+          version.media.waveform = extractedPeaks;
+          waveformParseCache.set(version.id, extractedPeaks);
+          persistWaveformPeaks(version, extractedPeaks);
         }
-        try {
-          miniWaves[version.id].destroy();
-        } catch (e) {}
-        delete miniWaves[version.id];
       }
+    } catch (e) {
+      console.warn('[MiniWave] Could not extract peaks', e);
+    }
+  });
 
-      container.innerHTML = "";
-
-      // Check if WaveSurfer is available
-      if (typeof WaveSurfer === 'undefined') {
-        console.warn('[createMiniWave] WaveSurfer not loaded yet');
-        resolve();
-        return;
-      }
-
-      const ws = WaveSurfer.create({
-        container,
-        height: 36,
-        waveColor: "rgba(148,163,184,0.8)",
-        progressColor: "rgba(56,189,248,1)",
-        cursorWidth: 0,
-        barWidth: 2,
-        barGap: 1,
-        interact: false,
-        responsive: true,
-        normalize: true
-      });
-
-      miniWaves[version.id] = ws;
-
-      const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-      ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
-
-      ws.on("ready", () => {
-        if (!version.media.duration) {
-          version.media.duration = ws.getDuration();
-        }
-
-        const metaEl = document.querySelector(
-          `.version-row[data-version-id="${version.id}"] .version-meta`
-        );
-
-        if (metaEl) {
-          metaEl.textContent = getVersionMetaText(version);
-        }
-
-        ws.drawBuffer();
-
-        // Extract peaks and cache them so we don't need to reload audio next time
-        try {
-          const backend = ws.backend;
-          if (backend && backend.getPeaks) {
-            const extractedPeaks = backend.getPeaks(256);
-            if (extractedPeaks && extractedPeaks.length) {
-              // Store peaks on the version object for future use
-              version.media.waveform = extractedPeaks;
-              // Also cache the peaks in parse cache
-              waveformParseCache.set(version.id, extractedPeaks);
-              persistWaveformPeaks(version, extractedPeaks);
-            }
-          }
-        } catch (e) {
-          console.warn('[MiniWave] Could not extract peaks', e);
-        }
-        resolve();
-      });
-
-      ws.on("error", () => {
-        resolve();
-      });
-    });
+  ws.on("error", (err) => {
+    console.warn('[createMiniWave] WaveSurfer error:', err);
   });
 }
 
@@ -4566,14 +4568,19 @@ function renderCueList(options = {}) {
 
 function renderVersionPreviews() {
   const project = getActiveProject();
+  console.log('[renderVersionPreviews] Called, project:', !!project, 'cuesCollapsed:', cuesCollapsed);
   if (!project || cuesCollapsed) return;
 
   project.cues.forEach(cue => {
     const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
     if (details && !details.open) return;
     cue.versions.forEach(version => {
+      console.log('[renderVersionPreviews] Processing version:', version.id, 'media:', version.media?.type);
       const prev = document.getElementById(`preview-${version.id}`);
-      if (!prev) return;
+      if (!prev) {
+        console.log('[renderVersionPreviews] No preview element found for:', version.id);
+        return;
+      }
       const targetWidth = Math.max(
         0,
         prev.clientWidth || prev.offsetWidth || 0
@@ -6655,9 +6662,16 @@ if (newProjectBtn) {
 }
 
 if (reviewCompleteBtn) {
-  reviewCompleteBtn.addEventListener("click", () => {
+  reviewCompleteBtn.addEventListener("click", async () => {
     const ctx = getActiveContext();
     if (!ctx) return;
+    const confirmed = await showConfirmDialog({
+      title: tr('review.confirmReviewCompleteTitle') || 'Conferma',
+      message: tr('review.confirmReviewCompleteMessage') || 'Sei sicuro di aver finito di commentare questa versione?',
+      confirmText: tr('review.confirmReviewCompleteBtn') || 'Sì, ho finito',
+      cancelText: tr('common.cancel') || 'Annulla'
+    });
+    if (!confirmed) return;
     setVersionStatus(ctx.project, ctx.cue, ctx.version, "review_completed");
   });
 }
@@ -6671,9 +6685,16 @@ if (startRevisionBtn) {
 }
 
 if (approveVersionBtn) {
-  approveVersionBtn.addEventListener("click", () => {
+  approveVersionBtn.addEventListener("click", async () => {
     const ctx = getActiveContext();
     if (!ctx) return;
+    const confirmed = await showConfirmDialog({
+      title: tr('review.confirmApproveTitle') || 'Conferma approvazione',
+      message: tr('review.confirmApproveMessage') || 'Sei sicuro di voler approvare questa versione?',
+      confirmText: tr('review.confirmApproveBtn') || 'Sì, approva',
+      cancelText: tr('common.cancel') || 'Annulla'
+    });
+    if (!confirmed) return;
     setVersionStatus(ctx.project, ctx.cue, ctx.version, "approved");
   });
 }

@@ -1,6 +1,10 @@
 import fs from "fs";
 import path from "path";
 import postgres from "postgres";
+import dotenv from "dotenv";
+
+// Load environment variables from .env.local
+dotenv.config({ path: '.env.local' });
 
 const connectionString =
   process.env.SUPABASE_DB_URL ||
@@ -19,10 +23,18 @@ const sql = postgres(connectionString, { max: 1 });
 
 async function runMigration() {
   try {
-    console.log("🚀 Starting migration...");
+    // Get migration file from command line argument, default to 001_init.sql
+    const migrationFile = process.argv[2] || "001_init.sql";
+    console.log(`🚀 Starting migration: ${migrationFile}...`);
 
     // Read the SQL file
-    const migrationPath = path.join(process.cwd(), "migrations", "001_init.sql");
+    const migrationPath = path.join(process.cwd(), "migrations", migrationFile);
+
+    if (!fs.existsSync(migrationPath)) {
+      console.error(`❌ Migration file not found: ${migrationPath}`);
+      process.exit(1);
+    }
+
     const sqlText = fs.readFileSync(migrationPath, "utf-8");
 
     // Split SQL into individual statements (semicolon-separated)
