@@ -13,7 +13,7 @@ export async function resolveActorId(candidate: string | null): Promise<string |
       try {
         const { data, error } = await supabaseAdmin.auth.getUser(token as string);
         if (!error && data?.user?.id) return data.user.id;
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -39,14 +39,13 @@ export async function resolveActorId(candidate: string | null): Promise<string |
       try {
         const { data } = await supabaseAdmin.from('auth.users').select('id,email').eq('email', candidate).limit(1).maybeSingle();
         if (data && data.id) return data.id;
-      } catch (e) {
+      } catch {
         // ignore
       }
-    } catch (e) {
+    } catch {
       // ignore lookup errors
     }
   }
 
   return null;
 }
-

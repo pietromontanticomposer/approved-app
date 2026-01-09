@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth, canModifyProject, canAccessProject } from '@/lib/auth';
+import { verifyAuth, canModifyProject } from '@/lib/auth';
 
 // ============================================================================
 // TYPES
@@ -521,7 +521,7 @@ export async function DELETE(req: NextRequest) {
       try {
         const body = await req.json();
         projectId = typeof body.id === 'string' ? body.id.trim() : '';
-      } catch (err) {
+      } catch {
         // Body parsing failed, continue with empty projectId
       }
     }

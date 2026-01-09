@@ -444,7 +444,7 @@ export default function Page() {
                           window.location.href = `/share/${p.share_id}${t}`;
                           return;
                         }
-                      } catch (e) {
+                      } catch {
                         window.location.href = `/share/${pendingShare}`;
                         return;
                       }

@@ -78,7 +78,7 @@ if (supabaseUrl && supabaseServiceKey) {
           }
         };
       },
-      upsert: async (payload: any, opts?: any) => {
+      upsert: async (payload: any, _opts?: any) => {
         const rows = db[tableName] || (db[tableName] = []);
         // naive onConflict by project_id,member_id
         const existing = rows.find(r => r.project_id === payload.project_id && r.member_id === payload.member_id);

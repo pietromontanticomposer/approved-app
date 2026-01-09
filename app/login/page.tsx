@@ -16,7 +16,6 @@ export default function LoginPage() {
   const [isResetPassword, setIsResetPassword] = useState(false);
   const [useMagicLink, setUseMagicLink] = useState(false);
   const [supabase, setSupabase] = useState<any>(null);
-  const [inviteEmail, setInviteEmail] = useState<string | null>(null);
   const [emailLocked, setEmailLocked] = useState(false);
   const router = useRouter();
 
@@ -40,7 +39,6 @@ export default function LoginPage() {
     // Check for pending invite email
     const pendingInviteEmail = localStorage.getItem("pending_invite_email");
     if (pendingInviteEmail) {
-      setInviteEmail(pendingInviteEmail);
       setEmail(pendingInviteEmail);
       setEmailLocked(true);
       // Check if this email exists in the system
@@ -49,6 +47,7 @@ export default function LoginPage() {
 
     // Check if already logged in
     checkExistingSession();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkEmailExists = async (emailToCheck: string) => {
@@ -127,7 +126,7 @@ export default function LoginPage() {
         return;
       } else {
         console.log('[Login] Attempting sign in...');
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -164,7 +163,7 @@ export default function LoginPage() {
               router.push(`/share/${parsed.share_id}${t}`);
               return;
             }
-          } catch (e) {
+          } catch {
             // fallback: older string format
             router.push(`/share/${pendingShare}`);
             return;

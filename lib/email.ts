@@ -64,7 +64,8 @@ export async function sendConfirmationEmail(email: string, actionLink: string) {
   return info;
 }
 
-export default { sendConfirmationEmail };
+const emailApi = { sendConfirmationEmail };
+export default emailApi;
 
 export async function sendInviteEmail(email: string, inviteLink: string, invitedBy?: string | null, projectName?: string | null, role?: string | null) {
   const t = getTransporter();

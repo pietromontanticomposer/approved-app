@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const redirectTo = process.env.NEXT_PUBLIC_APP_URL || 'https://approved-app-eight.vercel.app';
 
     // First, create the user (unconfirmed)
-    const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+    const { error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: false, // User needs to confirm via email

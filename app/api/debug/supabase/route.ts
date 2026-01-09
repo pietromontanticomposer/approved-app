@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 // Diagnostic endpoint to check Supabase admin connectivity without leaking secrets.
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const adminPresent = !!supabaseAdmin;
 
