@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Upload Test - Browser Simulation</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Upload Test - Browser Simulation</h1>
+  <button id="testBtn">Test Upload</button>
+  <pre id="output"></pre>
+
+  <script>
+    const output = document.getElementById('output');
+
+    function log(msg) {
+      console.log(msg);
+      output.textContent += msg + '\n';
+    }
+
+    // Simulate flowAuth
+    window.flowAuth = {
+      getSession: function() {
+        const demoId = localStorage.getItem('approved_demo_actor_id') || 'test-uuid-' + Date.now();
+        localStorage.setItem('approved_demo_actor_id', demoId);
+
+        log('[flowAuth] Returning demo session with id: ' + demoId);
+
+        return {
+          access_token: 'demo',
+          user: {
+            id: demoId,
+            email: 'demo@approved.local'
+          }
+        };
+      }
+    };
+
+    document.getElementById('testBtn').addEventListener('click', async () => {
+      output.textContent = '';
+      log('=== Starting Upload Test ===');
+
+      try {
+        // Get session like flow.js does
+        let session = null;
+        if (window.flowAuth && typeof window.flowAuth.getSession === 'function') {
+          session = window.flowAuth.getSession();
+          log('[Upload] Got session from flowAuth: ' + !!session);
+        }
+
+        if (!session) {
+          log('[Upload] ERROR: No session!');
+          return;
+        }
+
+        log('[Upload] Session token: ' + session.access_token);
+        log('[Upload] Session user: ' + session.user.id);
+
+        // Create FormData
+        const formData = new FormData();
+        const blob = new Blob(['test content'], { type: 'text/plain' });
+        formData.append('file', blob, 'test.txt');
+        formData.append('projectId', '12345678-1234-4234-8234-123456789abc');
+
+        log('[Upload] Sending request to /api/upload...');
+
+        // Send request
+        const response = await fetch('https://approved-app-eight.vercel.app/api/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + session.access_token,
+            'x-actor-id': session.user.id
+          },
+          body: formData
+        });
+
+        log('[Upload] Response status: ' + response.status);
+
+        const data = await response.json();
+        log('[Upload] Response data: ' + JSON.stringify(data, null, 2));
+
+        if (response.ok) {
+          log('\n✅ SUCCESS! Upload worked!');
+        } else {
+          log('\n❌ FAILED! Status: ' + response.status);
+        }
+
+      } catch (err) {
+        log('[Upload] ERROR: ' + err.message);
+        console.error(err);
+      }
+    });
+
+    log('Ready. Click "Test Upload" to start.');
+  </script>
+</body>
+</html>

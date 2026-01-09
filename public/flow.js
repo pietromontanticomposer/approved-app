@@ -176,6 +176,163 @@ let uploadProgressList = null;
 const uploadJobRows = new Map();
 let uploadHideTimer = null;
 let activeUploads = 0;
+const MAX_UPLOAD_SIZE = 500 * 1024 * 1024;
+const MAX_PREVIEW_SIZE = 2 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = [
+  "video/mp4",
+  "video/mpeg",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/webm",
+  "video/x-matroska",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/x-pn-wav",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/aac",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/flac",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  "application/pdf",
+  "text/plain",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-7z-compressed",
+  "application/x-rar-compressed",
+  "application/vnd.rar",
+  "application/octet-stream"
+];
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  ".mp4",
+  ".mov",
+  ".mkv",
+  ".avi",
+  ".webm",
+  ".m4v",
+  ".mp3",
+  ".wav",
+  ".aif",
+  ".aiff",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".ogg",
+  ".oga",
+  ".opus",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".svg",
+  ".pdf",
+  ".txt",
+  ".zip",
+  ".rar",
+  ".7z"
+]);
+const UPLOAD_MIME_BY_EXTENSION = {
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".aif": "audio/aiff",
+  ".aiff": "audio/aiff",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".opus": "audio/ogg",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
+  ".7z": "application/x-7z-compressed"
+};
+const UPLOAD_EXTENSION_BY_MIME = Object.entries(UPLOAD_MIME_BY_EXTENSION).reduce((acc, entry) => {
+  const ext = entry[0];
+  const mime = entry[1];
+  if (!acc[mime]) acc[mime] = ext;
+  return acc;
+}, {});
+
+function getUploadExtension(fileName) {
+  if (!fileName) return "";
+  const idx = fileName.lastIndexOf(".");
+  if (idx === -1) return "";
+  return fileName.substring(idx).toLowerCase();
+}
+
+function resolveUploadContentType(contentType, fileName) {
+  const rawType = contentType || "";
+  let ext = getUploadExtension(fileName);
+  if (!ext && rawType && UPLOAD_EXTENSION_BY_MIME[rawType]) {
+    ext = UPLOAD_EXTENSION_BY_MIME[rawType];
+  }
+  if (rawType && ALLOWED_UPLOAD_MIME_TYPES.includes(rawType)) {
+    return { contentType: rawType, ext };
+  }
+  if (ext && ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+    return { contentType: UPLOAD_MIME_BY_EXTENSION[ext] || "application/octet-stream", ext };
+  }
+  return { contentType: "", ext };
+}
+
+async function getUploadAuthHeaders() {
+  try {
+    if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === "function") {
+      return window.flowAuth.getAuthHeaders();
+    }
+  } catch (e) {}
+
+  const headers = {};
+  try {
+    if (window.supabaseClient && window.supabaseClient.auth) {
+      const sessionRes = await window.supabaseClient.auth.getSession();
+      const session = sessionRes && sessionRes.data ? sessionRes.data.session : null;
+      if (session && session.access_token) {
+        headers.Authorization = "Bearer " + session.access_token;
+      }
+      if (session && session.user && session.user.id) {
+        headers["x-actor-id"] = session.user.id;
+      }
+    }
+  } catch (e) {}
+  return headers;
+}
+
+async function readUploadError(res) {
+  try {
+    const data = await res.json();
+    if (data && data.error) return data.error;
+    return JSON.stringify(data);
+  } catch (e) {
+    try {
+      return await res.text();
+    } catch (err) {
+      return "Unknown error";
+    }
+  }
+}
 let hasAutoSelectedProject = false;
 let sharedWithCache = { projectId: null, items: null };
 let sharedWithLoading = false;
@@ -1695,155 +1852,136 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
   updateUploadJob(jobId, 0, tr("upload.preparing"));
 
   try {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("projectId", projectId);
-    formData.append("cueId", cueId);
-    formData.append("versionId", versionId);
-    if (options.uploadType) formData.append("uploadType", options.uploadType);
-    if (options.cueName) formData.append("cueName", options.cueName);
-
-    const xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 95);
-        gentlyAdvanceUpload(jobId, percent, tr("upload.uploading"));
-        console.log(`[Upload] Progress: ${percent}%`);
-      }
-    });
-
-    xhr.addEventListener("load", async () => {
-      console.log("[Upload] Done, status:", xhr.status);
-      try {
-        if (xhr.status === 200 || xhr.status === 201) {
-          const result = JSON.parse(xhr.responseText || "{}");
-          console.log("[Upload] Result:", result);
-          updateUploadJob(jobId, 98, tr("upload.finalizing"));
-
-          const project = getProjectById(projectId);
-          if (project) {
-            const cue = project.cues.find(c => c.id === cueId);
-            if (cue) {
-              const version = cue.versions.find(v => v.id === versionId);
-              if (version) {
-                if (options.deliverableId) {
-                  const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
-                  if (deliverable) {
-                    deliverable.url = getProxiedUrl(result.path || result.mediaUrl);
-                    await saveDeliverableToDatabase(project.id, version.id, deliverable, result.path);
-                    markUploadJobComplete(jobId, tr("upload.completed"));
-                    renderVersionPreviews();
-                  }
-                } else if (version.media) {
-                  version.media.url = result.mediaUrl || getProxiedUrl(result.path);
-                  version.isUploading = false;
-                  version.uploadProgress = 100;
-
-                  const saved = await saveVersionToDatabase(project.id, cue.id, version, result.path);
-                  if (saved) {
-                    markUploadJobComplete(jobId, tr("upload.completed"));
-                    if (version.media.type) {
-                      generateAndUploadPreviews(project.id, cue.id, version.id, version.media.type, version.media.url)
-                        .catch(err => console.warn('[Preview] Failed:', err));
-                    }
-                  } else {
-                    markUploadJobError(jobId, tr("upload.error"));
-                  }
-                  renderVersionPreviews();
-                  renderPlayer();
-                }
-              }
-            }
-          }
-        } else {
-          console.error("[Upload] Error:", xhr.status, xhr.responseText);
-          // Try to parse JSON body to extract structured error information
-          let errorDetail = xhr.responseText;
-          try {
-            const errorJson = JSON.parse(xhr.responseText);
-            if (errorJson.error) {
-              errorDetail = errorJson.error + (errorJson.details ? (' - ' + JSON.stringify(errorJson.details)) : '');
-            } else {
-              errorDetail = JSON.stringify(errorJson);
-            }
-          } catch (e) {
-            // leave errorDetail as raw text
-          }
-
-          // Log response headers for debugging (e.g., to see provider info)
-          try {
-            const headers = {};
-            for (let i = 0; i < xhr.getAllResponseHeaders().split('\r\n').length; i++) {}
-            console.log('[Upload] Response headers:\n', xhr.getAllResponseHeaders());
-          } catch (e) {}
-
-          console.error('[Upload] Full error response:', response);
-          alert(`ERRORE UPLOAD ${xhr.status}:\n${errorDetail}\n\nVerifica console (F12) per dettagli Supabase`);
-          markUploadJobError(jobId, `Errore ${xhr.status}`);
-        }
-      } catch (e) {
-        console.error("[Upload] Parse error:", e);
-        markUploadJobError(jobId, tr("upload.error"));
-      } finally {
-        activeUploads = Math.max(0, activeUploads - 1);
-        scheduleHideUploadPanel();
-      }
-    });
-
-    xhr.addEventListener("error", () => {
-      console.error("[Upload] Network error");
-      markUploadJobError(jobId, tr("upload.networkError"));
-      activeUploads = Math.max(0, activeUploads - 1);
-      scheduleHideUploadPanel();
-    });
-
-    xhr.open("POST", "/api/upload");
-
-    let hasAuth = false;
-    try {
-      // Try to get session from flowAuth first (handles demo mode)
-      let session = null;
-      if (window.flowAuth && typeof window.flowAuth.getSession === 'function') {
-        session = window.flowAuth.getSession();
-        console.log("[Upload] Got session from flowAuth:", !!session);
-      }
-
-      // Fallback to supabaseClient if no flowAuth session
-      if (!session && window.supabaseClient) {
-        const result = await window.supabaseClient.auth.getSession();
-        session = result?.data?.session;
-        console.log("[Upload] Got session from supabaseClient:", !!session);
-      }
-
-      if (session?.access_token) {
-        xhr.setRequestHeader('Authorization', 'Bearer ' + session.access_token);
-        if (session.user?.id) {
-          xhr.setRequestHeader('x-actor-id', session.user.id);
-        }
-        hasAuth = true;
-        console.log("[Upload] Auth headers set - token:", session.access_token, "user:", session.user?.id);
-      } else {
-        console.warn("[Upload] No session/token found!");
-      }
-    } catch (e) {
-      console.error("[Upload] Auth error:", e);
-    }
-
-    if (!hasAuth) {
-      alert("ERRORE: Non sei autenticato! Ricarica la pagina e fai login.");
-      markUploadJobError(jobId, "Non autenticato");
-      activeUploads = Math.max(0, activeUploads - 1);
-      scheduleHideUploadPanel();
+    if (file.size > MAX_UPLOAD_SIZE) {
+      alert(`ERRORE UPLOAD: file troppo grande (max ${Math.round(MAX_UPLOAD_SIZE / 1024 / 1024)}MB)`);
+      markUploadJobError(jobId, tr("upload.error"));
       return;
     }
 
-    console.log("[Upload] Starting:", file.name, `(${Math.round(file.size / 1024)} KB)`);
-    xhr.send(formData);
+    const resolved = resolveUploadContentType(file.type, file.name);
+    const contentType = resolved.contentType;
+    if (!contentType) {
+      alert("ERRORE UPLOAD: tipo file non consentito");
+      markUploadJobError(jobId, tr("upload.error"));
+      return;
+    }
 
+    const authHeaders = await getUploadAuthHeaders();
+    const hasAuth = !!(authHeaders.Authorization || authHeaders.authorization);
+    if (!hasAuth) {
+      alert("ERRORE: Non sei autenticato! Ricarica la pagina e fai login.");
+      markUploadJobError(jobId, "Non autenticato");
+      return;
+    }
+
+    const headers = Object.assign({}, authHeaders, { "Content-Type": "application/json" });
+
+    const signRes = await fetch("/api/upload-url", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ projectId, filename: file.name, contentType })
+    });
+
+    if (!signRes.ok) {
+      const errorDetail = await readUploadError(signRes);
+      alert(`ERRORE UPLOAD ${signRes.status}:\n${errorDetail}`);
+      markUploadJobError(jobId, `Errore ${signRes.status}`);
+      return;
+    }
+
+    const signData = await signRes.json().catch(() => null);
+    const uploadPath = signData && signData.path;
+    const uploadToken = signData && signData.token;
+    const signedUrl = signData && signData.signedUrl;
+
+    if (!uploadPath || !uploadToken || !signedUrl) {
+      alert("ERRORE UPLOAD: risposta upload-url non valida");
+      markUploadJobError(jobId, tr("upload.invalidResponse"));
+      return;
+    }
+
+    updateUploadJob(jobId, 20, tr("upload.uploading"));
+
+    if (!window.supabaseClient || !window.supabaseClient.storage) {
+      alert("ERRORE UPLOAD: Supabase client non disponibile");
+      markUploadJobError(jobId, tr("upload.error"));
+      return;
+    }
+
+    const uploadRes = await window.supabaseClient.storage
+      .from("media")
+      .uploadToSignedUrl(uploadPath, uploadToken, file, { contentType });
+
+    if (uploadRes.error) {
+      console.error("[Upload] Storage error:", uploadRes.error);
+      alert(`ERRORE UPLOAD:\n${uploadRes.error.message || "Upload fallito"}`);
+      markUploadJobError(jobId, tr("upload.error"));
+      return;
+    }
+
+    updateUploadJob(jobId, 98, tr("upload.finalizing"));
+
+    const completeRes = await fetch("/api/upload-complete", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        projectId,
+        path: uploadPath,
+        filename: file.name,
+        contentType,
+        size: file.size
+      })
+    });
+
+    if (!completeRes.ok) {
+      const errorDetail = await readUploadError(completeRes);
+      alert(`ERRORE UPLOAD ${completeRes.status}:\n${errorDetail}`);
+      markUploadJobError(jobId, `Errore ${completeRes.status}`);
+      return;
+    }
+
+    const completeData = await completeRes.json().catch(() => null);
+    const storedPath = completeData && completeData.path ? completeData.path : uploadPath;
+
+    const project = getProjectById(projectId);
+    if (project) {
+      const cue = project.cues.find(c => c.id === cueId);
+      if (cue) {
+        const version = cue.versions.find(v => v.id === versionId);
+        if (version) {
+          if (options.deliverableId) {
+            const deliverable = version.deliverables.find(d => d.id === options.deliverableId);
+            if (deliverable) {
+              deliverable.url = getProxiedUrl(storedPath);
+              await saveDeliverableToDatabase(project.id, version.id, deliverable, storedPath);
+              markUploadJobComplete(jobId, tr("upload.completed"));
+              renderVersionPreviews();
+            }
+          } else if (version.media) {
+            version.media.url = getProxiedUrl(storedPath);
+            version.isUploading = false;
+            version.uploadProgress = 100;
+
+            const saved = await saveVersionToDatabase(project.id, cue.id, version, storedPath);
+            if (saved) {
+              markUploadJobComplete(jobId, tr("upload.completed"));
+              if (version.media.type) {
+                generateAndUploadPreviews(project.id, cue.id, version.id, version.media.type, version.media.url)
+                  .catch(err => console.warn("[Preview] Failed:", err));
+              }
+            } else {
+              markUploadJobError(jobId, tr("upload.error"));
+            }
+            renderVersionPreviews();
+            renderPlayer();
+          }
+        }
+      }
+    }
   } catch (err) {
     console.error("[Upload] Exception:", err);
     markUploadJobError(jobId, tr("upload.unexpectedError"));
+  } finally {
     activeUploads = Math.max(0, activeUploads - 1);
     scheduleHideUploadPanel();
   }
@@ -2506,29 +2644,82 @@ async function uploadPreviewImage(projectId, versionId, previewType, imageData) 
 
   try {
     console.log('[Preview] Uploading', previewType, 'for version', versionId);
+    const blobRes = await fetch(imageData);
+    const blob = await blobRes.blob();
 
-    const headers = await getAuthHeaders();
-    headers['Content-Type'] = 'application/json';
-
-    const response = await fetch('/api/upload-preview', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        projectId,
-        versionId,
-        previewType,
-        imageData
-      })
-    });
-
-    if (!response.ok) {
-      console.warn('[Preview] Upload failed:', response.status);
+    if (blob.size > MAX_PREVIEW_SIZE) {
+      console.warn('[Preview] File too large:', blob.size);
       return null;
     }
 
-    const result = await response.json();
-    console.log('[Preview] Uploaded successfully:', result.path);
-    return result.path;
+    const ext = UPLOAD_EXTENSION_BY_MIME[blob.type] || '.png';
+    const filename = `${previewType}-${versionId}${ext}`;
+    const resolved = resolveUploadContentType(blob.type, filename);
+    const contentType = resolved.contentType;
+
+    if (!contentType) {
+      console.warn('[Preview] Unsupported content type:', blob.type);
+      return null;
+    }
+
+    const authHeaders = await getUploadAuthHeaders();
+    const headers = Object.assign({}, authHeaders, { 'Content-Type': 'application/json' });
+
+    const signRes = await fetch('/api/upload-url', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ projectId, filename, contentType })
+    });
+
+    if (!signRes.ok) {
+      console.warn('[Preview] upload-url failed:', signRes.status, await readUploadError(signRes));
+      return null;
+    }
+
+    const signData = await signRes.json().catch(() => null);
+    const uploadPath = signData && signData.path;
+    const uploadToken = signData && signData.token;
+    const signedUrl = signData && signData.signedUrl;
+
+    if (!uploadPath || !uploadToken || !signedUrl) {
+      console.warn('[Preview] upload-url invalid response');
+      return null;
+    }
+
+    if (!window.supabaseClient || !window.supabaseClient.storage) {
+      console.warn('[Preview] Supabase client missing');
+      return null;
+    }
+
+    const uploadRes = await window.supabaseClient.storage
+      .from('media')
+      .uploadToSignedUrl(uploadPath, uploadToken, blob, { contentType });
+
+    if (uploadRes.error) {
+      console.warn('[Preview] Upload error:', uploadRes.error);
+      return null;
+    }
+
+    const updates = previewType === 'waveform'
+      ? { media_waveform_image_url: uploadPath }
+      : { media_thumbnail_url: uploadPath, media_thumbnail_path: uploadPath };
+
+    const updateRes = await fetch('/api/versions/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        versionId,
+        projectId,
+        updates
+      })
+    });
+
+    if (!updateRes.ok) {
+      console.warn('[Preview] DB update failed:', updateRes.status, await readUploadError(updateRes));
+    }
+
+    console.log('[Preview] Uploaded successfully:', uploadPath);
+    return uploadPath;
   } catch (err) {
     console.error('[Preview] Upload error:', err);
     return null;
