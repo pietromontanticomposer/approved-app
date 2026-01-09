@@ -18,6 +18,7 @@ const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
 const waveformPersisted = new Set();
 const waveformPersistInFlight = new Set();
+const waveformRenderCache = new Map();
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
@@ -45,6 +46,57 @@ function queueWaveformGeneration(version, container, execute) {
 
   waveformQueue.push({ versionId: version.id, version, container, execute });
   processWaveformQueue();
+}
+
+function getWaveCacheId(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function getWaveformRenderKeyFromPeaks(peaks) {
+  if (!peaks) return "none";
+  if (Array.isArray(peaks[0]) && Array.isArray(peaks[1])) {
+    const left = peaks[0] || [];
+    const len = left.length || 0;
+    const first = len ? left[0] : 0;
+    const last = len ? left[len - 1] : 0;
+    return `peaks:${len}:${Math.round(first * 1000)}:${Math.round(last * 1000)}`;
+  }
+  if (Array.isArray(peaks)) {
+    const len = peaks.length || 0;
+    const first = len ? peaks[0] : 0;
+    const last = len ? peaks[len - 1] : 0;
+    return `peaks:${len}:${Math.round(first * 1000)}:${Math.round(last * 1000)}`;
+  }
+  return "none";
+}
+
+function getWaveformRenderKeyFromMedia(media) {
+  if (!media) return "none";
+  if (media.waveformImageUrl) return `img:${media.waveformImageUrl}`;
+  const peaks = getWaveformPeaks(media.waveform);
+  return getWaveformRenderKeyFromPeaks(peaks);
+}
+
+function getWaveformRenderKeyFromVersion(version) {
+  if (!version || !version.media) return "none";
+  if (version.media.waveformImageUrl) return `img:${version.media.waveformImageUrl}`;
+  let peaks = getWaveformPeaks(version.media.waveform);
+  if (!peaks && waveformParseCache.has(version.id)) {
+    peaks = waveformParseCache.get(version.id);
+  }
+  return getWaveformRenderKeyFromPeaks(peaks);
+}
+
+function getWaveformContainerWidth(container) {
+  return Math.max(1, container.clientWidth || container.offsetWidth || 0);
+}
+
+function setWaveformRenderCache(cacheId, key, container, height) {
+  waveformRenderCache.set(cacheId, {
+    key,
+    width: getWaveformContainerWidth(container),
+    height
+  });
 }
 
 async function persistWaveformPeaks(version, peaks) {
@@ -959,7 +1011,6 @@ function renderStaticWaveform(container, peaks, opts = {}) {
   const color = opts.color || "rgba(99,102,241,1)"; // Indigo color for visibility
   const bg = opts.background || "transparent";
   const width = Math.max(1, container.clientWidth || container.offsetWidth || 240);
-  console.log('[renderStaticWaveform] container width:', width, 'height:', height, 'peaks:', peaks?.length);
 
   // Check if we have a cached canvas for this version
   if (versionId && staticWaveformCache.has(versionId)) {
@@ -2273,11 +2324,13 @@ function applyCuesCollapsedState() {
 // MINI WAVEFORM (CUE VERSIONS)
 // =======================
 function createMiniWave(version, container) {
-  console.log('[createMiniWave] Called for version:', version.id, 'media:', version.media);
   if (!version.media || version.media.type !== "audio") return;
+  const cacheId = getWaveCacheId("v", version.id);
+  const waveKey = getWaveformRenderKeyFromVersion(version);
   if (!version.media.url) {
     container.classList.add("is-placeholder");
     container.innerHTML = `<span class="preview-label uploading">Upload…</span>`;
+    setWaveformRenderCache(cacheId, waveKey, container, 36);
     return;
   }
 
@@ -2286,7 +2339,6 @@ function createMiniWave(version, container) {
 
   // PRIORITY 1: Check if we have a saved waveform IMAGE (fastest - just load the image)
   if (version.media.waveformImageUrl) {
-    console.log('[createMiniWave] Using waveform image URL');
     container.innerHTML = "";
     const img = document.createElement("img");
     img.src = getProxiedUrl(version.media.waveformImageUrl);
@@ -2300,13 +2352,12 @@ function createMiniWave(version, container) {
       createMiniWave(version, container);
     };
     container.appendChild(img);
+    setWaveformRenderCache(cacheId, waveKey, container, 36);
     return;
   }
 
   // PRIORITY 2: Check if we have peaks in version.media.waveform
-  console.log('[createMiniWave] Checking waveform data:', typeof version.media.waveform, version.media.waveform ? String(version.media.waveform).substring(0, 50) : 'null');
   let peaks = getWaveformPeaks(version.media.waveform);
-  console.log('[createMiniWave] Parsed peaks:', peaks ? `Array(${peaks.length})` : 'null');
 
   // Also check if peaks were extracted by WaveSurfer and cached
   if (!peaks && waveformParseCache.has(version.id)) {
@@ -2320,6 +2371,7 @@ function createMiniWave(version, container) {
       color: "rgba(56,189,248,0.9)",
       versionId: version.id
     });
+    setWaveformRenderCache(cacheId, waveKey, container, 36);
     return;
   }
 
@@ -2354,6 +2406,7 @@ function createMiniWave(version, container) {
   });
 
   miniWaves[version.id] = ws;
+  setWaveformRenderCache(cacheId, waveKey, container, 36);
 
   // If we have peaks, use them directly (no need to load audio)
   if (peaks) {
@@ -2368,7 +2421,6 @@ function createMiniWave(version, container) {
   }
 
   // No peaks available - need to load audio to generate them
-  console.log('[createMiniWave] No peaks, loading audio...');
   const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
   ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
 
@@ -2414,6 +2466,14 @@ function createMiniWave(version, container) {
 function createRefMiniWave(refVersion, container) {
   if (refVersion.type !== "audio" || !refVersion.url) return;
 
+  const cacheId = getWaveCacheId("r", refVersion.id);
+  const waveKey = getWaveformRenderKeyFromPeaks(getWaveformPeaks(refVersion.waveform));
+  const cached = waveformRenderCache.get(cacheId);
+  const targetWidth = getWaveformContainerWidth(container);
+  if (cached && cached.width === targetWidth && cached.key === waveKey) {
+    return;
+  }
+
   container.innerHTML = "";
   container.style.position = "relative";
   container.style.overflow = "hidden";
@@ -2421,6 +2481,7 @@ function createRefMiniWave(refVersion, container) {
   const refPeaks = getWaveformPeaks(refVersion.waveform);
   if (refPeaks) {
     renderStaticWaveform(container, refPeaks, { height: 32 });
+    setWaveformRenderCache(cacheId, waveKey, container, 32);
     if (miniWaves[refVersion.id]) {
       try {
         miniWaves[refVersion.id].destroy();
@@ -2457,6 +2518,7 @@ function createRefMiniWave(refVersion, container) {
   });
 
   miniWaves[refVersion.id] = ws;
+  setWaveformRenderCache(cacheId, waveKey, container, 32);
 
   const durationHint = typeof refVersion.duration === "number" ? refVersion.duration : undefined;
   ws.load(getProxiedUrl(refVersion.url), undefined, durationHint);
@@ -4880,17 +4942,14 @@ function renderCueList(options = {}) {
 
 function renderVersionPreviews() {
   const project = getActiveProject();
-  console.log('[renderVersionPreviews] Called, project:', !!project, 'cuesCollapsed:', cuesCollapsed);
   if (!project || cuesCollapsed) return;
 
   project.cues.forEach(cue => {
     const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
     if (details && !details.open) return;
     cue.versions.forEach(version => {
-      console.log('[renderVersionPreviews] Processing version:', version.id, 'media:', version.media?.type);
       const prev = document.getElementById(`preview-${version.id}`);
       if (!prev) {
-        console.log('[renderVersionPreviews] No preview element found for:', version.id);
         return;
       }
       const targetWidth = Math.max(
@@ -4911,6 +4970,12 @@ function renderVersionPreviews() {
 
       // Skip if waveform already exists for this version (audio) and is valid
       if (version.media?.type === "audio") {
+        const cacheId = getWaveCacheId("v", version.id);
+        const waveKey = getWaveformRenderKeyFromVersion(version);
+        const cached = waveformRenderCache.get(cacheId);
+        if (cached && cached.width === targetWidth && cached.key === waveKey) {
+          return;
+        }
         const existingCanvas = prev.querySelector("canvas");
         if (existingCanvas && existingCanvas.width > 0) {
           const canvasWidth = existingCanvas.width || 0;
