@@ -53,26 +53,42 @@ const isUuid = (value: string) =>
  * Hydrate projects with team member information
  */
 async function hydrateProjectsWithTeamMembers(projects: Project[]): Promise<ProjectWithMembers[]> {
-  return Promise.all(
-    projects.map(async (project) => {
-      let teamMembers: TeamMember[] = [];
+  const teamIds = Array.from(
+    new Set(projects.map(project => project.team_id).filter(Boolean))
+  ) as string[];
 
-      if (project.team_id) {
-        try {
-          const { data } = await supabaseAdmin
-            .from('team_members')
-            .select('user_id, role, joined_at')
-            .eq('team_id', project.team_id);
+  const membersByTeam = new Map<string, TeamMember[]>();
 
-          teamMembers = data || [];
-        } catch (err) {
-          console.warn(`[Projects] Warning loading team_members for project ${project.id}:`, err);
-        }
+  if (teamIds.length > 0) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id, user_id, role, joined_at')
+        .in('team_id', teamIds);
+
+      if (error) {
+        throw error;
       }
 
-      return { ...project, team_members: teamMembers };
-    })
-  );
+      (data || []).forEach((row: any) => {
+        if (!row?.team_id) return;
+        const existing = membersByTeam.get(row.team_id) || [];
+        existing.push({
+          user_id: row.user_id,
+          role: row.role,
+          joined_at: row.joined_at
+        });
+        membersByTeam.set(row.team_id, existing);
+      });
+    } catch (err) {
+      console.warn('[Projects] Warning loading team_members batch:', err);
+    }
+  }
+
+  return projects.map((project) => ({
+    ...project,
+    team_members: project.team_id ? (membersByTeam.get(project.team_id) || []) : []
+  }));
 }
 
 /**
@@ -97,33 +113,32 @@ async function getOwnedProjects(userId: string): Promise<Project[]> {
  * Get projects shared with user
  */
 async function getSharedProjects(userId: string, ownedProjectIds: string[]): Promise<Project[]> {
-  // Get project IDs from project_members
-  const { data: membershipRows, error: membershipError } = await supabaseAdmin
-    .from('project_members')
-    .select('project_id')
-    .eq('member_id', userId);
+  const [membershipResult, teamResult] = await Promise.all([
+    supabaseAdmin
+      .from('project_members')
+      .select('project_id')
+      .eq('member_id', userId),
+    supabaseAdmin
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', userId)
+  ]);
 
-  if (membershipError) {
-    console.error('[Projects] Error loading project memberships:', membershipError);
-    throw new Error(`Failed to load project memberships: ${membershipError.message}`);
+  if (membershipResult.error) {
+    console.error('[Projects] Error loading project memberships:', membershipResult.error);
+    throw new Error(`Failed to load project memberships: ${membershipResult.error.message}`);
   }
 
-  const projectIdsFromMembership = (membershipRows || [])
-    .map(r => r.project_id)
+  if (teamResult.error) {
+    console.error('[Projects] Error loading team memberships:', teamResult.error);
+    throw new Error(`Failed to load team memberships: ${teamResult.error.message}`);
+  }
+
+  const projectIdsFromMembership = (membershipResult.data || [])
+    .map((row: any) => row.project_id)
     .filter(Boolean);
 
-  // Get team IDs for user
-  const { data: teamRows, error: teamError } = await supabaseAdmin
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', userId);
-
-  if (teamError) {
-    console.error('[Projects] Error loading team memberships:', teamError);
-    throw new Error(`Failed to load team memberships: ${teamError.message}`);
-  }
-
-  const teamIds = (teamRows || []).map(t => t.team_id).filter(Boolean);
+  const teamIds = (teamResult.data || []).map((row: any) => row.team_id).filter(Boolean);
 
   // Get project IDs from teams
   let projectIdsFromTeams: string[] = [];
