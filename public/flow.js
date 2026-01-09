@@ -7226,7 +7226,8 @@ async function initializeFromSupabase() {
     // and we have a client `flowAuth` available, try to initAuth() then retry once.
     try {
       const looksAnonymous = !Array.isArray(data.my_projects) && !Array.isArray(data.shared_with_me) && !Array.isArray(data.projects);
-      if (looksAnonymous && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
+      const shouldRetry = looksAnonymous || data.public === true;
+      if (shouldRetry && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
         const boot = await window.flowAuth.initAuth().catch(() => false);
         if (boot) {
           // After initAuth we may be in a demo fallback (demo token/local id).

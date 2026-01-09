@@ -39,6 +39,12 @@ type TeamMember = {
   joined_at: string;
 };
 
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -186,6 +192,15 @@ export async function GET(req: NextRequest) {
 
     const userId = auth.userId;
     console.log('[GET /api/projects] Authenticated user:', userId);
+
+    if (!isUuid(userId)) {
+      return NextResponse.json({
+        my_projects: [],
+        shared_with_me: [],
+        projects: [],
+        public: true,
+      }, { status: 200 });
+    }
 
     // Fetch owned projects
     const ownedProjects = await getOwnedProjects(userId);
