@@ -1034,9 +1034,24 @@ function renderWavePlaceholder(container, waveformData, opts = {}) {
   return true;
 }
 
+function renderWaveImagePlaceholder(container, imageUrl, opts = {}) {
+  if (!container || !imageUrl) return false;
+  const height = opts.height || 36;
+  container.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = getProxiedUrl(imageUrl);
+  img.alt = "";
+  img.style.width = "100%";
+  img.style.height = `${height}px`;
+  img.style.objectFit = "cover";
+  img.dataset.wavePlaceholder = "1";
+  container.appendChild(img);
+  return true;
+}
+
 function removeWavePlaceholder(container) {
   if (!container) return;
-  const placeholder = container.querySelector('.waveform-canvas[data-wave-placeholder="1"]');
+  const placeholder = container.querySelector('[data-wave-placeholder="1"]');
   if (placeholder) {
     placeholder.remove();
   }
@@ -2298,6 +2313,16 @@ function createMiniWave(version, container) {
     peaks = waveformParseCache.get(version.id);
   }
 
+  // If peaks exist, render a static waveform immediately (no audio load needed)
+  if (peaks) {
+    renderStaticWaveform(container, peaks, {
+      height: 36,
+      color: "rgba(56,189,248,0.9)",
+      versionId: version.id
+    });
+    return;
+  }
+
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
     console.warn('[createMiniWave] WaveSurfer not loaded yet');
@@ -2646,7 +2671,7 @@ async function generateWaveformImage(audioUrl, width = 200, height = 40) {
 
       const dataUrl = canvas.toDataURL('image/png');
       console.log('[Waveform] Generated in', Date.now() - startTs, 'ms');
-      resolve(dataUrl);
+      resolve({ dataUrl, peaks });
     } catch (err) {
       console.error('[Waveform] Error generating image:', err);
       resolve(null);
@@ -2657,7 +2682,7 @@ async function generateWaveformImage(audioUrl, width = 200, height = 40) {
 /**
  * Upload a preview image (waveform or thumbnail) to storage
  */
-async function uploadPreviewImage(projectId, versionId, previewType, imageData) {
+async function uploadPreviewImage(projectId, versionId, previewType, imageData, extraUpdates) {
   if (!projectId || !versionId || !imageData) return null;
 
   try {
@@ -2721,6 +2746,7 @@ async function uploadPreviewImage(projectId, versionId, previewType, imageData) 
     const updates = previewType === 'waveform'
       ? { media_waveform_image_url: uploadPath }
       : { media_thumbnail_url: uploadPath, media_thumbnail_path: uploadPath };
+    const finalUpdates = extraUpdates ? { ...updates, ...extraUpdates } : updates;
 
     const updateRes = await fetch('/api/versions/update', {
       method: 'POST',
@@ -2728,7 +2754,7 @@ async function uploadPreviewImage(projectId, versionId, previewType, imageData) 
       body: JSON.stringify({
         versionId,
         projectId,
-        updates
+        updates: finalUpdates
       })
     });
 
@@ -2773,9 +2799,19 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
     }
   } else if (mediaType === 'audio') {
     // Generate and upload waveform image
-    const waveformData = await generateWaveformImage(mediaUrl);
-    if (waveformData) {
-      const savedPath = await uploadPreviewImage(projectId, versionId, 'waveform', waveformData);
+    const waveformResult = await generateWaveformImage(mediaUrl);
+    if (waveformResult && waveformResult.dataUrl) {
+      const peaks = Array.isArray(waveformResult.peaks) ? waveformResult.peaks : null;
+      const extraUpdates = peaks && peaks.length
+        ? { media_waveform_data: JSON.stringify(peaks) }
+        : null;
+      const savedPath = await uploadPreviewImage(
+        projectId,
+        versionId,
+        'waveform',
+        waveformResult.dataUrl,
+        extraUpdates
+      );
       if (savedPath) {
         // Update local version data
         const project = getProjectById(projectId);
@@ -2786,6 +2822,11 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
             if (version && version.media) {
               version.media.waveformImageUrl = savedPath;
               version.media.waveformSaved = true;
+              if (peaks && peaks.length) {
+                version.media.waveform = peaks;
+                version.media.waveformSaved = true;
+                waveformParseCache.set(version.id, peaks);
+              }
             }
           }
         }
@@ -2850,7 +2891,10 @@ function loadAudioPlayer(project, cue, version) {
   playerMediaEl.innerHTML = '<div id="waveform"></div>';
   const placeholderEl = document.getElementById("waveform");
   if (placeholderEl) {
-    renderWavePlaceholder(placeholderEl, version.media.waveform, { height: 80 });
+    const rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, { height: 80 });
+    if (!rendered && version.media.waveformImageUrl) {
+      renderWaveImagePlaceholder(placeholderEl, version.media.waveformImageUrl, { height: 80 });
+    }
   }
   
   playPauseBtn.style.display = "inline-block";
@@ -2901,6 +2945,22 @@ function loadAudioPlayer(project, cue, version) {
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
     removeWavePlaceholder(placeholderEl);
+
+    if (!getWaveformPeaks(version.media.waveform)) {
+      try {
+        const backend = mainWave.backend;
+        if (backend && typeof backend.getPeaks === "function") {
+          const extractedPeaks = backend.getPeaks(256);
+          if (extractedPeaks && extractedPeaks.length) {
+            version.media.waveform = extractedPeaks;
+            waveformParseCache.set(version.id, extractedPeaks);
+            persistWaveformPeaks(version, extractedPeaks);
+          }
+        }
+      } catch (e) {
+        console.warn('[loadAudioPlayer] Could not extract peaks', e);
+      }
+    }
 
     if (volumeSlider) {
       const vol = parseFloat(volumeSlider.value || "1");
