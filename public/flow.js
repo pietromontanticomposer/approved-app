@@ -794,7 +794,7 @@ function activateVersionPreview(version) {
         // ensure UI reflects selection without full re-render
         if (prevCueId !== cue.id || prevVersionId !== version.id) {
           renderPlayer();
-          renderNotesPanel();
+          if (prevCueId !== cue.id) renderNotesPanel();
         }
         // scroll player into view if needed
         try {
@@ -3493,7 +3493,7 @@ function showConfirm(message) {
 function renderComments() {
   const ctx = getActiveContext();
   if (!ctx || !ctx.version.media) {
-    commentsListEl.innerHTML = "";
+    if (commentsListEl) commentsListEl.replaceChildren();
     commentsSummaryEl.textContent = tr("comments.noComments");
     setCommentsEnabled(false);
     return;
@@ -3502,15 +3502,15 @@ function renderComments() {
   const { version } = ctx;
   const arr = version.comments;
 
-  commentsListEl.innerHTML = "";
-
   if (!arr.length) {
+    if (commentsListEl) commentsListEl.replaceChildren();
     commentsSummaryEl.textContent = tr("comments.noComments");
     return;
   }
 
   commentsSummaryEl.textContent = tr("comments.count", { n: arr.length });
 
+  const frag = document.createDocumentFragment();
   arr.forEach(c => {
     const li = document.createElement("li");
     li.style.position = 'relative';
@@ -3724,8 +3724,10 @@ function renderComments() {
       }
     });
 
-    commentsListEl.appendChild(li);
+    frag.appendChild(li);
   });
+
+  if (commentsListEl) commentsListEl.replaceChildren(frag);
 
   // comment enablement handled by review state
 }
@@ -4801,6 +4803,7 @@ function renderCueList(options = {}) {
       row.addEventListener("click", e => {
         if (e.target.closest(".download-toggle")) return;
         state.playerMode = "review";
+        const prevCueId = project.activeCueId;
         project.activeCueId = cue.id;
         project.activeVersionId = version.id;
         currentPlayerVersionId = null;
@@ -4809,7 +4812,7 @@ function renderCueList(options = {}) {
         updatePlayerModeButtons();
         renderPlayer();
         updateActiveVersionRowStyles();
-        renderNotesPanel();
+        if (prevCueId !== cue.id) renderNotesPanel();
       });
 
       row.addEventListener("dragover", e => {
