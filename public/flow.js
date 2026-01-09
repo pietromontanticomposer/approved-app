@@ -787,10 +787,15 @@ function activateVersionPreview(version) {
   for (const project of state.projects) {
     for (const cue of project.cues || []) {
       if ((cue.versions || []).some(v => v.id === version.id)) {
+        const prevCueId = project.activeCueId;
+        const prevVersionId = project.activeVersionId;
         project.activeCueId = cue.id;
         project.activeVersionId = version.id;
-        // ensure UI reflects selection
-        renderAll();
+        // ensure UI reflects selection without full re-render
+        if (prevCueId !== cue.id || prevVersionId !== version.id) {
+          renderPlayer();
+          renderNotesPanel();
+        }
         // scroll player into view if needed
         try {
           const playerRoot = document.getElementById('player-root');
@@ -2951,8 +2956,14 @@ function loadAudioPlayer(project, cue, version) {
   destroyMainWave();
   stopVideo();
   
-  playerMediaEl.innerHTML = '<div id="waveform"></div>';
-  const placeholderEl = document.getElementById("waveform");
+  let waveformEl = document.getElementById("waveform");
+  if (!waveformEl || !playerMediaEl.contains(waveformEl)) {
+    playerMediaEl.innerHTML = '<div id="waveform"></div>';
+    waveformEl = document.getElementById("waveform");
+  } else {
+    waveformEl.innerHTML = "";
+  }
+  const placeholderEl = waveformEl;
   if (placeholderEl) {
     const rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, { height: 80 });
     if (!rendered && version.media.waveformImageUrl) {
