@@ -4414,16 +4414,28 @@ function renderCueList(options = {}) {
         // Only auto-select first version when opening a previously closed cue
         if (details.open && !wasOpen) {
           state.playerMode = "review";
+          const prevCueId = project.activeCueId;
+          const prevVersionId = project.activeVersionId;
           project.activeCueId = cue.id;
           const firstVersion = cue.versions && cue.versions[0];
-          project.activeVersionId = firstVersion ? firstVersion.id : null;
-          currentPlayerVersionId = null;
-          currentPlayerMediaType = null;
-          currentPlayerCueId = null;
+          const nextVersionId = firstVersion ? firstVersion.id : null;
+          project.activeVersionId = nextVersionId;
+          if (firstVersion) {
+            waveformRenderCache.delete(getWaveCacheId("v", firstVersion.id));
+          }
+          cue.versions.forEach(v => waveformRenderCache.delete(getWaveCacheId("v", v.id)));
+          if (prevVersionId !== nextVersionId || prevCueId !== cue.id) {
+            currentPlayerVersionId = null;
+            currentPlayerMediaType = null;
+            currentPlayerCueId = null;
+          }
           updatePlayerModeButtons();
           updateActiveVersionRowStyles();
-          renderPlayer();
+          if (prevVersionId !== nextVersionId || prevCueId !== cue.id) {
+            renderPlayer();
+          }
           renderVersionPreviews();
+          requestAnimationFrame(renderVersionPreviews);
           renderNotesPanel();
         } else if (!details.open) {
           renderNotesPanel();
