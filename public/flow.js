@@ -4942,13 +4942,20 @@ function renderCueList(options = {}) {
 }
 
 function renderVersionPreviews() {
-  const project = getActiveProject();
-  if (!project || cuesCollapsed) return;
+  if (renderVersionPreviews.inFlight) {
+    renderVersionPreviews.queued = true;
+    return;
+  }
+  renderVersionPreviews.inFlight = true;
 
-  project.cues.forEach(cue => {
-    const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
-    if (details && !details.open) return;
-    cue.versions.forEach(version => {
+  try {
+    const project = getActiveProject();
+    if (!project || cuesCollapsed) return;
+
+    project.cues.forEach(cue => {
+      const details = document.querySelector(`details[data-cue-id="${cue.id}"]`);
+      if (details && !details.open) return;
+      cue.versions.forEach(version => {
       const prev = document.getElementById(`preview-${version.id}`);
       if (!prev) {
         return;
@@ -5137,7 +5144,18 @@ function renderVersionPreviews() {
       }
     });
   });
+
+  } finally {
+    renderVersionPreviews.inFlight = false;
+    if (renderVersionPreviews.queued) {
+      renderVersionPreviews.queued = false;
+      requestAnimationFrame(renderVersionPreviews);
+    }
+  }
 }
+
+renderVersionPreviews.inFlight = false;
+renderVersionPreviews.queued = false;
 
 // =======================
 // DROP ON CUE / VERSION
