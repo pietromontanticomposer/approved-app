@@ -1447,9 +1447,16 @@ function ensureProjectReferences(project) {
 // =======================
 function computeCueDisplayName(project, cue, index) {
   const idx = index + 1;
+  const original = cleanFileName(cue.originalName) || "";
+  const manualName =
+    cue.name && cue.name.trim() && cue.name.trim() !== original;
+
+  if (manualName) {
+    return cue.name.trim();
+  }
 
   if (!state.autoRename) {
-    return cue.name || cleanFileName(cue.originalName) || `Cue ${idx}`;
+    return cue.name || original || `Cue ${idx}`;
   }
 
   if (state.namingMode === "media") return `Cue ${pad2(idx)}`;
@@ -1461,7 +1468,17 @@ function computeVersionLabel(i) {
 }
 
 function computeMediaDisplayName(project, cue, version, fileName) {
-  if (!state.autoRename) return fileName;
+  const original = fileName || "";
+  const manualName =
+    version?.media?.manualName &&
+    version.media.displayName &&
+    version.media.displayName.trim();
+
+  if (manualName) {
+    return version.media.displayName.trim();
+  }
+
+  if (!state.autoRename) return original;
   const ext = getFileExtension(fileName);
 
   return buildComposerName(project, cue, version, ext);
@@ -3770,6 +3787,13 @@ async function loadProjectCues(projectId) {
           if (version && version.media && version.media.waveform) {
             version.media.waveformSaved = true;
           }
+          if (version && version.media) {
+            const original = (version.media.originalName || "").trim();
+            const display = (version.media.displayName || "").trim();
+            if (display && (!original || display !== original)) {
+              version.media.manualName = true;
+            }
+          }
         });
       }
     });
@@ -3830,6 +3854,8 @@ async function loadProjectCuesLegacy(projectId, headers) {
 
         const versionsWithComments = await Promise.all(
           versions.map(async (v) => {
+            const mediaOriginalName = v.media_original_name || v.media_filename || "Media";
+            const mediaDisplayName = v.media_display_name || mediaOriginalName;
             const ver = {
               id: v.id,
               index: v.index_in_cue || 0,
@@ -3837,8 +3863,9 @@ async function loadProjectCuesLegacy(projectId, headers) {
                 ? {
                     type: v.media_type,
                     url: v.media_url,
-                    originalName: v.media_filename || "Media",
-                    displayName: v.media_filename || "Media",
+                    originalName: mediaOriginalName,
+                    displayName: mediaDisplayName,
+                    manualName: mediaDisplayName && mediaDisplayName !== mediaOriginalName,
                     duration: v.duration || v.media_duration || null,
                     thumbnailUrl: v.thumbnail_url,
                     waveform: v.waveform || v.media_waveform_data || null,
@@ -4704,6 +4731,7 @@ function renderCueList(options = {}) {
               }
               version.media = version.media || {};
               version.media.displayName = trimmed;
+              version.media.manualName = true;
               renderAll();
             } catch (err) {
               console.error("[FlowPreview] Exception renaming version", err);
