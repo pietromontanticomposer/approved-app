@@ -1013,7 +1013,7 @@ function getWaveformPeaks(raw) {
 function renderStaticWaveform(container, peaks, opts = {}) {
   const versionId = opts.versionId;
   const height = opts.height || 36;
-  const color = opts.color || "rgba(99,102,241,1)"; // Indigo color for visibility
+  const color = opts.color || "rgba(148,163,184,0.8)";
   const bg = opts.background || "transparent";
   const width = Math.max(1, container.clientWidth || container.offsetWidth || 240);
 
@@ -2965,7 +2965,10 @@ function loadAudioPlayer(project, cue, version) {
   }
   const placeholderEl = waveformEl;
   if (placeholderEl) {
-    const rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, { height: 80 });
+    const rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, {
+      height: 80,
+      color: "rgba(148,163,184,0.8)"
+    });
     if (!rendered && version.media.waveformImageUrl) {
       renderWaveImagePlaceholder(placeholderEl, version.media.waveformImageUrl, { height: 80 });
     }
