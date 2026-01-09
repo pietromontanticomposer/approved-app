@@ -2470,7 +2470,8 @@ function createRefMiniWave(refVersion, container) {
   const waveKey = getWaveformRenderKeyFromPeaks(getWaveformPeaks(refVersion.waveform));
   const cached = waveformRenderCache.get(cacheId);
   const targetWidth = getWaveformContainerWidth(container);
-  if (cached && cached.width === targetWidth && cached.key === waveKey) {
+  const hasExisting = !!container.querySelector("canvas, img");
+  if (cached && cached.width === targetWidth && cached.key === waveKey && hasExisting) {
     return;
   }
 
@@ -4973,7 +4974,8 @@ function renderVersionPreviews() {
         const cacheId = getWaveCacheId("v", version.id);
         const waveKey = getWaveformRenderKeyFromVersion(version);
         const cached = waveformRenderCache.get(cacheId);
-        if (cached && cached.width === targetWidth && cached.key === waveKey) {
+        const hasWaveVisual = !!prev.querySelector("canvas, img");
+        if (cached && cached.width === targetWidth && cached.key === waveKey && hasWaveVisual) {
           return;
         }
         const existingCanvas = prev.querySelector("canvas");
