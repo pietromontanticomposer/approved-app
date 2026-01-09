@@ -1811,13 +1811,13 @@ function gentlyAdvanceUpload(jobId, targetPercent, status) {
   updateUploadJob(jobId, next, status);
 }
 
-function startSimulatedUploadProgress(jobId, size) {
+function startSimulatedUploadProgress(jobId, size, maxPercent = 95) {
   const start = Date.now();
   const expectedMs = Math.max(2000, Math.min(60000, (size / (1.5 * 1024 * 1024)) * 1000));
   const tick = () => {
     const elapsed = Date.now() - start;
     const ratio = Math.min(1, elapsed / expectedMs);
-    const target = 20 + Math.round(ratio * 70);
+    const target = Math.min(maxPercent, 20 + Math.round(ratio * (maxPercent - 20)));
     gentlyAdvanceUpload(jobId, target, tr("upload.uploading"));
   };
   tick();
@@ -1922,13 +1922,13 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
       return;
     }
 
-    const stopProgress = startSimulatedUploadProgress(jobId, file.size);
+    const stopProgress = startSimulatedUploadProgress(jobId, file.size, 97);
     const uploadRes = await window.supabaseClient.storage
       .from("media")
       .uploadToSignedUrl(uploadPath, uploadToken, file, { contentType });
-    stopProgress();
 
     if (uploadRes.error) {
+      stopProgress();
       console.error("[Upload] Storage error:", uploadRes.error);
       alert(`ERRORE UPLOAD:\n${uploadRes.error.message || "Upload fallito"}`);
       markUploadJobError(jobId, tr("upload.error"));
@@ -1950,11 +1950,13 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     });
 
     if (!completeRes.ok) {
+      stopProgress();
       const errorDetail = await readUploadError(completeRes);
       alert(`ERRORE UPLOAD ${completeRes.status}:\n${errorDetail}`);
       markUploadJobError(jobId, `Errore ${completeRes.status}`);
       return;
     }
+    stopProgress();
 
     const completeData = await completeRes.json().catch(() => null);
     const storedPath = completeData && completeData.path ? completeData.path : uploadPath;
@@ -4517,7 +4519,7 @@ function renderCueList(options = {}) {
                 body: JSON.stringify({
                   versionId: version.id,
                   media_display_name: trimmed,
-                  projectId: state.activeProjectId
+                  projectId: (project && project.id) ? project.id : state.activeProjectId
                 })
               });
               if (!res.ok) {
