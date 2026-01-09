@@ -2956,13 +2956,20 @@ function loadAudioPlayer(project, cue, version) {
   destroyMainWave();
   stopVideo();
   
-  let waveformEl = document.getElementById("waveform");
-  if (!waveformEl || !playerMediaEl.contains(waveformEl)) {
-    playerMediaEl.innerHTML = '<div id="waveform"></div>';
-    waveformEl = document.getElementById("waveform");
-  } else {
-    waveformEl.innerHTML = "";
+  const existingWave = playerMediaEl.querySelector("#waveform");
+  if (existingWave) {
+    existingWave.id = "waveform-old";
+    existingWave.dataset.waveOld = "1";
   }
+  const waveformEl = document.createElement("div");
+  waveformEl.id = "waveform";
+  if (existingWave) {
+    waveformEl.style.visibility = "hidden";
+  }
+  if (!existingWave) {
+    playerMediaEl.innerHTML = "";
+  }
+  playerMediaEl.appendChild(waveformEl);
   const placeholderEl = waveformEl;
   if (placeholderEl) {
     const rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, {
@@ -3016,12 +3023,23 @@ function loadAudioPlayer(project, cue, version) {
     } catch (e) {}
   });
 
+  const revealWaveform = () => {
+    const old = playerMediaEl.querySelector('[data-wave-old="1"]');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    waveformEl.style.visibility = "visible";
+  };
+
+  if (existingWave) {
+    setTimeout(revealWaveform, 1200);
+  }
+
   mainWave.on("ready", () => {
     const dur = mainWave.getDuration();
     version.media.duration = dur;
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
     removeWavePlaceholder(placeholderEl);
+    revealWaveform();
 
     if (!getWaveformPeaks(version.media.waveform)) {
       try {
