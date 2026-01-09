@@ -1811,6 +1811,20 @@ function gentlyAdvanceUpload(jobId, targetPercent, status) {
   updateUploadJob(jobId, next, status);
 }
 
+function startSimulatedUploadProgress(jobId, size) {
+  const start = Date.now();
+  const expectedMs = Math.max(2000, Math.min(60000, (size / (1.5 * 1024 * 1024)) * 1000));
+  const tick = () => {
+    const elapsed = Date.now() - start;
+    const ratio = Math.min(1, elapsed / expectedMs);
+    const target = 20 + Math.round(ratio * 70);
+    gentlyAdvanceUpload(jobId, target, tr("upload.uploading"));
+  };
+  tick();
+  const timer = setInterval(tick, 400);
+  return () => clearInterval(timer);
+}
+
 function markUploadJobComplete(jobId, message) {
   const job = uploadJobRows.get(jobId);
   if (!job) return;
@@ -1908,9 +1922,11 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
       return;
     }
 
+    const stopProgress = startSimulatedUploadProgress(jobId, file.size);
     const uploadRes = await window.supabaseClient.storage
       .from("media")
       .uploadToSignedUrl(uploadPath, uploadToken, file, { contentType });
+    stopProgress();
 
     if (uploadRes.error) {
       console.error("[Upload] Storage error:", uploadRes.error);
