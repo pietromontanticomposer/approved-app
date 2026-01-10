@@ -18,7 +18,11 @@ const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
 const waveformPersisted = new Set();
 const waveformPersistInFlight = new Set();
+const waveformComputeInFlight = new Set();
 const waveformRenderCache = new Map();
+const WAVEFORM_PEAKS_COUNT = 2048;
+const WAVEFORM_IMAGE_WIDTH = 200;
+const WAVEFORM_IMAGE_HEIGHT = 40;
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
@@ -142,6 +146,33 @@ async function persistWaveformPeaks(version, peaks) {
   } catch (err) {
     waveformPersistInFlight.delete(version.id);
     console.warn('[Waveform] Persist error', version.id, err);
+  }
+}
+
+async function ensureWaveformPeaksForVersion(version) {
+  if (!version || !version.media || !version.media.url) return null;
+  const existing = getWaveformPeaks(version.media.waveform);
+  if (existing && existing.length) return existing;
+  if (waveformComputeInFlight.has(version.id)) return null;
+
+  waveformComputeInFlight.add(version.id);
+  try {
+    const result = await computeWaveformPeaksFromUrl(
+      version.media.url,
+      WAVEFORM_PEAKS_COUNT
+    );
+    const peaks = result && result.peaks;
+    if (!peaks || !peaks.length) return null;
+    if (result && typeof result.duration === "number" && !version.media.duration) {
+      version.media.duration = result.duration;
+    }
+    version.media.waveform = peaks;
+    waveformParseCache.set(version.id, peaks);
+    staticWaveformCache.delete(version.id);
+    persistWaveformPeaks(version, peaks);
+    return peaks;
+  } finally {
+    waveformComputeInFlight.delete(version.id);
   }
 }
 let currentPlayerCueId = null;
@@ -2424,12 +2455,6 @@ function createMiniWave(version, container) {
     return;
   }
 
-  // Check if WaveSurfer is available
-  if (typeof WaveSurfer === 'undefined') {
-    console.warn('[createMiniWave] WaveSurfer not loaded yet');
-    return;
-  }
-
   // Destroy any existing WaveSurfer instance
   if (miniWaves[version.id]) {
     try {
@@ -2439,73 +2464,29 @@ function createMiniWave(version, container) {
   }
 
   container.innerHTML = "";
-
-  // Create WaveSurfer instance with cyan/sky color
-  const ws = WaveSurfer.create({
-    container,
+  renderNeutralWavePlaceholder(container, {
     height: 36,
-    waveColor: "rgba(56,189,248,0.9)",      // Sky-400 / Cyan
-    progressColor: "rgba(14,165,233,1)",    // Sky-500 for progress
-    cursorWidth: 0,
-    barWidth: 2,
-    barGap: 1,
-    interact: false,
-    responsive: true,
-    normalize: true
+    color: "rgba(148,163,184,0.45)"
   });
-
-  miniWaves[version.id] = ws;
   setWaveformRenderCache(cacheId, waveKey, container, 36);
 
-  // If we have peaks, use them directly (no need to load audio)
-  if (peaks) {
-    console.log('[createMiniWave] Using saved peaks for WaveSurfer');
-    try {
-      // WaveSurfer can draw from peaks without loading audio
-      ws.load(getProxiedUrl(version.media.url), peaks);
-    } catch (e) {
-      console.warn('[createMiniWave] Failed to load with peaks:', e);
-    }
-    return;
-  }
-
-  // No peaks available - need to load audio to generate them
-  const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-  ws.load(getProxiedUrl(version.media.url), undefined, durationHint);
-
-  ws.on("ready", () => {
-    if (!version.media.duration) {
-      version.media.duration = ws.getDuration();
-    }
-
+  queueWaveformGeneration(version, container, async () => {
+    const computed = await ensureWaveformPeaksForVersion(version);
+    if (!computed || !container.isConnected) return;
+    container.innerHTML = "";
+    renderStaticWaveform(container, computed, {
+      height: 36,
+      color: "rgba(56,189,248,0.9)",
+      versionId: version.id
+    });
+    const updatedKey = getWaveformRenderKeyFromVersion(version);
+    setWaveformRenderCache(cacheId, updatedKey, container, 36);
     const metaEl = document.querySelector(
       `.version-row[data-version-id="${version.id}"] .version-meta`
     );
-
     if (metaEl) {
       metaEl.textContent = getVersionMetaText(version);
     }
-
-    ws.drawBuffer();
-
-    // Extract peaks and cache them
-    try {
-      const backend = ws.backend;
-      if (backend && backend.getPeaks) {
-        const extractedPeaks = backend.getPeaks(256);
-        if (extractedPeaks && extractedPeaks.length) {
-          version.media.waveform = extractedPeaks;
-          waveformParseCache.set(version.id, extractedPeaks);
-          persistWaveformPeaks(version, extractedPeaks);
-        }
-      }
-    } catch (e) {
-      console.warn('[MiniWave] Could not extract peaks', e);
-    }
-  });
-
-  ws.on("error", (err) => {
-    console.warn('[createMiniWave] WaveSurfer error:', err);
   });
 }
 
@@ -2709,54 +2690,127 @@ function generateVideoThumbnailFromUrl(version) {
 // =======================
 
 /**
+ * Deterministic waveform peaks used across previews and the player.
+ */
+function computeWaveformPeaksFromBuffer(audioBuffer, sampleCount) {
+  if (!audioBuffer || !audioBuffer.length) return null;
+  const samples = Math.max(1, sampleCount || 0);
+  const channels = [];
+  const channelCount = audioBuffer.numberOfChannels || 1;
+  for (let ch = 0; ch < channelCount; ch++) {
+    try {
+      channels.push(audioBuffer.getChannelData(ch));
+    } catch (e) {
+      // ignore invalid channel reads
+    }
+  }
+  if (!channels.length) return null;
+
+  const length = audioBuffer.length;
+  const samplesPerBucket = Math.max(1, Math.floor(length / samples));
+  const peaks = new Array(samples).fill(0);
+  let globalMax = 0;
+
+  for (let i = 0; i < samples; i++) {
+    const start = i * samplesPerBucket;
+    const end = Math.min(start + samplesPerBucket, length);
+    let bucketMax = 0;
+    for (let ch = 0; ch < channels.length; ch++) {
+      const data = channels[ch];
+      for (let j = start; j < end; j++) {
+        const val = Math.abs(data[j] || 0);
+        if (val > bucketMax) bucketMax = val;
+      }
+    }
+    peaks[i] = bucketMax;
+    if (bucketMax > globalMax) globalMax = bucketMax;
+  }
+
+  if (globalMax > 0) {
+    for (let i = 0; i < peaks.length; i++) {
+      peaks[i] = peaks[i] / globalMax;
+    }
+  }
+
+  return {
+    peaks,
+    duration: typeof audioBuffer.duration === "number" ? audioBuffer.duration : null
+  };
+}
+
+function downsamplePeaks(peaks, targetCount) {
+  if (!Array.isArray(peaks) || !peaks.length) return null;
+  const target = Math.max(1, targetCount || 0);
+  if (peaks.length <= target) return peaks.slice();
+  const out = new Array(target);
+  const bucketSize = peaks.length / target;
+  for (let i = 0; i < target; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    let max = 0;
+    for (let j = start; j < end && j < peaks.length; j++) {
+      const val = Math.abs(peaks[j] || 0);
+      if (val > max) max = val;
+    }
+    out[i] = max;
+  }
+  return out;
+}
+
+async function computeWaveformPeaksFromUrl(audioUrl, sampleCount) {
+  if (!audioUrl) return null;
+  let audioContext = null;
+  try {
+    const response = await fetch(getProxiedUrl(audioUrl));
+    if (!response.ok) {
+      console.warn('[Waveform] Failed to fetch audio for peaks');
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    return computeWaveformPeaksFromBuffer(audioBuffer, sampleCount);
+  } catch (err) {
+    console.warn('[Waveform] Failed to compute peaks:', err);
+    return null;
+  } finally {
+    try {
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+/**
  * Generate waveform as PNG image data URL
  * Uses Web Audio API to analyze audio and render to canvas
  */
-async function generateWaveformImage(audioUrl, width = 200, height = 40) {
+async function generateWaveformImage(
+  audioUrl,
+  width = WAVEFORM_IMAGE_WIDTH,
+  height = WAVEFORM_IMAGE_HEIGHT
+) {
   return new Promise(async (resolve) => {
     try {
       console.log('[Waveform] Generating image from:', audioUrl);
       const startTs = Date.now();
 
-      // Fetch audio data
-      const response = await fetch(getProxiedUrl(audioUrl));
-      if (!response.ok) {
-        console.warn('[Waveform] Failed to fetch audio');
+      const result = await computeWaveformPeaksFromUrl(
+        audioUrl,
+        WAVEFORM_PEAKS_COUNT
+      );
+      const peaks = result && result.peaks;
+      const duration = result && typeof result.duration === "number" ? result.duration : null;
+      if (!peaks || !peaks.length) {
+        console.warn('[Waveform] Failed to compute peaks');
         return resolve(null);
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-
-      // Decode audio
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      let audioBuffer;
-      try {
-        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      } catch (e) {
-        console.warn('[Waveform] Failed to decode audio:', e);
-        audioContext.close();
-        return resolve(null);
-      }
-
-      // Get audio data
-      const channelData = audioBuffer.getChannelData(0);
-      const samples = channelData.length;
-      const samplesPerPixel = Math.floor(samples / width);
-
-      // Calculate peaks
-      const peaks = [];
-      for (let i = 0; i < width; i++) {
-        const start = i * samplesPerPixel;
-        const end = Math.min(start + samplesPerPixel, samples);
-        let max = 0;
-        for (let j = start; j < end; j++) {
-          const abs = Math.abs(channelData[j]);
-          if (abs > max) max = abs;
-        }
-        peaks.push(max);
-      }
-
-      audioContext.close();
+      const imagePeaks = downsamplePeaks(peaks, width) || peaks;
 
       // Render to canvas
       const canvas = document.createElement('canvas');
@@ -2774,16 +2828,16 @@ async function generateWaveformImage(audioUrl, width = 200, height = 40) {
       const gap = 1;
       const centerY = height / 2;
 
-      for (let i = 0; i < peaks.length; i++) {
+      for (let i = 0; i < imagePeaks.length; i++) {
         const x = i * (barWidth + gap);
         if (x >= width) break;
-        const barHeight = Math.max(2, peaks[i] * (height - 4));
+        const barHeight = Math.max(2, (imagePeaks[i] || 0) * (height - 4));
         ctx.fillRect(x, centerY - barHeight / 2, barWidth, barHeight);
       }
 
       const dataUrl = canvas.toDataURL('image/png');
       console.log('[Waveform] Generated in', Date.now() - startTs, 'ms');
-      resolve({ dataUrl, peaks });
+      resolve({ dataUrl, peaks, duration });
     } catch (err) {
       console.error('[Waveform] Error generating image:', err);
       resolve(null);
@@ -2914,15 +2968,21 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
     const waveformResult = await generateWaveformImage(mediaUrl);
     if (waveformResult && waveformResult.dataUrl) {
       const peaks = Array.isArray(waveformResult.peaks) ? waveformResult.peaks : null;
-      const extraUpdates = peaks && peaks.length
-        ? { media_waveform_data: JSON.stringify(peaks) }
-        : null;
+      const extraUpdates = {};
+      if (peaks && peaks.length) {
+        extraUpdates.media_waveform_data = JSON.stringify(peaks);
+      }
+      if (typeof waveformResult.duration === "number" && isFinite(waveformResult.duration)) {
+        extraUpdates.media_duration = waveformResult.duration;
+      }
+      const extraUpdatesPayload =
+        Object.keys(extraUpdates).length > 0 ? extraUpdates : null;
       const savedPath = await uploadPreviewImage(
         projectId,
         versionId,
         'waveform',
         waveformResult.dataUrl,
-        extraUpdates
+        extraUpdatesPayload
       );
       if (savedPath) {
         // Update local version data
@@ -2938,6 +2998,13 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
                 version.media.waveform = peaks;
                 version.media.waveformSaved = true;
                 waveformParseCache.set(version.id, peaks);
+              }
+              if (
+                typeof waveformResult.duration === "number" &&
+                isFinite(waveformResult.duration) &&
+                !version.media.duration
+              ) {
+                version.media.duration = waveformResult.duration;
               }
             }
           }
@@ -3017,8 +3084,22 @@ function loadAudioPlayer(project, cue, version) {
 
   if (!version || !version.media || !version.media.url) return;
 
-  const hasWaveform = !!getWaveformPeaks(version.media.waveform);
-  const waveBackend = hasWaveform ? "MediaElement" : "WebAudio";
+  const peaks = getWaveformPeaks(version.media.waveform);
+  if (!peaks) {
+    renderNeutralWavePlaceholder(waveformEl, {
+      height: 80,
+      color: "rgba(148,163,184,0.6)"
+    });
+    ensureWaveformPeaksForVersion(version).then((computed) => {
+      if (!computed) return;
+      const active = getActiveContext();
+      if (!active || !active.version || active.version.id !== version.id) return;
+      loadAudioPlayer(project, cue, version);
+    });
+    return;
+  }
+
+  const waveBackend = "MediaElement";
 
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
@@ -3041,9 +3122,8 @@ function loadAudioPlayer(project, cue, version) {
   });
 
   try {
-    const peaks = getWaveformPeaks(version.media.waveform);
     const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-    mainWave.load(getProxiedUrl(version.media.url), peaks || undefined, durationHint);
+    mainWave.load(getProxiedUrl(version.media.url), peaks, durationHint);
   } catch (e) {
     console.warn('loadAudioPlayer: WaveSurfer load failed', e);
   }
@@ -3059,22 +3139,6 @@ function loadAudioPlayer(project, cue, version) {
     version.media.duration = dur;
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
-
-    if (!getWaveformPeaks(version.media.waveform)) {
-      try {
-        const backend = mainWave.backend;
-        if (backend && typeof backend.getPeaks === "function") {
-          const extractedPeaks = backend.getPeaks(256);
-          if (extractedPeaks && extractedPeaks.length) {
-            version.media.waveform = extractedPeaks;
-            waveformParseCache.set(version.id, extractedPeaks);
-            persistWaveformPeaks(version, extractedPeaks);
-          }
-        }
-      } catch (e) {
-        console.warn('[loadAudioPlayer] Could not extract peaks', e);
-      }
-    }
 
     if (volumeSlider) {
       const vol = parseFloat(volumeSlider.value || "1");
