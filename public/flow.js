@@ -23,6 +23,9 @@ const waveformRenderCache = new Map();
 const WAVEFORM_PEAKS_COUNT = 2048;
 const WAVEFORM_IMAGE_WIDTH = 200;
 const WAVEFORM_IMAGE_HEIGHT = 40;
+const waveformDecodeQueue = [];
+let waveformDecoding = 0;
+const MAX_CONCURRENT_WAVEFORM_DECODES = 2;
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
@@ -50,6 +53,34 @@ function queueWaveformGeneration(version, container, execute) {
 
   waveformQueue.push({ versionId: version.id, version, container, execute });
   processWaveformQueue();
+}
+
+function processWaveformDecodeQueue() {
+  while (waveformDecodeQueue.length > 0 && waveformDecoding < MAX_CONCURRENT_WAVEFORM_DECODES) {
+    const job = waveformDecodeQueue.shift();
+    if (!job || typeof job.task !== "function") continue;
+    waveformDecoding++;
+    Promise.resolve()
+      .then(job.task)
+      .then(result => {
+        job.resolve(result || null);
+      })
+      .catch(err => {
+        console.warn('[Waveform] Decode task failed:', err);
+        job.resolve(null);
+      })
+      .finally(() => {
+        waveformDecoding--;
+        processWaveformDecodeQueue();
+      });
+  }
+}
+
+function queueWaveformDecode(task) {
+  return new Promise(resolve => {
+    waveformDecodeQueue.push({ task, resolve });
+    processWaveformDecodeQueue();
+  });
 }
 
 function getWaveCacheId(kind, id) {
@@ -2757,7 +2788,7 @@ function downsamplePeaks(peaks, targetCount) {
   return out;
 }
 
-async function computeWaveformPeaksFromUrl(audioUrl, sampleCount) {
+async function computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount) {
   if (!audioUrl) return null;
   let audioContext = null;
   try {
@@ -2783,6 +2814,11 @@ async function computeWaveformPeaksFromUrl(audioUrl, sampleCount) {
       // ignore
     }
   }
+}
+
+async function computeWaveformPeaksFromUrl(audioUrl, sampleCount) {
+  if (!audioUrl) return null;
+  return queueWaveformDecode(() => computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount));
 }
 
 /**
@@ -3080,6 +3116,7 @@ function loadAudioPlayer(project, cue, version) {
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
   playPauseBtn.disabled = true;
+  playPauseBtn.textContent = "Play";
   timeLabelEl.textContent = "00:00 / 00:00";
 
   if (!version || !version.media || !version.media.url) return;
@@ -3283,6 +3320,7 @@ function renderReferencePlayer(project) {
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     playPauseBtn.disabled = true;
+    playPauseBtn.textContent = "Play";
     timeLabelEl.textContent = "00:00 / 00:00";
 
     // Check if WaveSurfer is available
@@ -6105,6 +6143,7 @@ function renderPlayer() {
     playerMediaEl.innerHTML =
       '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.disabled = true;
+    playPauseBtn.textContent = "Play";
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     timeLabelEl.textContent = "--:-- / --:--";
@@ -6133,6 +6172,7 @@ function renderPlayer() {
     playerMediaEl.innerHTML =
       '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.disabled = true;
+    playPauseBtn.textContent = "Play";
     playPauseBtn.style.display = "inline-block";
     timeLabelEl.style.display = "inline-block";
     timeLabelEl.textContent = "--:-- / --:--";
@@ -6176,6 +6216,7 @@ function renderPlayer() {
     playerMediaEl.innerHTML =
       '<div class="player-placeholder">' + tr("player.placeholder") + '</div>';
     playPauseBtn.style.display = "none";
+    playPauseBtn.textContent = "Play";
     timeLabelEl.style.display = "none";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
@@ -6203,6 +6244,7 @@ function renderPlayer() {
     playerMediaEl.innerHTML =
       '<div class="player-placeholder">' + tr("player.noMediaForVersion") + '</div>';
     playPauseBtn.style.display = "none";
+    playPauseBtn.textContent = "Play";
     timeLabelEl.style.display = "none";
     setCommentsEnabled(false);
     commentsListEl.innerHTML = "";
