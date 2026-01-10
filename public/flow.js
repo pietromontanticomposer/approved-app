@@ -789,10 +789,19 @@ function activateVersionPreview(version) {
       if ((cue.versions || []).some(v => v.id === version.id)) {
         const prevCueId = project.activeCueId;
         const prevVersionId = project.activeVersionId;
+        const prevMode = state.playerMode;
         project.activeCueId = cue.id;
         project.activeVersionId = version.id;
+        if (prevMode !== "review") {
+          state.playerMode = "review";
+          updatePlayerModeButtons();
+        }
         // ensure UI reflects selection without full re-render
-        if (prevCueId !== cue.id || prevVersionId !== version.id) {
+        if (
+          prevCueId !== cue.id ||
+          prevVersionId !== version.id ||
+          prevMode !== "review"
+        ) {
           renderPlayer();
           if (prevCueId !== cue.id) renderNotesPanel();
         }
@@ -2982,129 +2991,99 @@ function setCommentsEnabled(x) {
 
 function getCurrentMediaTime() {
   if (mainWave) return mainWave.getCurrentTime();
+  if (activeAudioEl) return activeAudioEl.currentTime || 0;
   if (activeVideoEl) return activeVideoEl.currentTime;
   return 0;
 }
 
-function loadAudioPlayer(project, cue, version) {
-  const tStart = Date.now();
+function initAudioPlayer(opts = {}) {
+  const url = opts.url || null;
+  const placeholderText = opts.placeholderText || "Audio";
+
   destroyMainWave();
   stopVideo();
-  
-  let waveformEl = playerMediaEl.querySelector("#waveform");
-  if (!waveformEl) {
-    playerMediaEl.innerHTML = "";
-    waveformEl = document.createElement("div");
-    waveformEl.id = "waveform";
-    playerMediaEl.appendChild(waveformEl);
-  } else {
-    removeWavePlaceholder(waveformEl);
-    waveformEl.innerHTML = "";
-  }
-  const placeholderEl = waveformEl;
-  if (placeholderEl) {
-    let rendered = renderWavePlaceholder(placeholderEl, version.media.waveform, {
-      height: 80,
-      color: "rgba(148,163,184,0.8)"
-    });
-    if (!rendered) {
-      renderNeutralWavePlaceholder(placeholderEl, {
-        height: 80,
-        color: "rgba(148,163,184,0.6)"
-      });
-    }
-  }
-  
+
+  playerMediaEl.innerHTML = "";
+  const placeholder = document.createElement("div");
+  placeholder.className = "player-placeholder";
+  placeholder.textContent = placeholderText;
+  playerMediaEl.appendChild(placeholder);
+
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
   playPauseBtn.disabled = true;
+  playPauseBtn.textContent = "Play";
   timeLabelEl.textContent = "00:00 / 00:00";
 
-  const hasWaveform = !!getWaveformPeaks(version.media.waveform);
-  const waveBackend = hasWaveform ? "MediaElement" : "WebAudio";
-
-  // Check if WaveSurfer is available
-  if (typeof WaveSurfer === 'undefined') {
-    console.warn('[loadAudioPlayer] WaveSurfer not loaded yet');
+  if (!url) {
+    if (volumeSlider) {
+      volumeSlider.style.display = "none";
+    }
     return;
   }
 
-  mainWave = WaveSurfer.create({
-    container: "#waveform",
-    backend: waveBackend,
-    mediaControls: false,
-    height: 80,
-    waveColor: "rgba(148,163,184,0.8)",
-    progressColor: "#38bdf8",
-    cursorColor: "#f97316",
-    barWidth: 2,
-    barGap: 1,
-    responsive: true,
-    normalize: true
-  });
+  const audio = document.createElement("audio");
+  audio.preload = "metadata";
+  audio.src = getProxiedUrl(url);
+  audio.playsInline = true;
+  audio.style.display = "none";
+  playerMediaEl.appendChild(audio);
+  activeAudioEl = audio;
 
-  try {
-    const peaks = getWaveformPeaks(version.media.waveform);
-    const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-    mainWave.load(getProxiedUrl(version.media.url), peaks || undefined, durationHint);
-  } catch (e) {
-    console.warn('loadAudioPlayer: WaveSurfer load failed', e);
-  }
-
-  mainWave.on && mainWave.on("ready", () => {
-    try {
-      console.log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
-    } catch (e) {}
-  });
-
-  mainWave.on("ready", () => {
-    const dur = mainWave.getDuration();
-    version.media.duration = dur;
+  audio.addEventListener("loadedmetadata", () => {
+    if (activeAudioEl !== audio) return;
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (typeof opts.onDuration === "function") {
+      opts.onDuration(dur);
+    }
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
-    removeWavePlaceholder(placeholderEl);
-
-    if (!getWaveformPeaks(version.media.waveform)) {
-      try {
-        const backend = mainWave.backend;
-        if (backend && typeof backend.getPeaks === "function") {
-          const extractedPeaks = backend.getPeaks(256);
-          if (extractedPeaks && extractedPeaks.length) {
-            version.media.waveform = extractedPeaks;
-            waveformParseCache.set(version.id, extractedPeaks);
-            persistWaveformPeaks(version, extractedPeaks);
-          }
-        }
-      } catch (e) {
-        console.warn('[loadAudioPlayer] Could not extract peaks', e);
-      }
-    }
-
     if (volumeSlider) {
       const vol = parseFloat(volumeSlider.value || "1");
-      mainWave.setVolume(isNaN(vol) ? 1 : vol);
+      audio.volume = isNaN(vol) ? 1 : vol;
       volumeSlider.style.display = "block";
       volumeSlider.disabled = false;
     }
   });
 
-  mainWave.on("audioprocess", () => {
-    if (!mainWave || mainWave.isDragging) return;
-    const cur = mainWave.getCurrentTime();
-    const tot = mainWave.getDuration();
+  audio.addEventListener("timeupdate", () => {
+    if (activeAudioEl !== audio) return;
+    const cur = audio.currentTime || 0;
+    const tot = Number.isFinite(audio.duration) ? audio.duration : 0;
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
   });
 
-  mainWave.on("seek", () => {
-    const cur = mainWave.getCurrentTime();
-    const tot = mainWave.getDuration();
-    timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
+  audio.addEventListener("ended", () => {
+    if (activeAudioEl !== audio) return;
+    playPauseBtn.textContent = "Play";
   });
 
   playPauseBtn.onclick = () => {
-    mainWave.playPause();
-    playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+    if (activeAudioEl !== audio) return;
+    if (audio.paused) {
+      audio.play()
+        .then(() => {
+          playPauseBtn.textContent = "Pause";
+        })
+        .catch(() => {});
+      return;
+    }
+    audio.pause();
+    playPauseBtn.textContent = "Play";
   };
+}
+
+function loadAudioPlayer(project, cue, version) {
+  if (!version || !version.media) return;
+  initAudioPlayer({
+    url: version.media.url,
+    placeholderText: "Audio",
+    onDuration: (dur) => {
+      if (version.media) {
+        version.media.duration = dur;
+      }
+    }
+  });
 }
 
 function loadVideoPlayer(project, cue, version) {
@@ -3215,73 +3194,13 @@ function renderReferencePlayer(project) {
 
   // AUDIO REFERENCE → waveform like cue
   if (type === "audio") {
-    destroyMainWave();
-    stopVideo();
-
-    playerMediaEl.innerHTML = '<div id="waveform"></div>';
-    const refPlaceholderEl = document.getElementById("waveform");
-    if (refPlaceholderEl) {
-      renderWavePlaceholder(refPlaceholderEl, active.waveform, { height: 80 });
-    }
-
-    playPauseBtn.style.display = "inline-block";
-    timeLabelEl.style.display = "inline-block";
-    playPauseBtn.disabled = true;
-    timeLabelEl.textContent = "00:00 / 00:00";
-
-    // Check if WaveSurfer is available
-    if (typeof WaveSurfer === 'undefined') {
-      console.warn('[showReferenceInPlayer] WaveSurfer not loaded yet');
-      return;
-    }
-
-    mainWave = WaveSurfer.create({
-      container: "#waveform",
-      height: 80,
-      waveColor: "rgba(148,163,184,0.8)",
-      progressColor: "#38bdf8",
-      cursorColor: "#f97316",
-      barWidth: 2,
-      barGap: 1,
-      responsive: true,
-      normalize: true
-    });
-
-    mainWave.load(getProxiedUrl(active.url));
-
-    mainWave.on("ready", () => {
-      const dur = mainWave.getDuration();
-      active.duration = dur;
-      timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
-      playPauseBtn.disabled = false;
-      removeWavePlaceholder(refPlaceholderEl);
-
-      if (volumeSlider) {
-        const vol = parseFloat(volumeSlider.value || "1");
-        mainWave.setVolume(isNaN(vol) ? 1 : vol);
-        volumeSlider.style.display = "block";
-        volumeSlider.disabled = false;
+    initAudioPlayer({
+      url: active.url,
+      placeholderText: "Audio",
+      onDuration: (dur) => {
+        active.duration = dur;
       }
     });
-
-    mainWave.on("audioprocess", () => {
-      if (!mainWave || mainWave.isDragging) return;
-      const cur = mainWave.getCurrentTime();
-      const tot = mainWave.getDuration();
-      timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
-    });
-
-    mainWave.on("seek", () => {
-      const cur = mainWave.getCurrentTime();
-      const tot = mainWave.getDuration();
-      timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
-    });
-
-    playPauseBtn.onclick = () => {
-      mainWave.playPause();
-      playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
-    };
-
     return;
   }
 
@@ -3372,6 +3291,9 @@ if (volumeSlider) {
     const vol = parseFloat(volumeSlider.value || "1");
     if (mainWave) {
       mainWave.setVolume(isNaN(vol) ? 1 : vol);
+    }
+    if (activeAudioEl) {
+      activeAudioEl.volume = isNaN(vol) ? 1 : vol;
     }
   });
 }
@@ -3739,6 +3661,11 @@ function renderComments() {
         if (tot > 0) {
           mainWave.seekTo(t / tot);
           if (!mainWave.isPlaying()) mainWave.play();
+        }
+      } else if (activeAudioEl) {
+        activeAudioEl.currentTime = t;
+        if (activeAudioEl.paused) {
+          activeAudioEl.play().catch(() => {});
         }
       }
       if (activeVideoEl) {
@@ -4836,13 +4763,20 @@ function renderCueList(options = {}) {
 
       row.addEventListener("click", e => {
         if (e.target.closest(".download-toggle")) return;
-        state.playerMode = "review";
         const prevCueId = project.activeCueId;
+        const prevVersionId = project.activeVersionId;
+        const prevMode = state.playerMode;
+        if (
+          prevMode === "review" &&
+          prevCueId === cue.id &&
+          prevVersionId === version.id
+        ) {
+          updateActiveVersionRowStyles();
+          return;
+        }
+        state.playerMode = "review";
         project.activeCueId = cue.id;
         project.activeVersionId = version.id;
-        currentPlayerVersionId = null;
-        currentPlayerMediaType = null;
-        currentPlayerCueId = null;
         updatePlayerModeButtons();
         renderPlayer();
         updateActiveVersionRowStyles();
