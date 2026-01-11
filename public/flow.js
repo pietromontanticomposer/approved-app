@@ -26,6 +26,9 @@ const WAVEFORM_IMAGE_HEIGHT = 40;
 const waveformDecodeQueue = [];
 let waveformDecoding = 0;
 const MAX_CONCURRENT_WAVEFORM_DECODES = 2;
+const waveformRetryState = new Map();
+const MAX_WAVEFORM_RETRIES = 2;
+const WAVEFORM_RETRY_DELAY_MS = 1200;
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
@@ -2482,6 +2485,7 @@ function createMiniWave(version, container) {
       color: "rgba(56,189,248,0.9)",
       versionId: version.id
     });
+    waveformRetryState.delete(version.id);
     setWaveformRenderCache(cacheId, waveKey, container, 36);
     return;
   }
@@ -2503,15 +2507,35 @@ function createMiniWave(version, container) {
 
   queueWaveformGeneration(version, container, async () => {
     const computed = await ensureWaveformPeaksForVersion(version);
-    if (!computed || !container.isConnected) return;
-    container.innerHTML = "";
-    renderStaticWaveform(container, computed, {
+    if (!computed) {
+      const retry = waveformRetryState.get(version.id) || { count: 0 };
+      if (retry.count < MAX_WAVEFORM_RETRIES && version.media?.url) {
+        retry.count += 1;
+        waveformRetryState.set(version.id, retry);
+        setTimeout(() => {
+          const liveContainer = document.getElementById(`preview-${version.id}`);
+          if (!liveContainer || !liveContainer.isConnected) return;
+          waveformRenderCache.delete(cacheId);
+          createMiniWave(version, liveContainer);
+        }, WAVEFORM_RETRY_DELAY_MS * retry.count);
+      }
+      return;
+    }
+
+    waveformRetryState.delete(version.id);
+    const liveContainer = document.getElementById(`preview-${version.id}`);
+    const target = (liveContainer && liveContainer.isConnected)
+      ? liveContainer
+      : (container && container.isConnected ? container : null);
+    if (!target) return;
+    target.innerHTML = "";
+    renderStaticWaveform(target, computed, {
       height: 36,
       color: "rgba(56,189,248,0.9)",
       versionId: version.id
     });
     const updatedKey = getWaveformRenderKeyFromVersion(version);
-    setWaveformRenderCache(cacheId, updatedKey, container, 36);
+    setWaveformRenderCache(cacheId, updatedKey, target, 36);
     const metaEl = document.querySelector(
       `.version-row[data-version-id="${version.id}"] .version-meta`
     );
@@ -3158,6 +3182,11 @@ function loadAudioPlayer(project, cue, version) {
     normalize: true
   });
 
+  const syncPlayState = () => {
+    if (!mainWave || !playPauseBtn) return;
+    playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+  };
+
   try {
     const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
     mainWave.load(getProxiedUrl(version.media.url), peaks, durationHint);
@@ -3183,6 +3212,7 @@ function loadAudioPlayer(project, cue, version) {
       volumeSlider.style.display = "block";
       volumeSlider.disabled = false;
     }
+    syncPlayState();
   });
 
   mainWave.on("audioprocess", () => {
@@ -3198,9 +3228,13 @@ function loadAudioPlayer(project, cue, version) {
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
   });
 
+  mainWave.on("play", syncPlayState);
+  mainWave.on("pause", syncPlayState);
+  mainWave.on("finish", syncPlayState);
+
   playPauseBtn.onclick = () => {
     mainWave.playPause();
-    playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+    syncPlayState();
   };
 }
 
@@ -3341,6 +3375,11 @@ function renderReferencePlayer(project) {
       normalize: true
     });
 
+    const syncPlayState = () => {
+      if (!mainWave || !playPauseBtn) return;
+      playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+    };
+
     mainWave.load(getProxiedUrl(active.url));
 
     mainWave.on("ready", () => {
@@ -3355,6 +3394,7 @@ function renderReferencePlayer(project) {
         volumeSlider.style.display = "block";
         volumeSlider.disabled = false;
       }
+      syncPlayState();
     });
 
     mainWave.on("audioprocess", () => {
@@ -3370,9 +3410,13 @@ function renderReferencePlayer(project) {
       timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
     });
 
+    mainWave.on("play", syncPlayState);
+    mainWave.on("pause", syncPlayState);
+    mainWave.on("finish", syncPlayState);
+
     playPauseBtn.onclick = () => {
       mainWave.playPause();
-      playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+      syncPlayState();
     };
     return;
   }
