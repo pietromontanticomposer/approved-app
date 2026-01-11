@@ -155,6 +155,55 @@ export async function GET(req: NextRequest) {
     }
 
     // Don't resolve URLs here - let the client proxy storage paths when needed
+    const normalizePath = (value: string | null) =>
+      value ? value.replace(/^\/+/, "") : null;
+
+    const extractStoragePathFromUrl = (raw: string | null): string | null => {
+      if (!raw || typeof raw !== "string") return null;
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+
+      if (trimmed.startsWith("/api/media/stream")) {
+        try {
+          const u = new URL(trimmed, "http://localhost");
+          const rawPath = u.searchParams.get("path");
+          if (rawPath) return rawPath;
+          const rawUrl = u.searchParams.get("url");
+          if (rawUrl) return extractStoragePathFromUrl(rawUrl);
+        } catch {
+          return null;
+        }
+      }
+
+      try {
+        const u = new URL(trimmed);
+        const parts = u.pathname.split("/").filter(Boolean);
+        const objIdx = parts.findIndex(p => p === "object");
+        if (objIdx >= 0) {
+          const after = parts.slice(objIdx + 1);
+          if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
+            const bucket = after[1];
+            const pathParts = after.slice(2);
+            return `${bucket}/${pathParts.join("/")}`;
+          }
+        }
+      } catch {
+        // ignore parse failures
+      }
+
+      if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) return null;
+      if (trimmed.includes("://")) return null;
+      return trimmed;
+    };
+
+    const sanitizeMediaUrl = (raw: string | null) => {
+      if (!raw) return null;
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+      if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) return null;
+      return trimmed;
+    };
+
     // Helper to detect media type from filename
     const detectMediaType = (filename: string | null): 'audio' | 'video' | null => {
       if (!filename) return null;
@@ -177,16 +226,17 @@ export async function GET(req: NextRequest) {
     }, {} as Record<string, any[]>);
 
     const allVersions = (allVersionsRaw || []).map(v => {
-      // Prefer stored URL but fall back to raw storage path so the client can proxy
-      let mediaUrl = v.media_url;
-      if (!mediaUrl && v.media_storage_path) {
-        mediaUrl = v.media_storage_path.replace(/^\/+/, '');
-      }
+      const rawMediaUrl = typeof v.media_url === "string" ? v.media_url : null;
+      const storagePath =
+        normalizePath(v.media_storage_path) ||
+        normalizePath(extractStoragePathFromUrl(rawMediaUrl));
+      const mediaUrl = storagePath || sanitizeMediaUrl(rawMediaUrl);
 
-      let thumbnailUrl = v.media_thumbnail_url;
-      if (!thumbnailUrl && v.media_thumbnail_path) {
-        thumbnailUrl = v.media_thumbnail_path.replace(/^\/+/, '');
-      }
+      const rawThumbUrl = typeof v.media_thumbnail_url === "string" ? v.media_thumbnail_url : null;
+      const thumbPath =
+        normalizePath(v.media_thumbnail_path) ||
+        normalizePath(extractStoragePathFromUrl(rawThumbUrl));
+      const thumbnailUrl = thumbPath || sanitizeMediaUrl(rawThumbUrl);
 
       // Infer media_type if missing
       let mediaType = v.media_type;
@@ -201,7 +251,9 @@ export async function GET(req: NextRequest) {
         media_type: mediaType,
         media_filename: v.media_original_name || v.media_display_name || "Media",
         media_url: mediaUrl,
-        media_thumbnail_url: thumbnailUrl
+        media_thumbnail_url: thumbnailUrl,
+        media_storage_path: storagePath,
+        media_thumbnail_path: thumbPath
       };
     });
 
@@ -285,10 +337,12 @@ export async function GET(req: NextRequest) {
         media: v.media_type ? {
           type: v.media_type,
           url: v.media_url,
+          storagePath: v.media_storage_path || null,
           originalName: v.media_filename || v.media_original_name || 'Media',
           displayName: v.media_display_name || v.media_original_name || 'Media',
           duration: v.media_duration || v.duration,
           thumbnailUrl: v.media_thumbnail_url,
+          thumbnailPath: v.media_thumbnail_path || null,
           thumbnailSaved: !!v.media_thumbnail_url,
           waveform: v.media_waveform_data || null,
           waveformSaved: !!v.media_waveform_data,

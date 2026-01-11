@@ -187,7 +187,8 @@ async function persistWaveformPeaks(version, peaks) {
 }
 
 async function ensureWaveformPeaksForVersion(version) {
-  if (!version || !version.media || !version.media.url) return null;
+  const mediaUrl = resolveVersionMediaUrl(version);
+  if (!mediaUrl || !version || !version.media) return null;
   const existing = getWaveformPeaks(version.media.waveform);
   if (existing && existing.length) return existing;
   if (waveformComputeInFlight.has(version.id)) return null;
@@ -195,7 +196,7 @@ async function ensureWaveformPeaksForVersion(version) {
   waveformComputeInFlight.add(version.id);
   try {
     const result = await computeWaveformPeaksFromUrl(
-      version.media.url,
+      mediaUrl,
       WAVEFORM_PEAKS_COUNT
     );
     const peaks = result && result.peaks;
@@ -1020,9 +1021,59 @@ function buildComposerName(project, cue, version, ext) {
 }
 
 // Return a proxied URL on our domain when media comes from Supabase/storage
+function extractStoragePathFromUrl(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("/api/media/stream")) {
+    try {
+      const u = new URL(trimmed, window.location.origin);
+      const rawPath = u.searchParams.get("path");
+      if (rawPath) return rawPath;
+      const rawUrl = u.searchParams.get("url");
+      if (rawUrl) return extractStoragePathFromUrl(rawUrl);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  try {
+    const u = new URL(trimmed);
+    const parts = u.pathname.split("/").filter(Boolean);
+    const objIdx = parts.findIndex(p => p === "object");
+    if (objIdx >= 0) {
+      const after = parts.slice(objIdx + 1);
+      if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
+        const bucket = after[1];
+        const pathParts = after.slice(2);
+        return `${bucket}/${pathParts.join("/")}`;
+      }
+    }
+  } catch (e) {
+    // ignore parse errors
+  }
+
+  if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) return null;
+  if (trimmed.includes("://")) return null;
+  return trimmed.replace(/^\/+/, "");
+}
+
 function getProxiedUrl(raw) {
   if (!raw) return raw;
   if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
+    try {
+      const u = new URL(raw, window.location.origin);
+      const rawPath = u.searchParams.get("path");
+      if (rawPath) return raw;
+      const rawUrl = u.searchParams.get("url");
+      if (rawUrl) {
+        const storagePath = extractStoragePathFromUrl(rawUrl);
+        if (storagePath) {
+          return `/api/media/stream?path=${encodeURIComponent(storagePath)}`;
+        }
+      }
+    } catch (e) {}
     return raw;
   }
   try {
@@ -1058,6 +1109,21 @@ function getProxiedUrl(raw) {
     // Likely a storage path like "projects/..." → proxy by path
     return `/api/media/stream?path=${encodeURIComponent(raw)}`;
   }
+}
+
+function resolveVersionMediaUrl(version) {
+  if (!version || !version.media) return null;
+  const storagePath =
+    typeof version.media.storagePath === "string"
+      ? version.media.storagePath.trim()
+      : null;
+  if (storagePath) return getProxiedUrl(storagePath);
+  const mediaUrl =
+    typeof version.media.url === "string"
+      ? version.media.url.trim()
+      : null;
+  if (!mediaUrl) return null;
+  return getProxiedUrl(mediaUrl);
 }
 
 function getWaveformPeaks(raw) {
@@ -2160,6 +2226,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
             }
           } else if (version.media) {
             version.media.url = getProxiedUrl(storedPath);
+            version.media.storagePath = storedPath;
             version.isUploading = false;
             version.uploadProgress = 100;
 
@@ -2444,7 +2511,8 @@ function createMiniWave(version, container) {
   if (!version.media || version.media.type !== "audio") return;
   const cacheId = getWaveCacheId("v", version.id);
   const waveKey = getWaveformRenderKeyFromVersion(version);
-  if (!version.media.url) {
+  const mediaUrl = resolveVersionMediaUrl(version);
+  if (!mediaUrl) {
     container.classList.add("is-placeholder");
     container.innerHTML = `<span class="preview-label uploading">Upload…</span>`;
     setWaveformRenderCache(cacheId, waveKey, container, 36);
@@ -2512,7 +2580,7 @@ function createMiniWave(version, container) {
     const computed = await ensureWaveformPeaksForVersion(version);
     if (!computed) {
       const retry = waveformRetryState.get(version.id) || { count: 0 };
-      if (retry.count < MAX_WAVEFORM_RETRIES && version.media?.url) {
+      if (retry.count < MAX_WAVEFORM_RETRIES && resolveVersionMediaUrl(version)) {
         retry.count += 1;
         waveformRetryState.set(version.id, retry);
         setTimeout(() => {
@@ -2739,7 +2807,7 @@ function generateVideoThumbnailRaw(url) {
 
 // Existing version video thumbs
 function generateVideoThumbnailFromUrl(version) {
-  const url = version.media?.url;
+  const url = resolveVersionMediaUrl(version);
   return generateVideoThumbnailRaw(url);
 }
 
@@ -3160,7 +3228,8 @@ function loadAudioPlayer(project, cue, version) {
   playPauseBtn.textContent = "Play";
   timeLabelEl.textContent = "00:00 / 00:00";
 
-  if (!version || !version.media || !version.media.url) return;
+  const mediaUrl = resolveVersionMediaUrl(version);
+  if (!mediaUrl || !version || !version.media) return;
 
   const waveformEl = ensurePlayerWaveShell();
   if (!waveformEl) return;
@@ -3281,7 +3350,7 @@ function loadAudioPlayer(project, cue, version) {
 
   try {
     const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-    ws.load(getProxiedUrl(version.media.url), peaks, durationHint);
+    ws.load(mediaUrl, peaks, durationHint);
   } catch (e) {
     console.warn('loadAudioPlayer: WaveSurfer load failed', e);
   }
@@ -3353,6 +3422,13 @@ function loadVideoPlayer(project, cue, version) {
     volumeSlider.style.display = "none";
   }
 
+  const mediaUrl = resolveVersionMediaUrl(version);
+  if (!mediaUrl) {
+    playerMediaEl.innerHTML =
+      '<div class="player-placeholder">' + tr("player.noMediaForVersion") + "</div>";
+    return;
+  }
+
   const shell = document.createElement("div");
   shell.className = "video-shell";
 
@@ -3380,7 +3456,7 @@ function loadVideoPlayer(project, cue, version) {
 
     const video = document.createElement("video");
     video.className = "video-player";
-    video.src = getProxiedUrl(version.media.url);
+    video.src = mediaUrl;
     video.controls = true;
     video.playsInline = true;
     inner.appendChild(video);
@@ -4898,12 +4974,13 @@ function renderCueList(options = {}) {
           dd2.classList.remove("open");
           const action = b.dataset.action;
           if (action === "download-main") {
-            if (version.media && version.media.url) {
+            const mediaUrl = resolveVersionMediaUrl(version);
+            if (mediaUrl) {
               const name =
                 version.media.displayName ||
                 version.media.originalName ||
                 "media";
-              triggerDownload(getProxiedUrl(version.media.url), name);
+              triggerDownload(mediaUrl, name);
             }
           }
           if (action === "download-deliverable") {
@@ -5359,6 +5436,7 @@ function renderVersionPreviews() {
 
       if (version.media.type === "video") {
         prev.classList.add("video");
+        const mediaUrl = resolveVersionMediaUrl(version);
 
         // Preferred: show a lightweight <video> element with poster (thumbnail) so
         // the browser displays the thumbnail without loading full video data.
@@ -5416,7 +5494,7 @@ function renderVersionPreviews() {
         // If we have a thumbnail URL, use it as poster on a video element.
         if (version.media.thumbnailUrl) {
           try {
-            const el = makeVideoEl(version.media.url || null, version.media.thumbnailUrl);
+            const el = makeVideoEl(mediaUrl || null, version.media.thumbnailUrl);
             prev.appendChild(el);
             prev.classList.add("has-thumbnail");
           } catch (err) {
@@ -5429,7 +5507,7 @@ function renderVersionPreviews() {
             prev.appendChild(img);
             prev.classList.add("has-thumbnail");
           }
-        } else if (version.media.url) {
+        } else if (mediaUrl) {
           // No thumbnail: attempt to generate one asynchronously, show placeholder meanwhile
           prev.style.background = "radial-gradient(circle, #374151, #111827 70%)";
           const spinner = document.createElement("span");
@@ -5446,13 +5524,13 @@ function renderVersionPreviews() {
 
             if (!th) {
               // If thumbnail generation failed, render a lightweight video element with no poster
-              const fallback = makeVideoEl(version.media.url, null);
+              const fallback = makeVideoEl(mediaUrl, null);
               el.appendChild(fallback);
               return;
             }
 
             version.media.thumbnailUrl = th;
-            const wrapped = makeVideoEl(version.media.url || null, th);
+            const wrapped = makeVideoEl(mediaUrl || null, th);
             el.appendChild(wrapped);
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
