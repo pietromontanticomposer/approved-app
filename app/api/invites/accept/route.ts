@@ -4,6 +4,12 @@ import { verifyAuth } from '@/lib/auth';
 
 export const runtime = "nodejs";
 
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
 /**
  * POST /api/invites/accept
  * Body: { invite_token }
@@ -20,6 +26,9 @@ export async function POST(req: NextRequest) {
     }
 
     const actorId = auth.userId;
+    if (!isUuid(actorId)) {
+      return NextResponse.json({ error: 'Invalid user session. Please sign in again.' }, { status: 401 });
+    }
 
     const body = await req.json();
     const inviteToken = body?.invite_token;

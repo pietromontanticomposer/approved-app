@@ -91,9 +91,23 @@ export default function InvitePage() {
     setError("");
 
     try {
+      const { getSupabaseClient } = await import("@/lib/supabaseClient");
+      const client = getSupabaseClient();
+      const sessionRes = await client.auth.getSession();
+      const accessToken = sessionRes?.data?.session?.access_token;
+      if (!accessToken) {
+        setError("Sessione scaduta. Effettua di nuovo l'accesso.");
+        setAccepting(false);
+        return;
+      }
+
       const resp = await fetch("/api/invites/accept", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "x-actor-id": user?.id || ""
+        },
         credentials: "same-origin",
         body: JSON.stringify({ invite_token: token })
       });
