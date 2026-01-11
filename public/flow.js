@@ -13,6 +13,9 @@ let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
 let draggedCueId = null;
+let mainWaveLayer = null;
+let playerWaveLoadToken = 0;
+const PLAYER_WAVE_FADE_MS = 140;
 const miniWaves = {};
 const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
@@ -3079,6 +3082,7 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
 // PLAYER AUDIO / VIDEO
 // =======================
 function destroyMainWave() {
+  playerWaveLoadToken += 1;
   if (mainWave) {
     try {
       mainWave.destroy();
@@ -3087,6 +3091,8 @@ function destroyMainWave() {
     }
     mainWave = null;
   }
+  mainWaveLayer = null;
+  clearPlayerWaveShell();
   if (activeAudioEl) {
     try {
       activeAudioEl.pause();
@@ -3111,6 +3117,27 @@ function stopVideo() {
   }
 }
 
+function ensurePlayerWaveShell() {
+  if (!playerMediaEl) return null;
+  let waveformEl = playerMediaEl.querySelector("#waveform");
+  if (!waveformEl) {
+    playerMediaEl.innerHTML = "";
+    waveformEl = document.createElement("div");
+    waveformEl.id = "waveform";
+    playerMediaEl.appendChild(waveformEl);
+  }
+  waveformEl.classList.add("player-wave-shell");
+  return waveformEl;
+}
+
+function clearPlayerWaveShell() {
+  if (!playerMediaEl) return;
+  const waveformEl = playerMediaEl.querySelector("#waveform");
+  if (!waveformEl) return;
+  waveformEl.classList.remove("is-loading");
+  waveformEl.innerHTML = "";
+}
+
 function setCommentsEnabled(x) {
   commentInputEl.disabled = !x;
   addCommentBtn.disabled = !x;
@@ -3124,18 +3151,8 @@ function getCurrentMediaTime() {
 
 function loadAudioPlayer(project, cue, version) {
   const tStart = Date.now();
-  destroyMainWave();
+  const loadToken = ++playerWaveLoadToken;
   stopVideo();
-
-  let waveformEl = playerMediaEl.querySelector("#waveform");
-  if (!waveformEl) {
-    playerMediaEl.innerHTML = "";
-    waveformEl = document.createElement("div");
-    waveformEl.id = "waveform";
-    playerMediaEl.appendChild(waveformEl);
-  } else {
-    waveformEl.innerHTML = "";
-  }
 
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
@@ -3145,19 +3162,58 @@ function loadAudioPlayer(project, cue, version) {
 
   if (!version || !version.media || !version.media.url) return;
 
+  const waveformEl = ensurePlayerWaveShell();
+  if (!waveformEl) return;
+
+  const prevWave = mainWave;
+  let prevLayer = mainWaveLayer;
+
+  if (prevWave) {
+    try {
+      prevWave.pause();
+    } catch (e) {}
+  }
+  mainWave = null;
+
+  waveformEl.classList.add("is-loading");
+
   const peaks = getWaveformPeaks(version.media.waveform);
   if (!peaks) {
-    renderNeutralWavePlaceholder(waveformEl, {
-      height: 80,
-      color: "rgba(148,163,184,0.6)"
-    });
+    if (!prevLayer || !prevLayer.isConnected) {
+      prevLayer = document.createElement("div");
+      prevLayer.className = "waveform-layer active";
+      waveformEl.innerHTML = "";
+      waveformEl.appendChild(prevLayer);
+      renderNeutralWavePlaceholder(prevLayer, {
+        height: 80,
+        color: "rgba(148,163,184,0.6)"
+      });
+      mainWaveLayer = prevLayer;
+    }
     ensureWaveformPeaksForVersion(version).then((computed) => {
       if (!computed) return;
       const active = getActiveContext();
       if (!active || !active.version || active.version.id !== version.id) return;
       loadAudioPlayer(project, cue, version);
     });
+    if (prevWave && (!prevLayer || !prevLayer.isConnected)) {
+      try {
+        prevWave.destroy();
+      } catch (e) {}
+    }
     return;
+  }
+
+  if (!prevLayer || !prevLayer.isConnected) {
+    prevLayer = document.createElement("div");
+    prevLayer.className = "waveform-layer active";
+    waveformEl.innerHTML = "";
+    waveformEl.appendChild(prevLayer);
+    renderStaticWaveform(prevLayer, peaks, {
+      height: 80,
+      color: "rgba(148,163,184,0.8)"
+    });
+    mainWaveLayer = prevLayer;
   }
 
   const waveBackend = "MediaElement";
@@ -3168,8 +3224,12 @@ function loadAudioPlayer(project, cue, version) {
     return;
   }
 
+  const nextLayer = document.createElement("div");
+  nextLayer.className = "waveform-layer";
+  waveformEl.appendChild(nextLayer);
+
   const ws = WaveSurfer.create({
-    container: "#waveform",
+    container: nextLayer,
     backend: waveBackend,
     mediaControls: false,
     height: 80,
@@ -3181,11 +3241,42 @@ function loadAudioPlayer(project, cue, version) {
     responsive: true,
     normalize: true
   });
-  mainWave = ws;
 
   const syncPlayState = () => {
-    if (!playPauseBtn || mainWave !== ws) return;
+    if (!playPauseBtn || mainWave !== ws || playerWaveLoadToken !== loadToken) return;
     playPauseBtn.textContent = ws.isPlaying() ? "Pause" : "Play";
+  };
+
+  const finalizeSwap = () => {
+    if (playerWaveLoadToken !== loadToken) {
+      try {
+        ws.destroy();
+      } catch (e) {}
+      if (nextLayer.isConnected) nextLayer.remove();
+      return false;
+    }
+
+    mainWave = ws;
+    mainWaveLayer = nextLayer;
+    nextLayer.classList.add("active");
+    waveformEl.classList.remove("is-loading");
+
+    if (prevLayer && prevLayer.isConnected) {
+      prevLayer.classList.remove("active");
+      prevLayer.classList.add("fade-out");
+      const oldLayer = prevLayer;
+      const oldWave = prevWave;
+      setTimeout(() => {
+        if (oldLayer && oldLayer.isConnected) oldLayer.remove();
+        if (oldWave && typeof oldWave.destroy === "function") {
+          oldWave.destroy();
+        }
+      }, PLAYER_WAVE_FADE_MS);
+    } else if (prevWave && typeof prevWave.destroy === "function") {
+      prevWave.destroy();
+    }
+
+    return true;
   };
 
   try {
@@ -3196,14 +3287,20 @@ function loadAudioPlayer(project, cue, version) {
   }
 
   ws.on && ws.on("ready", () => {
-    if (mainWave !== ws) return;
+    if (playerWaveLoadToken !== loadToken) return;
     try {
       console.log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
     } catch (e) {}
   });
 
   ws.on("ready", () => {
-    if (mainWave !== ws) return;
+    if (playerWaveLoadToken !== loadToken) {
+      try {
+        ws.destroy();
+      } catch (e) {}
+      if (nextLayer.isConnected) nextLayer.remove();
+      return;
+    }
     const dur = ws.getDuration();
     version.media.duration = dur;
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
@@ -3215,18 +3312,19 @@ function loadAudioPlayer(project, cue, version) {
       volumeSlider.style.display = "block";
       volumeSlider.disabled = false;
     }
+    finalizeSwap();
     syncPlayState();
   });
 
   ws.on("audioprocess", () => {
-    if (mainWave !== ws || ws.isDragging) return;
+    if (mainWave !== ws || ws.isDragging || playerWaveLoadToken !== loadToken) return;
     const cur = ws.getCurrentTime();
     const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
   });
 
   ws.on("seek", () => {
-    if (mainWave !== ws) return;
+    if (mainWave !== ws || playerWaveLoadToken !== loadToken) return;
     const cur = ws.getCurrentTime();
     const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;

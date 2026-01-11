@@ -843,6 +843,33 @@
   margin-bottom: 8px;
 }
 
+#waveform.player-wave-shell {
+  position: relative;
+  height: 80px;
+  min-height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#waveform.player-wave-shell .waveform-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+#waveform.player-wave-shell .waveform-layer.active {
+  opacity: 1;
+}
+
+#waveform.player-wave-shell .waveform-layer.fade-out {
+  opacity: 0;
+}
+
+#waveform.player-wave-shell.is-loading {
+  background: radial-gradient(circle at 20% 20%, rgba(15,23,42,0.6), rgba(2,6,23,0.6) 70%);
+}
+
 .player-placeholder {
   font-size: 12px;
   color: #6b7280;
