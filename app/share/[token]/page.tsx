@@ -152,10 +152,22 @@ export default function SharePage() {
 
     // Redeem via server API
     try {
+      if (!supabase) {
+        setError("Sessione non disponibile. Ricarica la pagina.");
+        return;
+      }
+      const sessionRes = await supabase.auth.getSession();
+      const accessToken = sessionRes?.data?.session?.access_token;
+      if (!accessToken) {
+        setError("Sessione scaduta. Effettua di nuovo l'accesso.");
+        return;
+      }
+
       const resp = await fetch('/api/share/redeem', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
           'x-actor-id': user.id
         },
         body: JSON.stringify({ share_id: shareId, token: tokenQuery })

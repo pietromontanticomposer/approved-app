@@ -1,23 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { verifyAuth } from "@/lib/auth";
 import crypto from "crypto";
 
 /**
  * POST /api/share/redeem
  * Body: { share_id, token }
  * Redeems a share link: validates token, adds user to project_members with the role from the link
- * Header: x-actor-id (user id of the authenticated user)
  */
-export async function POST(req: Request) {
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
+export async function POST(req: NextRequest) {
   try {
+    const auth = await verifyAuth(req);
+    if (!auth || !isUuid(auth.userId)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const raw = await req.text();
     if (!raw) return NextResponse.json({ error: 'Empty body' }, { status: 400 });
     const body = JSON.parse(raw);
     const shareId = typeof body.share_id === 'string' ? body.share_id : '';
     const token = typeof body.token === 'string' ? body.token : '';
-    const actorId = req.headers.get('x-actor-id');
 
-    if (!actorId) return NextResponse.json({ error: 'Missing x-actor-id header' }, { status: 403 });
+    const actorId = auth.userId;
     if (!shareId || !token) return NextResponse.json({ error: 'share_id and token are required' }, { status: 400 });
 
     // Load share link by id

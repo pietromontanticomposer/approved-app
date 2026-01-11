@@ -13,6 +13,12 @@ import { sendInviteEmail } from '@/lib/email';
 
 export const runtime = "nodejs";
 
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -32,6 +38,9 @@ export async function GET(req: NextRequest) {
     }
 
     const actorId = auth.userId;
+    if (!isUuid(actorId)) {
+      return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
+    }
 
     const url = new URL(req.url);
     const teamId = url.searchParams.get("team_id");
@@ -87,6 +96,9 @@ export async function POST(req: NextRequest) {
     }
 
     const actorId = auth.userId;
+    if (!isUuid(actorId)) {
+      return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
+    }
 
     const body = await req.json();
     const { team_id, project_id, email, role, is_link_invite } = body;
@@ -212,6 +224,9 @@ export async function DELETE(req: NextRequest) {
     }
 
     const actorIdDel = auth.userId;
+    if (!isUuid(actorIdDel)) {
+      return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
+    }
 
     const url = new URL(req.url);
     const inviteId = url.searchParams.get("invite_id");

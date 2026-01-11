@@ -2,6 +2,33 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import crypto from "crypto";
 
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+
+async function resolveActorId(req: Request) {
+  let actorId = req.headers.get('x-actor-id') || '';
+  try {
+    const authHeader = req.headers.get('authorization') || '';
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
+        if (!verifyErr && verified?.user?.id) {
+          actorId = verified.user.id;
+        } else {
+          console.warn('[/api/projects/share] auth.getUser failed', verifyErr);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[/api/projects/share] token verification error', e);
+  }
+  return actorId;
+}
+
 /**
  * POST /api/projects/share
  * Body: { project_id, role?: 'viewer'|'editor', email?: string, expires_at?: string, max_uses?: number, invite?: boolean }
@@ -21,25 +48,10 @@ export async function POST(req: Request) {
     const invite = body.invite === true || body.type === 'invite';
 
     // Prefer server-verified actor via Authorization: Bearer <token>
-    let actorId = req.headers.get('x-actor-id');
-    try {
-      const authHeader = req.headers.get('authorization') || '';
-      if (authHeader.toLowerCase().startsWith('bearer ')) {
-        const token = authHeader.split(' ')[1];
-        if (token) {
-          const { data: verified, error: verifyErr } = await supabaseAdmin.auth.getUser(token);
-          if (!verifyErr && verified?.user?.id) {
-            actorId = verified.user.id;
-          } else {
-            console.warn('[/api/projects/share] auth.getUser failed', verifyErr);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[/api/projects/share] token verification error', e);
-    }
+    const actorId = await resolveActorId(req);
 
     if (!actorId) return NextResponse.json({ error: 'Missing x-actor-id header or Authorization token' }, { status: 403 });
+    if (!isUuid(actorId)) return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     if (!projectId) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
 
     // Verify actor is owner or manager of the project
@@ -181,8 +193,9 @@ export async function DELETE(req: Request) {
     if (!raw) return NextResponse.json({ error: 'Empty body' }, { status: 400 });
     const body = JSON.parse(raw);
     const id = typeof body.id === 'string' ? body.id : '';
-    const actorId = req.headers.get('x-actor-id');
+    const actorId = await resolveActorId(req);
     if (!actorId) return NextResponse.json({ error: 'Missing x-actor-id header' }, { status: 403 });
+    if (!isUuid(actorId)) return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
     // Load share link to get project
