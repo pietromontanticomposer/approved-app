@@ -1,8 +1,10 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl =
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
 // Export a variable and assign it below to avoid `export` inside conditionals
 export let supabaseAdmin: any = null;
@@ -107,6 +109,6 @@ if (supabaseUrl && supabaseServiceKey) {
   supabaseAdmin = fakeAdmin as any;
 } else {
   throw new Error(
-    "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment. Set APP_ALLOW_FAKE_SUPABASE=1 to enable a local fake client for tests."
+    "Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment. Set APP_ALLOW_FAKE_SUPABASE=1 to enable a local fake client for tests."
   );
 }
