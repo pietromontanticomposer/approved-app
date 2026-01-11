@@ -3168,7 +3168,7 @@ function loadAudioPlayer(project, cue, version) {
     return;
   }
 
-  mainWave = WaveSurfer.create({
+  const ws = WaveSurfer.create({
     container: "#waveform",
     backend: waveBackend,
     mediaControls: false,
@@ -3181,59 +3181,64 @@ function loadAudioPlayer(project, cue, version) {
     responsive: true,
     normalize: true
   });
+  mainWave = ws;
 
   const syncPlayState = () => {
-    if (!mainWave || !playPauseBtn) return;
-    playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+    if (!playPauseBtn || mainWave !== ws) return;
+    playPauseBtn.textContent = ws.isPlaying() ? "Pause" : "Play";
   };
 
   try {
     const durationHint = typeof version.media.duration === "number" ? version.media.duration : undefined;
-    mainWave.load(getProxiedUrl(version.media.url), peaks, durationHint);
+    ws.load(getProxiedUrl(version.media.url), peaks, durationHint);
   } catch (e) {
     console.warn('loadAudioPlayer: WaveSurfer load failed', e);
   }
 
-  mainWave.on && mainWave.on("ready", () => {
+  ws.on && ws.on("ready", () => {
+    if (mainWave !== ws) return;
     try {
       console.log("[loadAudioPlayer] WaveSurfer ready for version", version.id, "in", Date.now() - tStart, "ms");
     } catch (e) {}
   });
 
-  mainWave.on("ready", () => {
-    const dur = mainWave.getDuration();
+  ws.on("ready", () => {
+    if (mainWave !== ws) return;
+    const dur = ws.getDuration();
     version.media.duration = dur;
     timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
     playPauseBtn.disabled = false;
 
     if (volumeSlider) {
       const vol = parseFloat(volumeSlider.value || "1");
-      mainWave.setVolume(isNaN(vol) ? 1 : vol);
+      ws.setVolume(isNaN(vol) ? 1 : vol);
       volumeSlider.style.display = "block";
       volumeSlider.disabled = false;
     }
     syncPlayState();
   });
 
-  mainWave.on("audioprocess", () => {
-    if (!mainWave || mainWave.isDragging) return;
-    const cur = mainWave.getCurrentTime();
-    const tot = mainWave.getDuration();
+  ws.on("audioprocess", () => {
+    if (mainWave !== ws || ws.isDragging) return;
+    const cur = ws.getCurrentTime();
+    const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
   });
 
-  mainWave.on("seek", () => {
-    const cur = mainWave.getCurrentTime();
-    const tot = mainWave.getDuration();
+  ws.on("seek", () => {
+    if (mainWave !== ws) return;
+    const cur = ws.getCurrentTime();
+    const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
   });
 
-  mainWave.on("play", syncPlayState);
-  mainWave.on("pause", syncPlayState);
-  mainWave.on("finish", syncPlayState);
+  ws.on("play", syncPlayState);
+  ws.on("pause", syncPlayState);
+  ws.on("finish", syncPlayState);
 
   playPauseBtn.onclick = () => {
-    mainWave.playPause();
+    if (mainWave !== ws) return;
+    ws.playPause();
     syncPlayState();
   };
 }
@@ -3363,7 +3368,7 @@ function renderReferencePlayer(project) {
       return;
     }
 
-    mainWave = WaveSurfer.create({
+    const ws = WaveSurfer.create({
       container: "#waveform",
       height: 80,
       waveColor: "rgba(148,163,184,0.8)",
@@ -3374,48 +3379,52 @@ function renderReferencePlayer(project) {
       responsive: true,
       normalize: true
     });
+    mainWave = ws;
 
     const syncPlayState = () => {
-      if (!mainWave || !playPauseBtn) return;
-      playPauseBtn.textContent = mainWave.isPlaying() ? "Pause" : "Play";
+      if (!playPauseBtn || mainWave !== ws) return;
+      playPauseBtn.textContent = ws.isPlaying() ? "Pause" : "Play";
     };
 
-    mainWave.load(getProxiedUrl(active.url));
+    ws.load(getProxiedUrl(active.url));
 
-    mainWave.on("ready", () => {
-      const dur = mainWave.getDuration();
+    ws.on("ready", () => {
+      if (mainWave !== ws) return;
+      const dur = ws.getDuration();
       active.duration = dur;
       timeLabelEl.textContent = `00:00 / ${formatTime(dur)}`;
       playPauseBtn.disabled = false;
 
       if (volumeSlider) {
         const vol = parseFloat(volumeSlider.value || "1");
-        mainWave.setVolume(isNaN(vol) ? 1 : vol);
+        ws.setVolume(isNaN(vol) ? 1 : vol);
         volumeSlider.style.display = "block";
         volumeSlider.disabled = false;
       }
       syncPlayState();
     });
 
-    mainWave.on("audioprocess", () => {
-      if (!mainWave || mainWave.isDragging) return;
-      const cur = mainWave.getCurrentTime();
-      const tot = mainWave.getDuration();
+    ws.on("audioprocess", () => {
+      if (mainWave !== ws || ws.isDragging) return;
+      const cur = ws.getCurrentTime();
+      const tot = ws.getDuration();
       timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
     });
 
-    mainWave.on("seek", () => {
-      const cur = mainWave.getCurrentTime();
-      const tot = mainWave.getDuration();
+    ws.on("seek", () => {
+      if (mainWave !== ws) return;
+      const cur = ws.getCurrentTime();
+      const tot = ws.getDuration();
       timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
     });
 
-    mainWave.on("play", syncPlayState);
-    mainWave.on("pause", syncPlayState);
-    mainWave.on("finish", syncPlayState);
+    ws.on("play", syncPlayState);
+    ws.on("pause", syncPlayState);
+    ws.on("finish", syncPlayState);
 
     playPauseBtn.onclick = () => {
-      mainWave.playPause();
+      if (mainWave !== ws) return;
+      ws.playPause();
       syncPlayState();
     };
     return;
