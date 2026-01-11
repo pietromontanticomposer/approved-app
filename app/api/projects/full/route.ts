@@ -62,16 +62,6 @@ export async function GET(req: NextRequest) {
         if (membership) hasAccess = true;
       }
 
-      if (!hasAccess && singleProject.team_id) {
-        const { data: teamMember } = await supabaseAdmin
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', singleProject.team_id)
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (teamMember) hasAccess = true;
-      }
-
       if (!hasAccess) {
         if (isDev) console.log(`[GET /api/projects/full] User ${userId} denied for project ${projectIdFilter}`);
         return NextResponse.json({ error: 'Project not found' }, { status: 404 });

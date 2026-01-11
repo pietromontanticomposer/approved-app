@@ -113,51 +113,22 @@ async function getOwnedProjects(userId: string): Promise<Project[]> {
  * Get projects shared with user
  */
 async function getSharedProjects(userId: string, ownedProjectIds: string[]): Promise<Project[]> {
-  const [membershipResult, teamResult] = await Promise.all([
-    supabaseAdmin
-      .from('project_members')
-      .select('project_id')
-      .eq('member_id', userId),
-    supabaseAdmin
-      .from('team_members')
-      .select('team_id')
-      .eq('user_id', userId)
-  ]);
+  const membershipResult = await supabaseAdmin
+    .from('project_members')
+    .select('project_id')
+    .eq('member_id', userId);
 
   if (membershipResult.error) {
     console.error('[Projects] Error loading project memberships:', membershipResult.error);
     throw new Error(`Failed to load project memberships: ${membershipResult.error.message}`);
   }
 
-  if (teamResult.error) {
-    console.error('[Projects] Error loading team memberships:', teamResult.error);
-    throw new Error(`Failed to load team memberships: ${teamResult.error.message}`);
-  }
-
   const projectIdsFromMembership = (membershipResult.data || [])
     .map((row: any) => row.project_id)
     .filter(Boolean);
 
-  const teamIds = (teamResult.data || []).map((row: any) => row.team_id).filter(Boolean);
-
-  // Get project IDs from teams
-  let projectIdsFromTeams: string[] = [];
-  if (teamIds.length > 0) {
-    const { data: teamProjects, error: teamProjectsError } = await supabaseAdmin
-      .from('projects')
-      .select('id')
-      .in('team_id', teamIds);
-
-    if (teamProjectsError) {
-      console.error('[Projects] Error loading team projects:', teamProjectsError);
-      throw new Error(`Failed to load team projects: ${teamProjectsError.message}`);
-    }
-
-    projectIdsFromTeams = (teamProjects || []).map(p => p.id).filter(Boolean);
-  }
-
   // Combine and deduplicate, excluding owned projects
-  const allSharedIds = new Set([...projectIdsFromMembership, ...projectIdsFromTeams]);
+  const allSharedIds = new Set([...projectIdsFromMembership]);
   const ownedIdsSet = new Set(ownedProjectIds);
   const finalSharedIds = Array.from(allSharedIds).filter(id => !ownedIdsSet.has(id));
 

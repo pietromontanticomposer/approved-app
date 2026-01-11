@@ -36,13 +36,78 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'invite_token required' }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin.rpc('accept_invite', { invite_token: inviteToken, accepting_user_id: actorId });
-    if (error) {
-      console.error('accept_invite RPC error', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const { data: invite, error: inviteErr } = await supabaseAdmin
+      .from('invites')
+      .select('id, team_id, project_id, email, role, invited_by, revoked, used_at, expires_at')
+      .eq('id', inviteToken)
+      .maybeSingle();
+
+    if (inviteErr || !invite) {
+      return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
     }
 
-    return NextResponse.json(data);
+    if (invite.revoked) {
+      return NextResponse.json({ error: 'Invite revoked' }, { status: 410 });
+    }
+
+    if (invite.used_at) {
+      return NextResponse.json({ error: 'Invite already used' }, { status: 410 });
+    }
+
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      return NextResponse.json({ error: 'Invite expired' }, { status: 410 });
+    }
+
+    if (invite.email) {
+      const authEmail = auth.email || '';
+      if (!authEmail || invite.email.toLowerCase() !== authEmail.toLowerCase()) {
+        return NextResponse.json({ error: 'This invite is for a different email address' }, { status: 403 });
+      }
+    }
+
+    const role = invite.role || 'viewer';
+
+    if (invite.project_id) {
+      const { error: upsertErr } = await supabaseAdmin
+        .from('project_members')
+        .upsert({
+          project_id: invite.project_id,
+          member_id: actorId,
+          role,
+          added_by: invite.invited_by || null,
+          added_at: new Date().toISOString()
+        }, { onConflict: 'project_id,member_id' });
+      if (upsertErr) {
+        return NextResponse.json({ error: upsertErr.message }, { status: 500 });
+      }
+    } else if (invite.team_id) {
+      const { error: teamErr } = await supabaseAdmin
+        .from('team_members')
+        .upsert({
+          team_id: invite.team_id,
+          user_id: actorId,
+          role,
+          joined_at: new Date().toISOString()
+        }, { onConflict: 'user_id,team_id' });
+      if (teamErr) {
+        return NextResponse.json({ error: teamErr.message }, { status: 500 });
+      }
+    }
+
+    const { error: markErr } = await supabaseAdmin
+      .from('invites')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', invite.id);
+    if (markErr) {
+      return NextResponse.json({ error: markErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      project_id: invite.project_id || null,
+      team_id: invite.team_id || null,
+      role
+    });
   } catch (err: any) {
     console.error('[/api/invites/accept] Error', err);
     return NextResponse.json({ error: err.message || 'Unexpected' }, { status: 500 });
