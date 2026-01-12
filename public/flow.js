@@ -2883,13 +2883,23 @@ function downsamplePeaks(peaks, targetCount) {
   return out;
 }
 
-async function computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount) {
+async function computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount, retryCount = 0) {
   if (!audioUrl) return null;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1500; // 1.5 seconds between retries
   let audioContext = null;
   try {
-    const response = await fetch(getProxiedUrl(audioUrl));
+    const proxiedUrl = getProxiedUrl(audioUrl);
+    console.log('[Waveform] Fetching audio from:', proxiedUrl, 'attempt:', retryCount + 1);
+    const response = await fetch(proxiedUrl);
     if (!response.ok) {
-      console.warn('[Waveform] Failed to fetch audio for peaks');
+      console.warn('[Waveform] Failed to fetch audio for peaks, status:', response.status);
+      // Retry if file might not be available yet (404 or 5xx)
+      if (retryCount < MAX_RETRIES && (response.status === 404 || response.status >= 500)) {
+        console.log('[Waveform] Retrying in', RETRY_DELAY, 'ms...');
+        await new Promise(r => setTimeout(r, RETRY_DELAY));
+        return computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount, retryCount + 1);
+      }
       return null;
     }
 
@@ -2899,6 +2909,12 @@ async function computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount) {
     return computeWaveformPeaksFromBuffer(audioBuffer, sampleCount);
   } catch (err) {
     console.warn('[Waveform] Failed to compute peaks:', err);
+    // Retry on network errors
+    if (retryCount < MAX_RETRIES) {
+      console.log('[Waveform] Retrying after error in', RETRY_DELAY, 'ms...');
+      await new Promise(r => setTimeout(r, RETRY_DELAY));
+      return computeWaveformPeaksFromUrlInternal(audioUrl, sampleCount, retryCount + 1);
+    }
     return null;
   } finally {
     try {
@@ -3136,6 +3152,12 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
                 !version.media.duration
               ) {
                 version.media.duration = waveformResult.duration;
+              }
+              // Refresh player if this version is currently active
+              const active = getActiveContext();
+              if (active && active.version && active.version.id === versionId) {
+                console.log('[Preview] Waveform ready, refreshing player for version', versionId);
+                renderPlayer();
               }
             }
           }
