@@ -253,22 +253,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "File extension not allowed" }, { status: 415 });
     }
 
-    const { error: insertError } = await supabaseAdmin.from("audit_logs").insert({
-      actor_id: auth.userId || null,
-      action: "upload_completed",
-      target_type: "project",
-      target_id: projectId,
-      meta: {
-        path: normalizedPath,
-        filename,
-        content_type: normalizedType,
-        size,
-      },
-    });
+    // Log audit entry (non-blocking - don't fail upload if audit fails)
+    try {
+      const { error: insertError } = await supabaseAdmin.from("audit_logs").insert({
+        actor_id: auth.userId || null,
+        action: "upload_completed",
+        target_type: "project",
+        target_id: projectId,
+        meta: {
+          path: normalizedPath,
+          filename,
+          content_type: normalizedType,
+          size,
+        },
+      });
 
-    if (insertError) {
-      console.error("[POST /api/upload-complete] Insert error:", insertError);
-      return NextResponse.json({ error: "Failed to save metadata" }, { status: 500 });
+      if (insertError) {
+        console.error("[POST /api/upload-complete] Audit log insert error (non-fatal):", insertError);
+      }
+    } catch (auditErr) {
+      console.error("[POST /api/upload-complete] Audit log exception (non-fatal):", auditErr);
     }
 
     notifyCollaborators(projectId, auth.userId, filename, "unknown").catch((err) => {
