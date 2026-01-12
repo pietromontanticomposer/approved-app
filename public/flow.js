@@ -3268,55 +3268,32 @@ function loadAudioPlayer(project, cue, version) {
   const waveformEl = ensurePlayerWaveShell();
   if (!waveformEl) return;
 
-  const prevWave = mainWave;
-  let prevLayer = mainWaveLayer;
-
-  if (prevWave) {
-    try {
-      prevWave.pause();
-    } catch (e) {}
-  }
-  mainWave = null;
-
   waveformEl.classList.add("is-loading");
 
   const peaks = getWaveformPeaks(version.media.waveform);
   if (!peaks) {
-    if (!prevLayer || !prevLayer.isConnected) {
-      prevLayer = document.createElement("div");
-      prevLayer.className = "waveform-layer active";
-      waveformEl.innerHTML = "";
-      waveformEl.appendChild(prevLayer);
-      renderNeutralWavePlaceholder(prevLayer, {
-        height: 80,
-        color: "rgba(148,163,184,0.6)"
-      });
-      mainWaveLayer = prevLayer;
-    }
+    // No peaks yet - show placeholder and compute them
+    waveformEl.innerHTML = "";
+    const placeholderLayer = document.createElement("div");
+    placeholderLayer.className = "waveform-layer active";
+    waveformEl.appendChild(placeholderLayer);
+    renderNeutralWavePlaceholder(placeholderLayer, {
+      height: 80,
+      color: "rgba(148,163,184,0.6)"
+    });
+    mainWaveLayer = placeholderLayer;
+
     ensureWaveformPeaksForVersion(version).then((computed) => {
       if (!computed) return;
       const active = getActiveContext();
       if (!active || !active.version || active.version.id !== version.id) return;
       loadAudioPlayer(project, cue, version);
     });
-    if (prevWave && (!prevLayer || !prevLayer.isConnected)) {
-      try {
-        prevWave.destroy();
-      } catch (e) {}
-    }
     return;
   }
 
-  // Always create a fresh static waveform layer to avoid showing old version's waveform
+  // Clear container and create single layer for WaveSurfer
   waveformEl.innerHTML = "";
-  prevLayer = document.createElement("div");
-  prevLayer.className = "waveform-layer active";
-  waveformEl.appendChild(prevLayer);
-  renderStaticWaveform(prevLayer, peaks, {
-    height: 80,
-    color: "rgba(148,163,184,0.8)"
-  });
-  mainWaveLayer = prevLayer;
 
   const waveBackend = "MediaElement";
 
@@ -3326,9 +3303,11 @@ function loadAudioPlayer(project, cue, version) {
     return;
   }
 
+  // Create single layer - WaveSurfer will render directly into it
   const nextLayer = document.createElement("div");
-  nextLayer.className = "waveform-layer";
+  nextLayer.className = "waveform-layer active";
   waveformEl.appendChild(nextLayer);
+  mainWaveLayer = nextLayer;
 
   const ws = WaveSurfer.create({
     container: nextLayer,
@@ -3360,23 +3339,7 @@ function loadAudioPlayer(project, cue, version) {
 
     mainWave = ws;
     mainWaveLayer = nextLayer;
-    nextLayer.classList.add("active");
     waveformEl.classList.remove("is-loading");
-
-    if (prevLayer && prevLayer.isConnected) {
-      prevLayer.classList.remove("active");
-      prevLayer.classList.add("fade-out");
-      const oldLayer = prevLayer;
-      const oldWave = prevWave;
-      setTimeout(() => {
-        if (oldLayer && oldLayer.isConnected) oldLayer.remove();
-        if (oldWave && typeof oldWave.destroy === "function") {
-          oldWave.destroy();
-        }
-      }, PLAYER_WAVE_FADE_MS);
-    } else if (prevWave && typeof prevWave.destroy === "function") {
-      prevWave.destroy();
-    }
 
     return true;
   };
