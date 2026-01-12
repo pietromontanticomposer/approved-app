@@ -141,16 +141,47 @@ export async function canAccessProject(_userId: string, _projectId: string): Pro
 }
 
 /**
- * Check if user can modify a project (owner or admin) (SERVER-SIDE)
- * TEMP: In public/demo mode, allow all modifications
+ * Check if user can modify a project (owner or editor) (SERVER-SIDE)
+ * Viewers can only read, comment, and download - NOT modify files
  */
-export async function canModifyProject(_userId: string, _projectId: string): Promise<boolean> {
-  // Always allow in development or when public users are enabled
+export async function canModifyProject(userId: string, projectId: string): Promise<boolean> {
+  // In demo/dev mode without real auth, allow modifications
   const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
-  if (allowPublic) {
+  if (allowPublic && userId === 'public-user') {
     return true;
   }
-  return true;
+
+  try {
+    // Check if user is owner
+    const { data: project } = await supabaseAdmin
+      .from('projects')
+      .select('owner_id')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    if (project?.owner_id === userId) {
+      return true;
+    }
+
+    // Check if user is a member with editor role
+    const { data: membership } = await supabaseAdmin
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('member_id', userId)
+      .maybeSingle();
+
+    // Only owner and editor can modify - viewers cannot
+    if (membership?.role === 'editor' || membership?.role === 'admin') {
+      return true;
+    }
+
+    // viewer role or no membership = cannot modify
+    return false;
+  } catch (err) {
+    console.error('[canModifyProject] Error checking permissions:', err);
+    return false;
+  }
 }
 
 /**

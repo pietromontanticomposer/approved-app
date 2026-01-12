@@ -102,8 +102,52 @@ if (supabaseUrl && supabaseServiceKey) {
     return q;
   };
 
+  // Fake auth users store
+  const fakeAuthUsers: Record<string, any> = {
+    'owner-1': { id: 'owner-1', email: 'owner@test.com', user_metadata: { full_name: 'Test Owner' } },
+  };
+
   const fakeAdmin = {
     from: (table: string) => createFrom(table),
+    auth: {
+      admin: {
+        getUserById: async (id: string) => {
+          const user = fakeAuthUsers[id];
+          return { data: user ? { user } : null, error: user ? null : { message: 'User not found' } };
+        },
+        listUsers: async (_opts?: any) => {
+          return { data: { users: Object.values(fakeAuthUsers) }, error: null };
+        },
+        createUser: async (opts: any) => {
+          const id = uuidv4();
+          const user = { id, email: opts.email, user_metadata: opts.user_metadata || {} };
+          fakeAuthUsers[id] = user;
+          return { data: { user }, error: null };
+        },
+        generateLink: async (_opts: any) => {
+          return { data: { properties: { action_link: 'http://localhost/fake-link' } }, error: null };
+        },
+      },
+      getUser: async (_token: string) => {
+        return { data: { user: fakeAuthUsers['owner-1'] }, error: null };
+      },
+    },
+    storage: {
+      from: (_bucket: string) => ({
+        createSignedUploadUrl: async (path: string) => {
+          return {
+            data: { path, token: 'fake-token', signedUrl: `http://localhost/storage/${path}?token=fake` },
+            error: null,
+          };
+        },
+        createSignedUrl: async (path: string, _expiresIn: number) => {
+          return { data: { signedUrl: `http://localhost/storage/${path}?signed=true` }, error: null };
+        },
+        getPublicUrl: (path: string) => {
+          return { data: { publicUrl: `http://localhost/storage/${path}` } };
+        },
+      }),
+    },
   };
 
   supabaseAdmin = fakeAdmin as any;

@@ -79,18 +79,25 @@ export async function GET(req: NextRequest) {
 
     let usersById: Record<string, any> = {};
     if (memberIds.length > 0) {
-      const authUsers = typeof supabaseAdmin.schema === "function"
-        ? supabaseAdmin.schema("auth").from("users")
-        : supabaseAdmin.from("auth.users");
-      const { data: users, error: usersErr } = await authUsers
-        .select("id, email, raw_user_meta_data")
-        .in("id", memberIds);
+      // Use the admin auth API to fetch user details
+      const userPromises = memberIds.map(async (id) => {
+        try {
+          const { data } = await supabaseAdmin.auth.admin.getUserById(id);
+          if (data?.user) {
+            return {
+              id: data.user.id,
+              email: data.user.email,
+              raw_user_meta_data: data.user.user_metadata || {},
+            };
+          }
+        } catch {
+          // User not found or error, skip
+        }
+        return null;
+      });
 
-      if (usersErr) {
-        return NextResponse.json({ error: usersErr.message }, { status: 500 });
-      }
-
-      usersById = (users || []).reduce((acc: any, u: any) => {
+      const users = (await Promise.all(userPromises)).filter(Boolean);
+      usersById = users.reduce((acc: any, u: any) => {
         acc[u.id] = u;
         return acc;
       }, {});

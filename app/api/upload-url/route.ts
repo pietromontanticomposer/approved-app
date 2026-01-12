@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import path from "path";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth } from "@/lib/auth";
+import { verifyAuth, canModifyProject } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -152,6 +152,12 @@ export async function POST(req: NextRequest) {
 
     if (!projectId || !isUuid(projectId)) {
       return NextResponse.json({ error: "Valid projectId required" }, { status: 400 });
+    }
+
+    // SECURITY: Check if user can modify this project (viewers cannot upload)
+    const canModify = await canModifyProject(auth.userId, projectId);
+    if (!canModify) {
+      return NextResponse.json({ error: "Forbidden - viewers cannot upload files" }, { status: 403 });
     }
 
     if (!filename || typeof filename !== "string") {

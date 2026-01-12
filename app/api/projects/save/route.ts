@@ -1,14 +1,31 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
+import { verifyAuth, canModifyProject } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+const isUuid = (value: string) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+export async function POST(req: NextRequest) {
   try {
+    // SECURITY: Verify authentication
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const project = body?.project;
-    if (!project || !project.id) {
-      return NextResponse.json({ error: "Missing project" }, { status: 400 });
+    if (!project || !project.id || !isUuid(project.id)) {
+      return NextResponse.json({ error: "Missing or invalid project" }, { status: 400 });
+    }
+
+    // SECURITY: Check if user can modify this project (viewers cannot save)
+    const canModify = await canModifyProject(auth.userId, project.id);
+    if (!canModify) {
+      return NextResponse.json({ error: "Forbidden - viewers cannot modify projects" }, { status: 403 });
     }
 
     const path = `projects/${project.id}/project.json`;
