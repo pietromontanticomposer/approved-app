@@ -3244,6 +3244,18 @@ function loadAudioPlayer(project, cue, version) {
   const loadToken = ++playerWaveLoadToken;
   stopVideo();
 
+  // Destroy previous waveform immediately to prevent double waveform flash
+  if (mainWave) {
+    try {
+      mainWave.destroy();
+    } catch (e) {}
+    mainWave = null;
+  }
+  if (mainWaveLayer && mainWaveLayer.isConnected) {
+    mainWaveLayer.remove();
+  }
+  mainWaveLayer = null;
+
   playPauseBtn.style.display = "inline-block";
   timeLabelEl.style.display = "inline-block";
   playPauseBtn.disabled = true;
