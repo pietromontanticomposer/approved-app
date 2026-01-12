@@ -3317,6 +3317,10 @@ function loadAudioPlayer(project, cue, version) {
 
   const nextLayer = document.createElement("div");
   nextLayer.className = "waveform-layer";
+  // Hide prevLayer immediately to avoid double waveform flash
+  if (prevLayer && prevLayer.isConnected) {
+    prevLayer.classList.remove("active");
+  }
   waveformEl.appendChild(nextLayer);
 
   const ws = WaveSurfer.create({
