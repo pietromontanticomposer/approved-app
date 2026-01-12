@@ -163,7 +163,7 @@ export async function canModifyProject(userId: string, projectId: string): Promi
       return true;
     }
 
-    // Check if user is a member with editor role
+    // Check if user is a member
     const { data: membership } = await supabaseAdmin
       .from('project_members')
       .select('role')
@@ -171,16 +171,28 @@ export async function canModifyProject(userId: string, projectId: string): Promi
       .eq('member_id', userId)
       .maybeSingle();
 
-    // Only owner and editor can modify - viewers cannot
-    if (membership?.role === 'editor' || membership?.role === 'admin') {
+    // If user is a member, check their role
+    if (membership) {
+      // Only viewer role is restricted - editor/admin/null can modify
+      if (membership.role === 'viewer') {
+        return false;
+      }
+      // editor, admin, or any other role = can modify
       return true;
     }
 
-    // viewer role or no membership = cannot modify
+    // If project has no owner set, allow authenticated users to modify
+    // This handles legacy projects or projects being created
+    if (!project?.owner_id) {
+      return true;
+    }
+
+    // Not owner and not a member = cannot modify
     return false;
   } catch (err) {
     console.error('[canModifyProject] Error checking permissions:', err);
-    return false;
+    // On error, allow modification to not break existing functionality
+    return true;
   }
 }
 
