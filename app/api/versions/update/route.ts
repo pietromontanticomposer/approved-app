@@ -1,7 +1,7 @@
 // app/api/versions/update/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth } from '@/lib/auth';
+import { verifyAuth, canModifyProject } from '@/lib/auth';
 
 export const runtime = "nodejs";
 
@@ -29,8 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify project modify permission
-    const canModifyModule = await import('@/lib/auth');
-    const canModify = await canModifyModule.canModifyProject(auth.userId, projectId);
+    const canModify = await canModifyProject(auth.userId, projectId);
     if (!canModify) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
