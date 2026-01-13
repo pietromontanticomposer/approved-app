@@ -3270,27 +3270,8 @@ function loadAudioPlayer(project, cue, version) {
 
   waveformEl.classList.add("is-loading");
 
+  // Get peaks if available (for instant display), otherwise WaveSurfer will generate them
   const peaks = getWaveformPeaks(version.media.waveform);
-  if (!peaks) {
-    // No peaks yet - show placeholder and compute them
-    waveformEl.innerHTML = "";
-    const placeholderLayer = document.createElement("div");
-    placeholderLayer.className = "waveform-layer active";
-    waveformEl.appendChild(placeholderLayer);
-    renderNeutralWavePlaceholder(placeholderLayer, {
-      height: 80,
-      color: "rgba(148,163,184,0.6)"
-    });
-    mainWaveLayer = placeholderLayer;
-
-    ensureWaveformPeaksForVersion(version).then((computed) => {
-      if (!computed) return;
-      const active = getActiveContext();
-      if (!active || !active.version || active.version.id !== version.id) return;
-      loadAudioPlayer(project, cue, version);
-    });
-    return;
-  }
 
   // Clear container and create single layer for WaveSurfer
   waveformEl.innerHTML = "";
@@ -3379,6 +3360,20 @@ function loadAudioPlayer(project, cue, version) {
     }
     finalizeSwap();
     syncPlayState();
+
+    // Save peaks for future use if not already saved
+    if (!version.media.waveform && ws.backend && ws.backend.getPeaks) {
+      try {
+        const generatedPeaks = ws.backend.getPeaks(256);
+        if (generatedPeaks && generatedPeaks.length) {
+          version.media.waveform = generatedPeaks;
+          waveformParseCache.set(version.id, generatedPeaks);
+          persistWaveformPeaks(version);
+        }
+      } catch (e) {
+        // Ignore peak extraction errors
+      }
+    }
   });
 
   ws.on("audioprocess", () => {
