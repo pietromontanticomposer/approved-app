@@ -3270,8 +3270,15 @@ function loadAudioPlayer(project, cue, version) {
 
   waveformEl.classList.add("is-loading");
 
-  // Get peaks if available (for instant display), otherwise WaveSurfer will generate them
-  const peaks = getWaveformPeaks(version.media.waveform);
+  // Get peaks if available, otherwise use placeholder peaks for instant display
+  let peaks = getWaveformPeaks(version.media.waveform);
+  if (!peaks || !peaks.length) {
+    // Generate instant placeholder peaks (simple sine-like pattern)
+    peaks = new Array(256).fill(0).map((_, i) => {
+      const x = i / 256;
+      return 0.3 + 0.4 * Math.sin(x * Math.PI * 8) * Math.sin(x * Math.PI);
+    });
+  }
 
   // Clear container and create single layer for WaveSurfer
   waveformEl.innerHTML = "";
@@ -3361,14 +3368,27 @@ function loadAudioPlayer(project, cue, version) {
     finalizeSwap();
     syncPlayState();
 
-    // Save peaks for future use if not already saved
-    if (!version.media.waveform && ws.backend && ws.backend.getPeaks) {
+    // Extract and save real peaks for future use
+    if (!version.media.waveformSaved) {
       try {
-        const generatedPeaks = ws.backend.getPeaks(256);
-        if (generatedPeaks && generatedPeaks.length) {
-          version.media.waveform = generatedPeaks;
-          waveformParseCache.set(version.id, generatedPeaks);
+        let realPeaks = null;
+        if (ws.backend && typeof ws.backend.getPeaks === 'function') {
+          realPeaks = ws.backend.getPeaks(256);
+        } else if (ws.getDecodedData && typeof ws.getDecodedData === 'function') {
+          const decoded = ws.getDecodedData();
+          if (decoded) {
+            realPeaks = computeWaveformPeaksFromBuffer(decoded, 256)?.peaks;
+          }
+        }
+        if (realPeaks && realPeaks.length) {
+          version.media.waveform = realPeaks;
+          version.media.waveformSaved = true;
+          waveformParseCache.set(version.id, realPeaks);
           persistWaveformPeaks(version);
+          // Redraw with real peaks
+          if (ws.drawer && typeof ws.drawer.drawPeaks === 'function') {
+            ws.drawer.drawPeaks(realPeaks, ws.getDuration(), 0, ws.getDuration());
+          }
         }
       } catch (e) {
         // Ignore peak extraction errors
