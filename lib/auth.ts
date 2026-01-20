@@ -133,11 +133,44 @@ export async function requireAuth(req: NextRequest): Promise<string> {
 
 /**
  * Check if user has permission to access a project (SERVER-SIDE)
- * Returns true if user is owner or team member
+ * Returns true if user is owner or member of project_members (any role including viewer)
  */
-export async function canAccessProject(_userId: string, _projectId: string): Promise<boolean> {
-  // TEMP: allow all authenticated users to access/modify any project.
-  return true;
+export async function canAccessProject(userId: string, projectId: string): Promise<boolean> {
+  // In demo/dev mode, allow access
+  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  if (allowPublic && userId === 'public-user') {
+    return true;
+  }
+
+  try {
+    // Check if user is owner
+    const { data: project } = await supabaseAdmin
+      .from('projects')
+      .select('owner_id')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    if (project?.owner_id === userId) {
+      return true;
+    }
+
+    // Check if user is a member (any role)
+    const { data: membership } = await supabaseAdmin
+      .from('project_members')
+      .select('member_id')
+      .eq('project_id', projectId)
+      .eq('member_id', userId)
+      .maybeSingle();
+
+    if (membership) {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[canAccessProject] Error:', err);
+    return false;
+  }
 }
 
 /**

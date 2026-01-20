@@ -233,7 +233,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    // SECURITY: Verify version belongs to project user can modify
+    // SECURITY: Verify version belongs to project
     const { data: version } = await supabaseAdmin
       .from("versions")
       .select("cue_id, cues(project_id)")
@@ -244,9 +244,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // SECURITY: Check project modify permission
-    const canModify = await canModifyProject(auth.userId, projectId);
-    if (!canModify) {
+    // SECURITY: Check project access (viewers CAN change status for review workflow)
+    const canAccess = await canAccessProject(auth.userId, projectId);
+    if (!canAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
