@@ -238,12 +238,14 @@ export async function GET(req: NextRequest) {
         normalizePath(extractStoragePathFromUrl(rawThumbUrl));
       const thumbnailUrl = thumbPath || sanitizeMediaUrl(rawThumbUrl);
 
-      // Infer media_type if missing
+      // Infer media_type if missing - use storagePath (which may be extracted from URL)
+      // instead of v.media_storage_path (raw DB value that may be NULL)
       let mediaType = v.media_type;
       if (!mediaType) {
         mediaType = detectMediaType(v.media_original_name) ||
-                   detectMediaType(v.media_storage_path) ||
-                   detectMediaType(v.media_display_name);
+                   detectMediaType(storagePath) ||
+                   detectMediaType(v.media_display_name) ||
+                   detectMediaType(mediaUrl);
       }
 
       return {
