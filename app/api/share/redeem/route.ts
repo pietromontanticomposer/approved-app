@@ -51,12 +51,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 403 });
     }
 
-    // Add to project_members (idempotent upsert)
+    // Add to project_members (idempotent upsert) - same as invite accept
     const insert = {
       project_id: linkData.project_id,
       member_id: actorId,
-      role: linkData.role || 'view',
+      role: linkData.role || 'viewer',
       added_by: linkData.created_by || null,
+      added_at: new Date().toISOString()
     };
 
     const { error: upsertErr } = await supabaseAdmin.from('project_members').upsert(insert, { onConflict: 'project_id,member_id' });
