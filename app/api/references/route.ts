@@ -142,15 +142,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Parallelize URL signing for all versions
+    const signedVersions = await Promise.all(
+      versions.map(async (v) => {
+        const [urlSigned, thumbSigned] = await Promise.all([
+          resolveMediaUrl(v.url || v.thumbnail_path || null),
+          resolveMediaUrl(v.thumbnail_url || v.thumbnail_path || null),
+        ]);
+        return {
+          ...v,
+          url: urlSigned || v.url,
+          thumbnail_url: thumbSigned || v.thumbnail_url,
+        };
+      })
+    );
+
     const versionsByRoot: Record<string, any[]> = {};
-    for (const v of versions) {
-      const urlSigned = await resolveMediaUrl(v.url || v.thumbnail_path || null);
-      const thumbSigned = await resolveMediaUrl(v.thumbnail_url || v.thumbnail_path || null);
-      const prepared = {
-        ...v,
-        url: urlSigned || v.url,
-        thumbnail_url: thumbSigned || v.thumbnail_url,
-      };
+    for (const prepared of signedVersions) {
       if (!versionsByRoot[prepared.root_id]) versionsByRoot[prepared.root_id] = [];
       versionsByRoot[prepared.root_id].push(prepared);
     }

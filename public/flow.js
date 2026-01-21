@@ -17,6 +17,18 @@ let mainWaveLayer = null;
 let playerWaveLoadToken = 0;
 const PLAYER_WAVE_FADE_MS = 140;
 const miniWaves = {};
+const MAX_CACHE_SIZE = 500; // Limit cache size to prevent memory growth
+
+// Simple LRU-like cache set helper
+function cacheSet(cache, key, value) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    // Delete oldest entry (first key in Map iteration order)
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
+
 const waveformParseCache = new Map();
 const staticWaveformCache = new Map(); // Cache for static waveform canvases
 const waveformPersisted = new Set();
@@ -35,6 +47,7 @@ const WAVEFORM_RETRY_DELAY_MS = 1200;
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
+const waveformQueued = new Set(); // O(1) lookup for queued version IDs
 let waveformGenerating = 0;
 const MAX_CONCURRENT_WAVEFORMS = 4; // Generate up to 4 waveforms at a time
 
@@ -42,6 +55,7 @@ function processWaveformQueue() {
   while (waveformQueue.length > 0 && waveformGenerating < MAX_CONCURRENT_WAVEFORMS) {
     const task = waveformQueue.shift();
     if (task && typeof task.execute === 'function') {
+      waveformQueued.delete(task.versionId); // Remove from queued set when starting
       waveformGenerating++;
       task.execute().finally(() => {
         waveformGenerating--;
@@ -52,11 +66,11 @@ function processWaveformQueue() {
 }
 
 function queueWaveformGeneration(version, container, execute) {
-  // Skip if already queued or generating
-  const existingIdx = waveformQueue.findIndex(t => t.versionId === version.id);
-  if (existingIdx >= 0) return;
+  // Skip if already queued or generating (O(1) lookup)
+  if (waveformQueued.has(version.id)) return;
   if (miniWaves[version.id]) return;
 
+  waveformQueued.add(version.id);
   waveformQueue.push({ versionId: version.id, version, container, execute });
   processWaveformQueue();
 }
@@ -133,7 +147,7 @@ function getWaveformContainerWidth(container) {
 }
 
 function setWaveformRenderCache(cacheId, key, container, height) {
-  waveformRenderCache.set(cacheId, {
+  cacheSet(waveformRenderCache, cacheId, {
     key,
     width: getWaveformContainerWidth(container),
     height
@@ -205,7 +219,7 @@ async function ensureWaveformPeaksForVersion(version) {
       version.media.duration = result.duration;
     }
     version.media.waveform = peaks;
-    waveformParseCache.set(version.id, peaks);
+    cacheSet(waveformParseCache, version.id, peaks);
     staticWaveformCache.delete(version.id);
     persistWaveformPeaks(version, peaks);
     return peaks;
@@ -1181,7 +1195,7 @@ function getWaveformPeaks(raw) {
     } else {
       try {
         data = JSON.parse(raw);
-        waveformParseCache.set(raw, data);
+        cacheSet(waveformParseCache, raw, data);
       } catch (e) {
         return null;
       }
@@ -1256,7 +1270,7 @@ function renderStaticWaveform(container, peaks, opts = {}) {
 
   // Cache the canvas for future use
   if (versionId) {
-    staticWaveformCache.set(versionId, {
+    cacheSet(staticWaveformCache, versionId, {
       canvas: canvas.cloneNode(true),
       width,
       height
@@ -3190,7 +3204,7 @@ async function generateAndUploadPreviews(projectId, cueId, versionId, mediaType,
               if (peaks && peaks.length) {
                 version.media.waveform = peaks;
                 version.media.waveformSaved = true;
-                waveformParseCache.set(version.id, peaks);
+                cacheSet(waveformParseCache, version.id, peaks);
               }
               if (
                 typeof waveformResult.duration === "number" &&
@@ -3429,7 +3443,7 @@ function loadAudioPlayer(project, cue, version) {
         if (realPeaks && realPeaks.length) {
           version.media.waveform = realPeaks;
           version.media.waveformSaved = true;
-          waveformParseCache.set(version.id, realPeaks);
+          cacheSet(waveformParseCache, version.id, realPeaks);
           persistWaveformPeaks(version);
           // Redraw with real peaks
           if (ws.drawer && typeof ws.drawer.drawPeaks === 'function') {
