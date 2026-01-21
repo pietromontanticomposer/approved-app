@@ -515,6 +515,7 @@ const commentInputEl = document.getElementById("commentInput");
 if (!commentInputEl) console.error('[FlowPreview] commentInputEl not found in DOM');
 const addCommentBtn = document.getElementById("addCommentBtn");
 if (!addCommentBtn) console.error('[FlowPreview] addCommentBtn not found in DOM');
+const voiceRecordBtn = document.getElementById("voiceRecordBtn");
 
 const playerTitleEl = document.getElementById("playerTitle");
 if (!playerTitleEl) console.error('[FlowPreview] playerTitleEl not found in DOM');
@@ -3937,7 +3938,31 @@ function renderComments() {
     author.textContent = c.author || tr("misc.client", {}, "Client");
 
     const text = document.createElement("p");
-    text.textContent = c.text;
+
+    // Check if this is a voice comment
+    if (c.audio_url) {
+      // Show audio player for voice comments
+      const audioWrap = document.createElement("div");
+      audioWrap.className = "comment-audio";
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      // Get signed URL for the audio
+      const audioUrl = c.audio_url.startsWith('http') ? c.audio_url : getDirectUrl(`/api/media/stream?path=${encodeURIComponent(c.audio_url)}`);
+      audio.src = audioUrl;
+      audioWrap.appendChild(audio);
+      text.appendChild(audioWrap);
+      if (c.text) {
+        const textSpan = document.createElement("span");
+        textSpan.textContent = c.text;
+        text.appendChild(textSpan);
+      }
+    } else if (c.isUploading) {
+      // Show uploading indicator
+      text.innerHTML = '<em style="color:#9ca3af">Uploading voice note...</em>';
+    } else {
+      text.textContent = c.text;
+    }
 
     // Actions (edit/delete) only visible to comment owner
     const actions = document.createElement('div');
@@ -4280,6 +4305,7 @@ async function loadProjectCuesLegacy(projectId, headers) {
                   author: rc.author || 'Client',
                   actorId: rc.actor_id || null,
                   text: rc.text || '',
+                  audio_url: rc.audio_url || null,
                   created_at: rc.created_at
                 }));
               }
@@ -4495,6 +4521,181 @@ commentInputEl.addEventListener("keydown", e => {
 });
 
 addCommentBtn.addEventListener("click", addCommentFromInput);
+
+// =======================
+// VOICE RECORDING FOR COMMENTS
+// =======================
+
+let voiceMediaRecorder = null;
+let voiceRecordedChunks = [];
+let voiceRecordingStartTime = null;
+
+if (voiceRecordBtn) {
+  voiceRecordBtn.addEventListener("click", async () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+
+    const { version } = ctx;
+    if (!version.media) return;
+    if (!canAddCommentsForVersion(version.status)) {
+      showAlert(REVIEW_CLOSED_MESSAGE());
+      return;
+    }
+
+    // If already recording, stop
+    if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
+      voiceMediaRecorder.stop();
+      return;
+    }
+
+    // Request microphone access
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Determine best supported format
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
+
+      voiceMediaRecorder = new MediaRecorder(stream, { mimeType });
+      voiceRecordedChunks = [];
+      voiceRecordingStartTime = getCurrentMediaTime();
+
+      voiceMediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          voiceRecordedChunks.push(e.data);
+        }
+      };
+
+      voiceMediaRecorder.onstop = async () => {
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+
+        // Update UI
+        voiceRecordBtn.classList.remove("recording");
+
+        if (voiceRecordedChunks.length === 0) return;
+
+        const blob = new Blob(voiceRecordedChunks, { type: mimeType });
+        const ext = mimeType.includes('webm') ? 'webm' : 'm4a';
+
+        // Upload the audio
+        await uploadVoiceComment(version, blob, ext, voiceRecordingStartTime);
+      };
+
+      voiceMediaRecorder.onerror = (e) => {
+        console.error('[VoiceRecord] Error:', e);
+        stream.getTracks().forEach(track => track.stop());
+        voiceRecordBtn.classList.remove("recording");
+        showAlert('Errore registrazione: ' + (e.error?.message || 'unknown'));
+      };
+
+      // Start recording
+      voiceMediaRecorder.start();
+      voiceRecordBtn.classList.add("recording");
+
+    } catch (err) {
+      console.error('[VoiceRecord] Failed to start:', err);
+      if (err.name === 'NotAllowedError') {
+        showAlert('Permesso microfono negato. Abilita il microfono nelle impostazioni del browser.');
+      } else {
+        showAlert('Impossibile avviare la registrazione: ' + err.message);
+      }
+    }
+  });
+}
+
+async function uploadVoiceComment(version, blob, ext, recordTime) {
+  const project = getActiveProject();
+  if (!project) return;
+
+  const user = window.flowAuth ? window.flowAuth.getUser() : null;
+  const meta = user && user.user_metadata ? user.user_metadata : {};
+  const first = meta.first_name || meta.firstName || meta.first || '';
+  const last = meta.last_name || meta.lastName || meta.last || '';
+  const displayName = meta.full_name || meta.fullName || meta.display_name || `${first} ${last}`.trim() || user?.email || 'Client';
+
+  // Show uploading state
+  const localId = uid();
+  version.comments.push({
+    id: localId,
+    time: recordTime,
+    author: displayName,
+    text: '[Uploading voice note...]',
+    isUploading: true,
+    actorId: user ? user.id : null
+  });
+  renderComments();
+
+  try {
+    const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
+
+    // Get upload URL
+    const fileName = `voice_${Date.now()}.${ext}`;
+    const uploadPath = `${project.id}/voice/${fileName}`;
+
+    const urlResp = await fetch('/api/upload-url', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ path: uploadPath, contentType: blob.type })
+    });
+
+    if (!urlResp.ok) throw new Error('Failed to get upload URL');
+    const { signedUrl, publicUrl } = await urlResp.json();
+
+    // Upload the file
+    const uploadResp = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': blob.type },
+      body: blob
+    });
+
+    if (!uploadResp.ok) throw new Error('Failed to upload audio');
+
+    // Create comment with audio URL
+    const commentResp = await fetch('/api/comments', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        version_id: version.id,
+        time_seconds: recordTime,
+        text: '',
+        author: displayName,
+        audio_url: uploadPath,
+        projectId: project.id
+      })
+    });
+
+    const resp = await commentResp.json();
+    if (!resp || resp.error) {
+      throw new Error(resp.error || 'Failed to save comment');
+    }
+
+    // Update local comment
+    const idx = version.comments.findIndex(c => c.id === localId);
+    if (idx >= 0) {
+      version.comments[idx] = {
+        id: resp.comment?.id || localId,
+        time: recordTime,
+        author: displayName,
+        text: '',
+        audio_url: uploadPath,
+        actorId: user ? user.id : null
+      };
+    }
+    renderComments();
+
+  } catch (err) {
+    console.error('[VoiceRecord] Upload failed:', err);
+    // Remove failed comment
+    const idx = version.comments.findIndex(c => c.id === localId);
+    if (idx >= 0) version.comments.splice(idx, 1);
+    renderComments();
+    showAlert('Errore upload nota vocale: ' + err.message);
+  }
+}
 
 // =======================
 // CUE LIST + VERSION PREVIEW

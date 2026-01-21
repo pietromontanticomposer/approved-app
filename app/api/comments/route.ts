@@ -145,12 +145,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { version_id, time_seconds, author, text } = body;
+    const { version_id, time_seconds, author, text, audio_url } = body;
 
-    // Validate required fields
-    if (!version_id || time_seconds === undefined || !text) {
+    // Validate required fields (text can be empty for voice comments)
+    if (!version_id || time_seconds === undefined) {
       return NextResponse.json(
-        { error: "version_id, time_seconds, and text are required" },
+        { error: "version_id and time_seconds are required" },
+        { status: 400 }
+      );
+    }
+
+    // Either text or audio_url must be provided
+    if (!text && !audio_url) {
+      return NextResponse.json(
+        { error: "Either text or audio_url is required" },
         { status: 400 }
       );
     }
@@ -169,9 +177,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (typeof text !== 'string' || text.trim().length === 0) {
+    // Validate text if provided
+    if (text && typeof text !== 'string') {
       return NextResponse.json(
-        { error: "text must be a non-empty string" },
+        { error: "text must be a string" },
+        { status: 400 }
+      );
+    }
+
+    // Validate audio_url if provided
+    if (audio_url && typeof audio_url !== 'string') {
+      return NextResponse.json(
+        { error: "audio_url must be a string" },
         { status: 400 }
       );
     }
@@ -193,7 +210,8 @@ export async function POST(req: NextRequest) {
         time_seconds,
         author: authorName || "User",
         actor_id: userId, // Verified server-side
-        text: text.trim(),
+        text: text ? text.trim() : '',
+        audio_url: audio_url || null,
       })
       .select()
       .single();

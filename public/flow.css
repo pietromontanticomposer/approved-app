@@ -1074,6 +1074,82 @@
   color: #6b7280;
 }
 
+/* Voice recording button */
+#voiceRecordBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+#voiceRecordBtn:hover {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+#voiceRecordBtn.recording {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: white;
+  animation: pulse-recording 1.5s infinite;
+}
+
+#voiceRecordBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Voice comment audio player */
+.comment-audio {
+  margin-top: 4px;
+  width: 100%;
+}
+
+.comment-audio audio {
+  width: 100%;
+  height: 28px;
+  border-radius: 4px;
+}
+
+/* Recording indicator overlay */
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(220, 38, 38, 0.9);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.recording-indicator .rec-dot {
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* Share */
 
 .share-card {
