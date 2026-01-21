@@ -28,7 +28,7 @@ const WAVEFORM_IMAGE_WIDTH = 200;
 const WAVEFORM_IMAGE_HEIGHT = 40;
 const waveformDecodeQueue = [];
 let waveformDecoding = 0;
-const MAX_CONCURRENT_WAVEFORM_DECODES = 2;
+const MAX_CONCURRENT_WAVEFORM_DECODES = 4;
 const waveformRetryState = new Map();
 const MAX_WAVEFORM_RETRIES = 2;
 const WAVEFORM_RETRY_DELAY_MS = 1200;
@@ -36,7 +36,7 @@ const WAVEFORM_RETRY_DELAY_MS = 1200;
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
 let waveformGenerating = 0;
-const MAX_CONCURRENT_WAVEFORMS = 2; // Only generate 2 waveforms at a time
+const MAX_CONCURRENT_WAVEFORMS = 4; // Generate up to 4 waveforms at a time
 
 function processWaveformQueue() {
   while (waveformQueue.length > 0 && waveformGenerating < MAX_CONCURRENT_WAVEFORMS) {
@@ -1059,6 +1059,52 @@ function extractStoragePathFromUrl(raw) {
   return trimmed.replace(/^\/+/, "");
 }
 
+/**
+ * Get direct URL for media playback (audio/video elements).
+ * Returns Supabase signed URLs directly without proxy for faster loading.
+ * Use this for <audio src>, <video src>, <img src> - these don't need CORS.
+ */
+function getDirectUrl(raw) {
+  if (!raw) return raw;
+  // Already a proxy URL - extract and return the underlying URL if signed
+  if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
+    try {
+      const u = new URL(raw, window.location.origin);
+      const rawUrl = u.searchParams.get("url");
+      // If it has a signed URL embedded, use it directly
+      if (rawUrl && (rawUrl.includes("token=") || rawUrl.includes("/object/sign/"))) {
+        return rawUrl;
+      }
+    } catch (e) {}
+    // Otherwise keep proxy URL
+    return raw;
+  }
+  try {
+    const u = new URL(raw);
+    const host = u.hostname || "";
+    // If it's our domain, return as-is
+    if (host === window.location.hostname) return raw;
+    // If it's a signed Supabase URL, use it directly (no proxy needed for playback)
+    if ((host.includes("supabase.co") || raw.includes("/storage/v1/object/")) &&
+        (raw.includes("token=") || raw.includes("/object/sign/"))) {
+      return raw; // Direct access - faster!
+    }
+    // Public Supabase URLs can also be used directly
+    if (host.includes("supabase.co") && raw.includes("/object/public/")) {
+      return raw;
+    }
+    // Other URLs - return as-is
+    return raw;
+  } catch (e) {
+    // Storage path needs proxy to sign
+    return `/api/media/stream?path=${encodeURIComponent(raw)}`;
+  }
+}
+
+/**
+ * Get proxied URL for operations requiring CORS (fetch, canvas, Web Audio).
+ * Use this for waveform generation, thumbnail extraction, downloads.
+ */
 function getProxiedUrl(raw) {
   if (!raw) return raw;
   if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
@@ -1258,7 +1304,7 @@ function renderWaveImagePlaceholder(container, imageUrl, opts = {}) {
   const height = opts.height || 36;
   container.innerHTML = "";
   const img = document.createElement("img");
-  img.src = getProxiedUrl(imageUrl);
+  img.src = getDirectUrl(imageUrl);
   img.alt = "";
   img.style.width = "100%";
   img.style.height = `${height}px`;
@@ -2526,7 +2572,7 @@ function createMiniWave(version, container) {
   if (version.media.waveformImageUrl) {
     container.innerHTML = "";
     const img = document.createElement("img");
-    img.src = getProxiedUrl(version.media.waveformImageUrl);
+    img.src = getDirectUrl(version.media.waveformImageUrl);
     img.style.width = "100%";
     img.style.height = "36px";
     img.style.objectFit = "cover";
@@ -2678,7 +2724,7 @@ function createRefMiniWave(refVersion, container) {
   setWaveformRenderCache(cacheId, waveKey, container, 32);
 
   const durationHint = typeof refVersion.duration === "number" ? refVersion.duration : undefined;
-  ws.load(getProxiedUrl(refVersion.url), undefined, durationHint);
+  ws.load(getDirectUrl(refVersion.url), undefined, durationHint);
 
   ws.on("ready", () => {
     if (!refVersion.duration) {
@@ -3571,7 +3617,7 @@ function renderReferencePlayer(project) {
       playPauseBtn.textContent = ws.isPlaying() ? "Pause" : "Play";
     };
 
-    ws.load(getProxiedUrl(active.url));
+    ws.load(getDirectUrl(active.url));
 
     ws.on("ready", () => {
       if (mainWave !== ws) return;
@@ -3651,7 +3697,7 @@ function renderReferencePlayer(project) {
 
       const video = document.createElement("video");
       video.className = "video-player";
-      video.src = getProxiedUrl(active.url);
+      video.src = getDirectUrl(active.url);
       video.controls = true;
       video.playsInline = true;
       inner.appendChild(video);
@@ -5457,11 +5503,11 @@ function renderVersionPreviews() {
           v.muted = true;
           v.playsInline = true;
           v.preload = "metadata";
-          if (posterUrl) v.poster = getProxiedUrl(posterUrl);
+          if (posterUrl) v.poster = getDirectUrl(posterUrl);
           if (videoUrl) {
             // set src but avoid forcing download of large files; browsers will
             // usually fetch only metadata until play is requested.
-            v.src = getProxiedUrl(videoUrl);
+            v.src = getDirectUrl(videoUrl);
           }
 
           // When metadata is loaded, update version duration and the meta text
@@ -5512,7 +5558,7 @@ function renderVersionPreviews() {
             console.error("renderVersionPreviews: failed to render poster video", err, version.id);
             // fallback to img
             const img = document.createElement("img");
-            img.src = getProxiedUrl(version.media.thumbnailUrl);
+            img.src = getDirectUrl(version.media.thumbnailUrl);
             img.className = "version-thumb";
             img.onerror = () => { img.style.display = 'none'; };
             prev.appendChild(img);
@@ -5804,13 +5850,13 @@ function renderReferences() {
       createRefMiniWave(active, preview);
     } else if (active.type === "image") {
       const img = document.createElement("img");
-      img.src = getProxiedUrl(active.url);
+      img.src = getDirectUrl(active.url);
       img.alt = active.name;
       preview.appendChild(img);
     } else if (active.type === "video") {
       if (active.thumbnailUrl) {
         const img = document.createElement("img");
-        img.src = getProxiedUrl(active.thumbnailUrl);
+        img.src = getDirectUrl(active.thumbnailUrl);
         img.alt = active.name;
         preview.appendChild(img);
       } else {
@@ -5826,7 +5872,7 @@ function renderReferences() {
           }
           active.thumbnailUrl = th;
           const img = document.createElement("img");
-          img.src = getProxiedUrl(th);
+          img.src = getDirectUrl(th);
           img.alt = active.name;
           el.appendChild(img);
         }).catch(err => {
@@ -5921,13 +5967,13 @@ function renderReferences() {
         createRefMiniWave(ver, vPrev);
       } else if (ver.type === "image") {
         const img = document.createElement("img");
-        img.src = getProxiedUrl(ver.url);
+        img.src = getDirectUrl(ver.url);
         img.alt = ver.name;
         vPrev.appendChild(img);
       } else if (ver.type === "video") {
         if (ver.thumbnailUrl) {
           const img = document.createElement("img");
-          img.src = getProxiedUrl(ver.thumbnailUrl);
+          img.src = getDirectUrl(ver.thumbnailUrl);
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
@@ -5943,7 +5989,7 @@ function renderReferences() {
             }
             ver.thumbnailUrl = th;
             const img = document.createElement("img");
-            img.src = getProxiedUrl(th);
+            img.src = getDirectUrl(th);
             img.alt = ver.name;
             el.appendChild(img);
           }).catch(err => {
