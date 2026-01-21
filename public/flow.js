@@ -4634,16 +4634,22 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
 
     // Get upload URL
     const fileName = `voice_${Date.now()}.${ext}`;
-    const uploadPath = `${project.id}/voice/${fileName}`;
 
     const urlResp = await fetch('/api/upload-url', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ path: uploadPath, contentType: blob.type })
+      body: JSON.stringify({
+        projectId: project.id,
+        filename: fileName,
+        contentType: blob.type.split(';')[0] // Remove codecs suffix
+      })
     });
 
-    if (!urlResp.ok) throw new Error('Failed to get upload URL');
-    const { signedUrl, publicUrl } = await urlResp.json();
+    if (!urlResp.ok) {
+      const errData = await urlResp.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to get upload URL');
+    }
+    const { signedUrl, path: uploadPath } = await urlResp.json();
 
     // Upload the file
     const uploadResp = await fetch(signedUrl, {

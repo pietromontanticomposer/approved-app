@@ -29,6 +29,8 @@ const ALLOWED_MIME_TYPES = [
   "audio/mp4",
   "audio/ogg",
   "audio/flac",
+  "audio/webm",
+  "audio/webm;codecs=opus",
   // Images
   "image/jpeg",
   "image/png",
