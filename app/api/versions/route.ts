@@ -10,15 +10,10 @@ import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
 import { resolveMediaUrl, detectMediaType, parseWaveformData } from "@/lib/mediaUrlResolver";
+import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
 const isDev = process.env.NODE_ENV !== "production";
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 /**
  * GET /api/versions?cueId=xxx&projectId=xxx

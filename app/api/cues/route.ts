@@ -14,18 +14,9 @@ import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
+import { isUuid } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 // ============================================================================
 // API ROUTES

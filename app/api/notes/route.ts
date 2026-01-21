@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canAccessProject, canModifyProject } from "@/lib/auth";
-
-const isUuid = (value: string | null) =>
-  !!value &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
+import { isUuid } from "@/lib/validation";
 
 function mapNoteRow(row: any) {
   return {

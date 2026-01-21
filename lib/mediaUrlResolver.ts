@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
+const isDev = process.env.NODE_ENV !== "production";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const STORAGE_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "media";
 const SIGNED_URL_TTL_SECONDS = parseInt(
@@ -138,7 +139,7 @@ export async function resolveMediaUrl(
         error,
         took,
       });
-    } else {
+    } else if (isDev) {
       console.log("[mediaUrlResolver] Signed URL created", {
         path: cleanPath,
         took,

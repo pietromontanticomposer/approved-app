@@ -49,7 +49,7 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     const authHeader = req.headers.get('authorization');
     const actorIdHeader = req.headers.get('x-actor-id');
 
-    console.log('[Auth] verifyAuth called:', {
+    if (isDev) console.log('[Auth] verifyAuth called:', {
       hasAuthHeader: !!authHeader,
       hasActorId: !!actorIdHeader,
       env_APP_ALLOW_PUBLIC_USER: process.env.APP_ALLOW_PUBLIC_USER,
@@ -59,7 +59,7 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       const allowPublic =
         process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
-      console.log('[Auth] No auth header - allowPublic:', allowPublic);
+      if (isDev) console.log('[Auth] No auth header - allowPublic:', allowPublic);
       if (allowPublic) {
         return {
           userId: 'public-user',
@@ -76,28 +76,24 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
       return null;
     }
 
-    // DEMO MODE: If token is "demo", trust x-actor-id header
+    // DEMO MODE: If token is "demo", use fixed public-user identity
     // This allows local development without real Supabase auth
-    // Also works in production when APP_ALLOW_PUBLIC_USER=1
+    // SECURITY: Never trust x-actor-id header - it can be spoofed
     if (token === 'demo') {
       const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
 
       if (!allowPublic) {
-        console.log('[Auth] Demo token not allowed in production without APP_ALLOW_PUBLIC_USER=1');
+        if (isDev) console.log('[Auth] Demo token not allowed in production');
         return null;
       }
 
-      const actorId = req.headers.get('x-actor-id');
-      if (actorId && actorId.length > 0) {
-        console.log('[Auth] Demo mode active - using x-actor-id:', actorId);
-        return {
-          userId: actorId,
-          email: 'demo@approved.local',
-          isAuthenticated: true,
-        };
-      }
-      console.log('[Auth] Demo mode but no x-actor-id header');
-      return null;
+      // Always use fixed public-user identity - never trust client-provided IDs
+      if (isDev) console.log('[Auth] Demo mode active - using public-user');
+      return {
+        userId: 'public-user',
+        email: 'demo@approved.local',
+        isAuthenticated: true,
+      };
     }
 
     // Verify token with Supabase
@@ -174,6 +170,31 @@ export async function canAccessProject(userId: string, projectId: string): Promi
 }
 
 /**
+ * Check if user is the owner of a project (SERVER-SIDE)
+ * Only owners can rename or delete projects
+ */
+export async function isProjectOwner(userId: string, projectId: string): Promise<boolean> {
+  // In demo/dev mode, allow access
+  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  if (allowPublic && userId === 'public-user') {
+    return true;
+  }
+
+  try {
+    const { data: project } = await supabaseAdmin
+      .from('projects')
+      .select('owner_id')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    return project?.owner_id === userId;
+  } catch (err) {
+    console.error('[isProjectOwner] Error:', err);
+    return false;
+  }
+}
+
+/**
  * Check if user can modify a project (owner or editor) (SERVER-SIDE)
  * Viewers can only read, comment, and download - NOT modify files
  */
@@ -224,8 +245,8 @@ export async function canModifyProject(userId: string, projectId: string): Promi
     return false;
   } catch (err) {
     console.error('[canModifyProject] Error checking permissions:', err);
-    // On error, allow modification to not break existing functionality
-    return true;
+    // On error, deny access for security
+    return false;
   }
 }
 

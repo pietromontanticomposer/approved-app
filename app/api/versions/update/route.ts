@@ -2,12 +2,10 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject } from '@/lib/auth';
+import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+const isDev = process.env.NODE_ENV !== "production";
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,7 +74,7 @@ export async function POST(req: NextRequest) {
         const actorName = auth.email || "";
 
         if (statusUpdate === "review_completed") {
-          console.log("[ReviewEvent] ReviewCompleted", { versionId, projectId });
+          if (isDev) console.log("[ReviewEvent] ReviewCompleted", { versionId, projectId });
           await supabaseAdmin.from("audit_logs").insert({
             actor_id: auth.userId || null,
             action: "review_completed",
@@ -90,7 +88,7 @@ export async function POST(req: NextRequest) {
             }
           });
         } else if (statusUpdate === "in_revision") {
-          console.log("[ReviewEvent] RevisionStarted", { versionId, projectId });
+          if (isDev) console.log("[ReviewEvent] RevisionStarted", { versionId, projectId });
           await supabaseAdmin.from("audit_logs").insert({
             actor_id: auth.userId || null,
             action: "revision_started",

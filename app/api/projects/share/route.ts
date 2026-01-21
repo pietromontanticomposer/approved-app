@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isUuid, isValidEmail, isValidRole } from "@/lib/validation";
 import crypto from "crypto";
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 async function resolveActorId(req: Request) {
   let actorId = req.headers.get('x-actor-id') || '';
@@ -53,6 +48,8 @@ export async function POST(req: Request) {
     if (!actorId) return NextResponse.json({ error: 'Missing x-actor-id header or Authorization token' }, { status: 403 });
     if (!isUuid(actorId)) return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     if (!projectId) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
+    if (!isValidRole(role)) return NextResponse.json({ error: 'Invalid role. Must be owner, admin, editor, or viewer' }, { status: 400 });
+    if (email && !isValidEmail(email)) return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
 
     // Verify actor is owner or manager of the project
     const { data: proj, error: projErr } = await supabaseAdmin

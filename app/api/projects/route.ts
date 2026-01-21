@@ -13,7 +13,10 @@
 import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth, canModifyProject } from '@/lib/auth';
+import { verifyAuth, isProjectOwner } from '@/lib/auth';
+import { isUuid } from '@/lib/validation';
+
+const isDev = process.env.NODE_ENV !== "production";
 
 // ============================================================================
 // TYPES
@@ -38,12 +41,6 @@ type TeamMember = {
   role: string;
   joined_at: string;
 };
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -164,12 +161,12 @@ async function getSharedProjects(userId: string, ownedProjectIds: string[]): Pro
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/projects] Request started');
+    if (isDev) console.log('[GET /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[GET /api/projects] Unauthorized request');
+      if (isDev) console.log('[GET /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -177,7 +174,7 @@ export async function GET(req: NextRequest) {
     }
 
     const userId = auth.userId;
-    console.log('[GET /api/projects] Authenticated user:', userId);
+    if (isDev) console.log('[GET /api/projects] Authenticated user:', userId);
 
     if (!isUuid(userId)) {
       return NextResponse.json({
@@ -190,12 +187,12 @@ export async function GET(req: NextRequest) {
 
     // Fetch owned projects
     const ownedProjects = await getOwnedProjects(userId);
-    console.log('[GET /api/projects] Found', ownedProjects.length, 'owned projects');
+    if (isDev) console.log('[GET /api/projects] Found', ownedProjects.length, 'owned projects');
 
     // Fetch shared projects
     const ownedProjectIds = ownedProjects.map(p => p.id);
     const sharedProjects = await getSharedProjects(userId, ownedProjectIds);
-    console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
+    if (isDev) console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
 
     // Hydrate with team member info
     const myProjectsHydrated = await hydrateProjectsWithTeamMembers(ownedProjects);
@@ -229,12 +226,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/projects] Request started');
+    if (isDev) console.log('[POST /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[POST /api/projects] Unauthorized request');
+      if (isDev) console.log('[POST /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -269,7 +266,7 @@ export async function POST(req: NextRequest) {
 
     // Handle auto team assignment
     if (teamId === 'auto') {
-      console.log('[POST /api/projects] Auto-assigning team');
+      if (isDev) console.log('[POST /api/projects] Auto-assigning team');
 
       // Find user's first team
       const { data: userTeams } = await supabaseAdmin
@@ -281,7 +278,7 @@ export async function POST(req: NextRequest) {
 
       if (userTeams?.team_id) {
         teamId = userTeams.team_id;
-        console.log('[POST /api/projects] Using existing team:', teamId);
+        if (isDev) console.log('[POST /api/projects] Using existing team:', teamId);
       } else {
         // Create personal workspace
         const { data: newTeam, error: teamError } = await supabaseAdmin
@@ -302,7 +299,7 @@ export async function POST(req: NextRequest) {
         }
 
         teamId = newTeam.id;
-        console.log('[POST /api/projects] Created new team:', teamId);
+        if (isDev) console.log('[POST /api/projects] Created new team:', teamId);
 
         // Add user as team member
         await supabaseAdmin
@@ -351,7 +348,7 @@ export async function POST(req: NextRequest) {
       console.warn('[POST /api/projects] Warning adding project membership:', err);
     }
 
-    console.log('[POST /api/projects] Project created:', project.id);
+    if (isDev) console.log('[POST /api/projects] Project created:', project.id);
     return NextResponse.json({ project }, { status: 201 });
 
   } catch (err: any) {
@@ -373,12 +370,12 @@ export async function POST(req: NextRequest) {
  */
 export async function PATCH(req: NextRequest) {
   try {
-    console.log('[PATCH /api/projects] Request started');
+    if (isDev) console.log('[PATCH /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[PATCH /api/projects] Unauthorized request');
+      if (isDev) console.log('[PATCH /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -410,12 +407,12 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    // SECURITY: Check if user can modify this project
-    const canModify = await canModifyProject(userId, projectId);
-    if (!canModify) {
-      console.log('[PATCH /api/projects] User not authorized to modify project');
+    // SECURITY: Only owners can rename projects (not editors)
+    const isOwner = await isProjectOwner(userId, projectId);
+    if (!isOwner) {
+      if (isDev) console.log('[PATCH /api/projects] User not authorized to rename project - not owner');
       return NextResponse.json(
-        { error: 'Forbidden - you do not have permission to modify this project' },
+        { error: 'Forbidden - only the project owner can rename the project' },
         { status: 403 }
       );
     }
@@ -448,7 +445,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    console.log('[PATCH /api/projects] Project updated:', projectId);
+    if (isDev) console.log('[PATCH /api/projects] Project updated:', projectId);
     return NextResponse.json({ project }, { status: 200 });
 
   } catch (err: any) {
@@ -470,12 +467,12 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/projects] Request started');
+    if (isDev) console.log('[DELETE /api/projects] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
-      console.log('[DELETE /api/projects] Unauthorized request');
+      if (isDev) console.log('[DELETE /api/projects] Unauthorized request');
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
@@ -504,12 +501,12 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // SECURITY: Check if user can modify this project
-    const canModify = await canModifyProject(userId, projectId);
-    if (!canModify) {
-      console.log('[DELETE /api/projects] User not authorized to delete project');
+    // SECURITY: Only owners can delete projects (not editors)
+    const isOwner = await isProjectOwner(userId, projectId);
+    if (!isOwner) {
+      if (isDev) console.log('[DELETE /api/projects] User not authorized to delete project - not owner');
       return NextResponse.json(
-        { error: 'Forbidden - you do not have permission to delete this project' },
+        { error: 'Forbidden - only the project owner can delete the project' },
         { status: 403 }
       );
     }
@@ -528,7 +525,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    console.log('[DELETE /api/projects] Project deleted:', projectId);
+    if (isDev) console.log('[DELETE /api/projects] Project deleted:', projectId);
     return NextResponse.json({ success: true }, { status: 200 });
 
   } catch (err: any) {

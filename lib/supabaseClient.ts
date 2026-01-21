@@ -32,7 +32,7 @@ export function getSupabaseClient() {
         detectSessionInUrl: true
       }
     });
-    console.log('[SupabaseClient] Initialized with persistence');
+    if (process.env.NODE_ENV !== 'production') console.log('[SupabaseClient] Initialized with persistence');
     
     // Make available globally
     (window as any).supabaseClient = supabaseInstance;

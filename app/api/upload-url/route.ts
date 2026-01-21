@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import path from "path";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject } from "@/lib/auth";
+import { isUuid } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -113,12 +114,6 @@ const EXTENSION_BY_MIME: Record<string, string> = Object.entries(MIME_BY_EXTENSI
   },
   {} as Record<string, string>
 );
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 function getExtension(filename: string): string {
   const base = filename.split("/").pop()?.split("\\").pop() || "";

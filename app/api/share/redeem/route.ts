@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from "@/lib/auth";
+import { isUuid } from "@/lib/validation";
 import crypto from "crypto";
 
 /**
@@ -8,11 +9,6 @@ import crypto from "crypto";
  * Body: { share_id, token }
  * Redeems a share link: validates token, adds user to project_members with the role from the link
  */
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,15 +36,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Share link expired' }, { status: 410 });
     }
 
-    // Check max uses
-    if (linkData.max_uses && linkData.uses >= linkData.max_uses) {
-      return NextResponse.json({ error: 'Share link max uses exceeded' }, { status: 410 });
-    }
-
     // Verify token by hashing
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     if (tokenHash !== linkData.token_hash) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 403 });
+    }
+
+    // Atomic increment with max_uses check to prevent race condition
+    // Only increment if uses < max_uses (or max_uses is null/0)
+    let incrementQuery = supabaseAdmin
+      .from('share_links')
+      .update({ uses: (linkData.uses || 0) + 1 })
+      .eq('id', shareId);
+
+    if (linkData.max_uses && linkData.max_uses > 0) {
+      incrementQuery = incrementQuery.lt('uses', linkData.max_uses);
+    }
+
+    const { data: updateResult, error: updateErr } = await incrementQuery.select('id');
+
+    // If no rows updated, max_uses was reached (race condition caught)
+    if (updateErr || !updateResult || updateResult.length === 0) {
+      return NextResponse.json({ error: 'Share link max uses exceeded' }, { status: 410 });
     }
 
     // Add to project_members (idempotent upsert) - same as invite accept
@@ -62,9 +71,6 @@ export async function POST(req: NextRequest) {
 
     const { error: upsertErr } = await supabaseAdmin.from('project_members').upsert(insert, { onConflict: 'project_id,member_id' });
     if (upsertErr) return NextResponse.json({ error: upsertErr.message }, { status: 500 });
-
-    // Increment uses
-    await supabaseAdmin.from('share_links').update({ uses: (linkData.uses || 0) + 1 }).eq('id', shareId);
 
     // Log audit
     await supabaseAdmin.from('audit_logs').insert({ actor_id: actorId, action: 'share_link_redeemed', target_type: 'project', target_id: linkData.project_id, meta: { share_link_id: shareId } });

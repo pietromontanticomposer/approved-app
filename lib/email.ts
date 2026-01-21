@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 
+const isDev = process.env.NODE_ENV !== "production";
 let transporter: any = null;
 
 function getTransporter() {
@@ -60,7 +61,7 @@ export async function sendConfirmationEmail(email: string, actionLink: string) {
     html,
   });
 
-  console.log('[Email] Confirmation sent via SMTP:', info.messageId);
+  if (isDev) console.log('[Email] Confirmation sent via SMTP:', info.messageId);
   return info;
 }
 
@@ -116,7 +117,7 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
     html,
   });
 
-  console.log('[Email] Invite sent via SMTP to', email, '- MessageId:', info.messageId);
+  if (isDev) console.log('[Email] Invite sent via SMTP to', email, '- MessageId:', info.messageId);
   return info;
 }
 
@@ -207,6 +208,6 @@ export async function sendNewVersionNotification(
     html,
   });
 
-  console.log('[Email] New version notification sent to', email, '- MessageId:', info.messageId);
+  if (isDev) console.log('[Email] New version notification sent to', email, '- MessageId:', info.messageId);
   return info;
 }

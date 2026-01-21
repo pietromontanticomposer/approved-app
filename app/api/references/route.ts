@@ -9,8 +9,10 @@ import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
+import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
+const isDev = process.env.NODE_ENV !== "production";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const STORAGE_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || "media";
@@ -18,12 +20,6 @@ const SIGNED_URL_TTL_SECONDS = parseInt(
   process.env.NEXT_PUBLIC_SUPABASE_SIGNED_TTL || "7200",
   10
 );
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 const isAbsoluteUrl = (url: string | null) => !!url && /^https?:\/\//i.test(url);
 
@@ -97,7 +93,7 @@ async function resolveMediaUrl(raw: string | null): Promise<string | null> {
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/references] Request started');
+    if (isDev) console.log('[GET /api/references] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -173,7 +169,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/references] Request started');
+    if (isDev) console.log('[POST /api/references] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -301,7 +297,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/references] Request started');
+    if (isDev) console.log('[DELETE /api/references] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

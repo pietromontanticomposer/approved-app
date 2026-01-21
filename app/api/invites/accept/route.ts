@@ -1,14 +1,10 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
+import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
+const isDev = process.env.NODE_ENV !== "production";
 
 /**
  * POST /api/invites/accept
@@ -17,7 +13,7 @@ const isUuid = (value: string) =>
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/invites/accept] Request started');
+    if (isDev) console.log('[POST /api/invites/accept] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

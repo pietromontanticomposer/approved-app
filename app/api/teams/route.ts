@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
 
 export const runtime = "nodejs";
+const isDev = process.env.NODE_ENV !== "production";
 
 /**
  * POST /api/teams
@@ -10,7 +11,7 @@ export const runtime = "nodejs";
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/teams] Request started');
+    if (isDev) console.log('[POST /api/teams] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

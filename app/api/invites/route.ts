@@ -10,14 +10,10 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
 import { sendInviteEmail } from '@/lib/email';
+import { isUuid, isValidEmail, isValidRole } from '@/lib/validation';
 
 export const runtime = "nodejs";
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
+const isDev = process.env.NODE_ENV !== "production";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -29,7 +25,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function GET(req: NextRequest) {
   try {
-    console.log('[GET /api/invites] Request started');
+    if (isDev) console.log('[GET /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -87,7 +83,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    console.log('[POST /api/invites] Request started');
+    if (isDev) console.log('[POST /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
@@ -113,6 +109,20 @@ export async function POST(req: NextRequest) {
     if (!is_link_invite && !email) {
       return NextResponse.json(
         { error: "email is required for non-link invites" },
+        { status: 400 }
+      );
+    }
+
+    if (email && !isValidEmail(email)) {
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidRole(role)) {
+      return NextResponse.json(
+        { error: "Invalid role. Must be owner, admin, editor, or viewer" },
         { status: 400 }
       );
     }
@@ -151,10 +161,10 @@ export async function POST(req: NextRequest) {
     let emailError = null;
     if (!is_link_invite && email) {
       try {
-        console.log('[POST /api/invites] Preparing to send email to:', email);
-        console.log('[POST /api/invites] SMTP_HOST:', process.env.SMTP_HOST || 'NOT SET');
-        console.log('[POST /api/invites] SMTP_USER:', process.env.SMTP_USER || 'NOT SET');
-        console.log('[POST /api/invites] SMTP_PASS:', process.env.SMTP_PASS ? 'SET (hidden)' : 'NOT SET');
+        if (isDev) console.log('[POST /api/invites] Preparing to send email to:', email);
+        if (isDev) console.log('[POST /api/invites] SMTP_HOST:', process.env.SMTP_HOST || 'NOT SET');
+        if (isDev) console.log('[POST /api/invites] SMTP_USER:', process.env.SMTP_USER || 'NOT SET');
+        if (isDev) console.log('[POST /api/invites] SMTP_PASS:', process.env.SMTP_PASS ? 'SET (hidden)' : 'NOT SET');
 
         // Get inviter name and project name for better email
         let inviterName = null;
@@ -169,7 +179,7 @@ export async function POST(req: NextRequest) {
         if (inviter) {
           inviterName = inviter.full_name || inviter.email?.split('@')[0] || null;
         }
-        console.log('[POST /api/invites] Inviter name:', inviterName);
+        if (isDev) console.log('[POST /api/invites] Inviter name:', inviterName);
 
         // Get project name if project_id provided
         if (project_id) {
@@ -182,12 +192,12 @@ export async function POST(req: NextRequest) {
             projectName = project.name;
           }
         }
-        console.log('[POST /api/invites] Project name:', projectName);
-        console.log('[POST /api/invites] Invite URL:', inviteUrl);
+        if (isDev) console.log('[POST /api/invites] Project name:', projectName);
+        if (isDev) console.log('[POST /api/invites] Invite URL:', inviteUrl);
 
         await sendInviteEmail(email, inviteUrl, inviterName, projectName, role);
         emailSent = true;
-        console.log('[POST /api/invites] Email sent successfully to', email);
+        if (isDev) console.log('[POST /api/invites] Email sent successfully to', email);
       } catch (e: any) {
         console.error('[POST /api/invites] sendInviteEmail FAILED:', e);
         console.error('[POST /api/invites] Error stack:', e?.stack);
@@ -215,7 +225,7 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    console.log('[DELETE /api/invites] Request started');
+    if (isDev) console.log('[DELETE /api/invites] Request started');
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);

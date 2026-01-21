@@ -1,5 +1,7 @@
 import { supabase } from "./supabaseClient";
 
+const isDev = process.env.NODE_ENV !== "production";
+
 // ============================================
 // PROJECT OPERATIONS
 // ============================================
@@ -16,7 +18,7 @@ export async function saveProject(project: any) {
     );
 
     if (error) throw error;
-    console.log("✅ Project saved:", project.id);
+    if (isDev) console.log("✅ Project saved:", project.id);
     return true;
   } catch (err) {
     console.error("❌ Error saving project:", err);
@@ -79,7 +81,7 @@ export async function loadProjects() {
 
     if (error) throw error;
 
-    console.log("✅ Projects loaded:", data?.length || 0);
+    if (isDev) console.log("✅ Projects loaded:", data?.length || 0);
     return data || [];
   } catch (err) {
     console.error("❌ Error loading projects:", err);
@@ -95,7 +97,7 @@ export async function deleteProject(projectId: string) {
       .eq("id", projectId);
 
     if (error) throw error;
-    console.log("✅ Project deleted:", projectId);
+    if (isDev) console.log("✅ Project deleted:", projectId);
     return true;
   } catch (err) {
     console.error("❌ Error deleting project:", err);
@@ -123,7 +125,7 @@ export async function saveCue(projectId: string, cue: any) {
     );
 
     if (error) throw error;
-    console.log("✅ Cue saved:", cue.id);
+    if (isDev) console.log("✅ Cue saved:", cue.id);
     return true;
   } catch (err) {
     console.error("❌ Error saving cue:", err);
@@ -136,7 +138,7 @@ export async function deleteCue(cueId: string) {
     const { error } = await supabase.from("cues").delete().eq("id", cueId);
 
     if (error) throw error;
-    console.log("✅ Cue deleted:", cueId);
+    if (isDev) console.log("✅ Cue deleted:", cueId);
     return true;
   } catch (err) {
     console.error("❌ Error deleting cue:", err);
@@ -169,7 +171,7 @@ export async function saveVersion(cueId: string, version: any) {
     );
 
     if (error) throw error;
-    console.log("✅ Version saved:", version.id);
+    if (isDev) console.log("✅ Version saved:", version.id);
     return true;
   } catch (err) {
     console.error("❌ Error saving version:", err);
@@ -185,7 +187,7 @@ export async function deleteVersion(versionId: string) {
       .eq("id", versionId);
 
     if (error) throw error;
-    console.log("✅ Version deleted:", versionId);
+    if (isDev) console.log("✅ Version deleted:", versionId);
     return true;
   } catch (err) {
     console.error("❌ Error deleting version:", err);
@@ -212,7 +214,7 @@ export async function saveVersionFile(versionId: string, file: any) {
     );
 
     if (error) throw error;
-    console.log("✅ Version file saved:", file.id);
+    if (isDev) console.log("✅ Version file saved:", file.id);
     return true;
   } catch (err) {
     console.error("❌ Error saving version file:", err);
@@ -228,7 +230,7 @@ export async function deleteVersionFile(fileId: string) {
       .eq("id", fileId);
 
     if (error) throw error;
-    console.log("✅ Version file deleted:", fileId);
+    if (isDev) console.log("✅ Version file deleted:", fileId);
     return true;
   } catch (err) {
     console.error("❌ Error deleting version file:", err);
@@ -254,7 +256,7 @@ export async function saveComment(versionId: string, comment: any) {
     );
 
     if (error) throw error;
-    console.log("✅ Comment saved:", comment.id);
+    if (isDev) console.log("✅ Comment saved:", comment.id);
     return true;
   } catch (err) {
     console.error("❌ Error saving comment:", err);
@@ -270,7 +272,7 @@ export async function deleteComment(commentId: string) {
       .eq("id", commentId);
 
     if (error) throw error;
-    console.log("✅ Comment deleted:", commentId);
+    if (isDev) console.log("✅ Comment deleted:", commentId);
     return true;
   } catch (err) {
     console.error("❌ Error deleting comment:", err);

@@ -2,10 +2,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, canModifyProject } from '@/lib/auth';
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+import { isUuid } from '@/lib/validation';
 
 export async function DELETE(req: NextRequest) {
   try {

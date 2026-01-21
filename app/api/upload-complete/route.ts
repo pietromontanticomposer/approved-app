@@ -3,6 +3,7 @@ import path from "path";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from "@/lib/auth";
 import { sendNewVersionNotification, UploadType } from "@/lib/email";
+import { isUuid } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -105,12 +106,6 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".rar": "application/vnd.rar",
   ".7z": "application/x-7z-compressed",
 };
-
-const isUuid = (value: string) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
 
 function getExtension(value: string): string {
   const base = value.split("/").pop()?.split("\\").pop() || "";
