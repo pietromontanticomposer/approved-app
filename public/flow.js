@@ -4529,6 +4529,52 @@ addCommentBtn.addEventListener("click", addCommentFromInput);
 let voiceMediaRecorder = null;
 let voiceRecordedChunks = [];
 let voiceRecordingStartTime = null;
+let voiceRecordingTimer = null;
+let voiceRecordingIndicator = null;
+
+function showRecordingIndicator() {
+  // Create indicator if not exists
+  if (!voiceRecordingIndicator) {
+    voiceRecordingIndicator = document.createElement('div');
+    voiceRecordingIndicator.className = 'voice-recording-indicator';
+    voiceRecordingIndicator.innerHTML = `
+      <span class="rec-dot"></span>
+      <span class="rec-text">REC</span>
+      <span class="rec-time">0:00</span>
+    `;
+  }
+
+  // Insert before input
+  const inputWrap = commentInputEl.closest('.comment-input');
+  if (inputWrap && !inputWrap.contains(voiceRecordingIndicator)) {
+    inputWrap.insertBefore(voiceRecordingIndicator, commentInputEl);
+  }
+
+  // Hide input, show indicator
+  commentInputEl.style.display = 'none';
+  voiceRecordingIndicator.style.display = 'flex';
+
+  // Start timer
+  let seconds = 0;
+  const timeEl = voiceRecordingIndicator.querySelector('.rec-time');
+  voiceRecordingTimer = setInterval(() => {
+    seconds++;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    timeEl.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, 1000);
+}
+
+function hideRecordingIndicator() {
+  if (voiceRecordingTimer) {
+    clearInterval(voiceRecordingTimer);
+    voiceRecordingTimer = null;
+  }
+  if (voiceRecordingIndicator) {
+    voiceRecordingIndicator.style.display = 'none';
+  }
+  commentInputEl.style.display = '';
+}
 
 if (voiceRecordBtn) {
   voiceRecordBtn.addEventListener("click", async () => {
@@ -4575,6 +4621,7 @@ if (voiceRecordBtn) {
 
         // Update UI
         voiceRecordBtn.classList.remove("recording");
+        hideRecordingIndicator();
 
         if (voiceRecordedChunks.length === 0) return;
 
@@ -4589,12 +4636,14 @@ if (voiceRecordBtn) {
         console.error('[VoiceRecord] Error:', e);
         stream.getTracks().forEach(track => track.stop());
         voiceRecordBtn.classList.remove("recording");
+        hideRecordingIndicator();
         showAlert('Errore registrazione: ' + (e.error?.message || 'unknown'));
       };
 
       // Start recording
       voiceMediaRecorder.start();
       voiceRecordBtn.classList.add("recording");
+      showRecordingIndicator();
 
     } catch (err) {
       console.error('[VoiceRecord] Failed to start:', err);
