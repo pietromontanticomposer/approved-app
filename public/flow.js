@@ -1803,10 +1803,12 @@ async function selectProject(projectId) {
   // If project cues are not loaded yet (shouldn't happen with /api/projects/full)
   // load them now
   if (!project.cues || project.cues.length === 0) {
-    await loadProjectCues(projectId);
+    await loadProjectCues(projectId, { skipRender: true });
   }
 
-  renderAll();
+  renderProjectList();
+  renderProjectDataOnly();
+  refreshSharedWithPanel(false);
   loadProjectNotes(projectId).catch(err => {
     console.warn('[Flow] Failed to load notes for project selection', err);
   });
@@ -4462,15 +4464,41 @@ function renderComments() {
 // =======================
 // LOAD PROJECT DATA FROM API
 // =======================
-async function loadProjectCues(projectId) {
+function renderProjectDataOnly() {
+  renderProjectHeader();
+  updateVisibility();
+  refreshAllNames();
+  renderReferences();
+  renderCueList();
+  renderVersionPreviews();
+  renderPlayer();
+  renderNotesPanel();
+  updateProjectNotesButton();
+  maybeShowOnboarding();
+}
+
+function primeProjectNotesCache(projectId, notes, cueNotes) {
+  if (!projectId) return;
+  const general = Array.isArray(notes) ? notes : [];
+  const cueMap = cueNotes && typeof cueNotes === 'object' ? cueNotes : {};
+  projectNotesStore[projectId] = {
+    general: [...general],
+    cue: cloneCueNotesMap(cueMap),
+    loadedAt: Date.now()
+  };
+}
+
+async function loadProjectCues(projectId, options = {}) {
   const project = getProjectById(projectId);
   if (!project) return;
+  const skipRender = options && options.skipRender === true;
 
   const headers =
     (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
       ? window.flowAuth.getAuthHeaders()
       : { 'Content-Type': 'application/json' };
 
+  let usedAggregated = false;
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
     const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
@@ -4479,6 +4507,7 @@ async function loadProjectCues(projectId) {
     const payload = await response.json();
     const projectData = (payload.projects || []).find(p => p.id === projectId);
     if (!projectData) throw new Error('Project missing in aggregated response');
+    usedAggregated = true;
 
     project.cues = projectData.cues || [];
     if (projectData.project_role) {
@@ -4521,19 +4550,23 @@ async function loadProjectCues(projectId) {
       project.activeReferenceId = project.references[0].id;
     }
 
-    refreshAllNames();
-    renderReferences();
-    renderAll();
+    primeProjectNotesCache(projectId, project.notes, project.cueNotes);
+    if (!skipRender) {
+      renderProjectDataOnly();
+    }
     console.log("[Flow] Project cues loaded successfully via /api/projects/full");
-    loadProjectNotes(projectId).catch(err => {
-      console.warn('[Flow] Failed to preload notes', err);
-    });
     return;
   } catch (err) {
     console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
   }
 
   await loadProjectCuesLegacy(projectId, headers);
+  if (!skipRender) {
+    renderProjectDataOnly();
+  }
+  loadProjectNotes(projectId).catch(err => {
+    console.warn('[Flow] Failed to preload notes', err);
+  });
 }
 
 async function loadProjectCuesLegacy(projectId, headers) {
