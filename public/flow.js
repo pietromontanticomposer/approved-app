@@ -4229,19 +4229,104 @@ function renderComments() {
     author.textContent = c.author || tr("misc.client", {}, "Client");
 
     const text = document.createElement("p");
+    text.className = "comment-text";
 
     // Check if this is a voice comment
     if (c.audio_url) {
-      // Show audio player for voice comments
+      // Show custom audio player for voice comments
       const audioWrap = document.createElement("div");
       audioWrap.className = "comment-audio";
       const audio = document.createElement("audio");
-      audio.controls = true;
+      audio.className = "comment-audio-element";
       audio.preload = "metadata";
       // Get signed URL for the audio
       const audioUrl = c.audio_url.startsWith('http') ? c.audio_url : getDirectUrl(`/api/media/stream?path=${encodeURIComponent(c.audio_url)}`);
       audio.src = audioUrl;
+
+      const player = document.createElement("div");
+      player.className = "comment-audio-player";
+
+      const playBtn = document.createElement("button");
+      playBtn.type = "button";
+      playBtn.className = "comment-audio-play";
+      playBtn.setAttribute("aria-label", "Play voice note");
+
+      const playIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+      const pauseIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>`;
+      playBtn.innerHTML = playIcon;
+
+      const bar = document.createElement("div");
+      bar.className = "comment-audio-bar";
+      bar.setAttribute("role", "slider");
+      bar.setAttribute("aria-label", "Seek voice note");
+      bar.setAttribute("aria-valuemin", "0");
+      bar.setAttribute("aria-valuemax", "100");
+      bar.setAttribute("aria-valuenow", "0");
+
+      const progress = document.createElement("div");
+      progress.className = "comment-audio-progress";
+      bar.appendChild(progress);
+
+      const time = document.createElement("span");
+      time.className = "comment-audio-time";
+      time.textContent = "00:00 / --:--";
+
+      const updateTime = () => {
+        const cur = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+        const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+        const pct = dur > 0 ? Math.min(100, Math.max(0, (cur / dur) * 100)) : 0;
+        progress.style.width = `${pct}%`;
+        bar.setAttribute("aria-valuenow", String(Math.round(pct)));
+        time.textContent = `${formatTime(cur)} / ${dur > 0 ? formatTime(dur) : "--:--"}`;
+      };
+
+      const setPlayingState = (isPlaying) => {
+        if (isPlaying) {
+          playBtn.classList.add("is-playing");
+          playBtn.innerHTML = pauseIcon;
+        } else {
+          playBtn.classList.remove("is-playing");
+          playBtn.innerHTML = playIcon;
+        }
+      };
+
+      playBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (audio.paused) {
+          audio.play().catch(() => {});
+        } else {
+          audio.pause();
+        }
+      });
+
+      bar.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+        const rect = bar.getBoundingClientRect();
+        if (!rect.width) return;
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        audio.currentTime = audio.duration * pct;
+        updateTime();
+      });
+
+      player.addEventListener("click", (e) => e.stopPropagation());
+      audioWrap.addEventListener("click", (e) => e.stopPropagation());
+
+      audio.addEventListener("loadedmetadata", updateTime);
+      audio.addEventListener("timeupdate", updateTime);
+      audio.addEventListener("play", () => setPlayingState(true));
+      audio.addEventListener("pause", () => setPlayingState(false));
+      audio.addEventListener("ended", () => {
+        setPlayingState(false);
+        audio.currentTime = 0;
+        updateTime();
+      });
+
+      player.appendChild(playBtn);
+      player.appendChild(bar);
+      player.appendChild(time);
       audioWrap.appendChild(audio);
+      audioWrap.appendChild(player);
       text.appendChild(audioWrap);
       if (c.text) {
         const textSpan = document.createElement("span");

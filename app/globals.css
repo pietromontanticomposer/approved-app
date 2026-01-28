@@ -1679,6 +1679,78 @@ body.resizing {
   margin-top: 2px;
 }
 
+.comment-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comment-audio {
+  width: 100%;
+}
+
+.comment-audio-element {
+  display: none;
+}
+
+.comment-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.comment-audio-play {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.comment-audio-play:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.4);
+}
+
+.comment-audio-play.is-playing {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+
+.comment-audio-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-core);
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.comment-audio-progress {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-bright) 100%);
+}
+
+.comment-audio-time {
+  min-width: 70px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-weak);
+  font-variant-numeric: tabular-nums;
+}
+
 .comment-input {
   margin-top: 8px;
   display: flex;
