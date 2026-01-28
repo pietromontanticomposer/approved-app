@@ -8,12 +8,18 @@
 import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth, canAccessProject, canModifyProject } from '@/lib/auth';
+import { verifyAuth, canAccessProject, canModifyProject, canReviewProject } from '@/lib/auth';
 import { resolveMediaUrl, detectMediaType, parseWaveformData } from "@/lib/mediaUrlResolver";
 import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
 const isDev = process.env.NODE_ENV !== "production";
+
+function normalizeStatus(value: string) {
+  if (value === "in-review") return "in_review";
+  if (value === "changes-requested") return "changes_requested";
+  return value;
+}
 
 /**
  * GET /api/versions?cueId=xxx&projectId=xxx
@@ -78,6 +84,9 @@ export async function GET(req: NextRequest) {
         const thumbUrl = await resolveMediaUrl(
           v.media_thumbnail_url || v.media_thumbnail_path || null
         );
+        const referenceVideoUrl = await resolveMediaUrl(
+          v.reference_video_url || v.reference_video_storage_path || null
+        );
 
         const mediaType =
           v.media_type ||
@@ -96,7 +105,13 @@ export async function GET(req: NextRequest) {
           media_filename: v.media_original_name || v.media_display_name || "Media",
           duration: v.media_duration,
           thumbnail_url: thumbUrl,
-          waveform: parseWaveformData(v.media_waveform_data)
+          waveform: parseWaveformData(v.media_waveform_data),
+          reference_video_url: referenceVideoUrl,
+          reference_video_storage_path: v.reference_video_storage_path || null,
+          reference_video_display_name: v.reference_video_display_name || null,
+          reference_video_offset_ms: v.reference_video_offset_ms || 0,
+          reference_video_start_tc: v.reference_video_start_tc || null,
+          reference_video_duration: v.reference_video_duration || null
         };
       })
     );
@@ -239,15 +254,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // SECURITY: Check project access (viewers CAN change status for review workflow)
-    const canAccess = await canAccessProject(auth.userId, projectId);
-    if (!canAccess) {
+    // SECURITY: Check review permission (viewer cannot change status)
+    const canReview = await canReviewProject(auth.userId, projectId);
+    if (!canReview) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    const normalizedStatus = normalizeStatus(String(status));
+
     const { data, error } = await supabaseAdmin
       .from("versions")
-      .update({ status })
+      .update({ status: normalizedStatus })
       .eq("id", id)
       .select()
       .single();

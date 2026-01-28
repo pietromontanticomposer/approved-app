@@ -1,19 +1,24 @@
 // app/api/versions/update/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { verifyAuth, canModifyProject } from '@/lib/auth';
+import { verifyAuth } from '@/lib/auth';
+import { resolveAccessContext, roleCanModify } from '@/lib/shareAccess';
 import { isUuid } from '@/lib/validation';
 
 export const runtime = "nodejs";
 const isDev = process.env.NODE_ENV !== "production";
 
+function normalizeStatus(value: string | null) {
+  if (!value) return value;
+  if (value === "in-review") return "in_review";
+  if (value === "changes-requested") return "changes_requested";
+  return value;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // SECURITY: Verify authentication
+    // SECURITY: Verify authentication or share link
     const auth = await verifyAuth(req);
-    if (!auth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const body = await req.json();
     const { versionId, updates, versionFiles, projectId } = body as any;
@@ -26,15 +31,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Valid projectId required" }, { status: 400 });
     }
 
-    // Verify project modify permission
-    const canModify = await canModifyProject(auth.userId, projectId);
-    if (!canModify) {
+    const updatePayload = updates && typeof updates === 'object' ? updates : {};
+    const hasUpdateKeys = Object.keys(updatePayload).length > 0;
+    const statusOnly =
+      hasUpdateKeys &&
+      Object.keys(updatePayload).length === 1 &&
+      Object.prototype.hasOwnProperty.call(updatePayload, 'status');
+    const hasFiles = Array.isArray(versionFiles) && versionFiles.length > 0;
+
+    const access = await resolveAccessContext(req, projectId);
+    if (!access) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    if (statusOnly && !hasFiles) {
+      // Any status change requires modify permission (owner/editor)
+      if (!roleCanModify(access.role)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    } else {
+      if (!roleCanModify(access.role)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    }
+
     let updatedVersion: any = null;
-    const statusUpdate = updates && updates.status ? String(updates.status) : null;
-    const hasUpdates = updates && Object.keys(updates || {}).length > 0;
+    let statusUpdate = updatePayload && updatePayload.status ? String(updatePayload.status) : null;
+    statusUpdate = normalizeStatus(statusUpdate);
+    if (statusUpdate && updatePayload.status !== statusUpdate) {
+      updatePayload.status = statusUpdate;
+    }
+    const hasUpdates = hasUpdateKeys;
     if (hasUpdates) {
       const { data: currentVersion } = await supabaseAdmin
         .from("versions")
@@ -42,8 +69,11 @@ export async function POST(req: NextRequest) {
         .eq("id", versionId)
         .single();
 
-      const currentStatus = currentVersion?.status || null;
-      if (statusUpdate) {
+      const currentStatus = normalizeStatus(currentVersion?.status || null);
+    if (statusUpdate) {
+        if (statusUpdate === 'approved') {
+          return NextResponse.json({ error: 'Use /api/versions/approve for approvals' }, { status: 409 });
+        }
         const closedStatuses = ["approved", "changes_requested"];
         if (closedStatuses.includes(currentStatus)) {
           return NextResponse.json({ version: currentVersion }, { status: 200 });
@@ -58,7 +88,7 @@ export async function POST(req: NextRequest) {
 
       const { data, error } = await supabaseAdmin
         .from("versions")
-        .update(updates)
+        .update(updatePayload)
         .eq("id", versionId)
         .select()
         .single();
@@ -70,13 +100,14 @@ export async function POST(req: NextRequest) {
           .select("owner_id")
           .eq("id", projectId)
           .single();
-        const actorType = projectData?.owner_id && projectData.owner_id === auth.userId ? "owner" : "client";
-        const actorName = auth.email || "";
+        const actorId = access.userId || null;
+        const actorType = projectData?.owner_id && actorId && projectData.owner_id === actorId ? "owner" : "client";
+        const actorName = auth?.email || actorId || "";
 
         if (statusUpdate === "review_completed") {
           if (isDev) console.log("[ReviewEvent] ReviewCompleted", { versionId, projectId });
           await supabaseAdmin.from("audit_logs").insert({
-            actor_id: auth.userId || null,
+            actor_id: actorId,
             action: "review_completed",
             target_type: "version",
             target_id: versionId,
@@ -90,7 +121,7 @@ export async function POST(req: NextRequest) {
         } else if (statusUpdate === "in_revision") {
           if (isDev) console.log("[ReviewEvent] RevisionStarted", { versionId, projectId });
           await supabaseAdmin.from("audit_logs").insert({
-            actor_id: auth.userId || null,
+            actor_id: actorId,
             action: "revision_started",
             target_type: "version",
             target_id: versionId,
@@ -103,7 +134,7 @@ export async function POST(req: NextRequest) {
           });
         } else if (statusUpdate === "approved" || statusUpdate === "changes_requested") {
           await supabaseAdmin.from("audit_logs").insert({
-            actor_id: auth.userId || null,
+            actor_id: actorId,
             action: "approval",
             target_type: "version",
             target_id: versionId,

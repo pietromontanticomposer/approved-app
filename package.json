@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.ts,.tsx",
     "maildev": "maildev --smtp=1025 --web 1080",
-    "test:email": "node scripts/e2e_robust.js"
+    "test:email": "node dev-scripts/e2e_robust.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.2",

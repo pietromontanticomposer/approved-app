@@ -4,7 +4,8 @@ const authState = {
   user: null,
   session: null,
   defaultTeamId: null,
-  teams: []
+  teams: [],
+  share: null
 };
 
 // Initialize on load
@@ -65,6 +66,16 @@ async function initAuth() {
       }
     });
 
+    // Load share context if present
+    try {
+      const raw = localStorage.getItem('approved_share_link');
+      if (raw) {
+        authState.share = JSON.parse(raw);
+      }
+    } catch (e) {
+      authState.share = null;
+    }
+
     return true;
   } catch (err) {
     console.error('[FlowAuth] Error initializing:', err);
@@ -86,7 +97,18 @@ function getSession() {
 
 function getAuthHeaders() {
   if (!authState.session) {
-    return { 'Content-Type': 'application/json' };
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const raw = localStorage.getItem('approved_share_link');
+      if (raw) {
+        const share = JSON.parse(raw);
+        if (share?.share_id && share?.token) {
+          headers['x-share-id'] = share.share_id;
+          headers['x-share-token'] = share.token;
+        }
+      }
+    } catch (e) {}
+    return headers;
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -95,6 +117,16 @@ function getAuthHeaders() {
   if (authState.user && authState.user.id) {
     headers['x-actor-id'] = authState.user.id;
   }
+  try {
+    const raw = localStorage.getItem('approved_share_link');
+    if (raw) {
+      const share = JSON.parse(raw);
+      if (share?.share_id && share?.token) {
+        headers['x-share-id'] = share.share_id;
+        headers['x-share-token'] = share.token;
+      }
+    }
+  } catch (e) {}
   return headers;
 }
 

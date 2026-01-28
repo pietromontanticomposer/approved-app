@@ -1,8 +1,18 @@
 // app/api/diagnose-upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
+import { checkAdminSecret } from '@/lib/adminAuth';
 
 export async function POST(req: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const admin = checkAdminSecret(req);
+  if (!admin.ok) {
+    return NextResponse.json({ error: admin.error }, { status: admin.status });
+  }
+
   const timestamp = new Date().toISOString();
 
   // Capture ALL headers

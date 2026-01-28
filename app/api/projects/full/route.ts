@@ -15,6 +15,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
+import { getShareLinkContext } from '@/lib/shareAccess';
+import { isUuid } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -25,16 +27,18 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const projectIdFilter = url.searchParams.get('projectId') || null;
 
-    // SECURITY: Verify authentication
+    const shareContext = await getShareLinkContext(req, projectIdFilter || undefined);
+
+    // SECURITY: Verify authentication (share links can bypass auth)
     const auth = await verifyAuth(req);
-    if (!auth) {
+    if (!auth && !shareContext) {
       return NextResponse.json(
         { error: 'Unauthorized - authentication required' },
         { status: 401 }
       );
     }
 
-    const userId = auth.userId;
+    const userId = auth?.userId || null;
 
     // Step 1: Get user's projects (owned + shared) IN PARALLEL
     let baseProjects: any[] = [];
@@ -50,16 +54,22 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
 
-      let hasAccess = singleProject.owner_id === userId;
+      let hasAccess = !!(userId && singleProject.owner_id === userId);
+
+      if (!hasAccess && shareContext && shareContext.projectId === singleProject.id) {
+        hasAccess = true;
+      }
 
       if (!hasAccess) {
-        const { data: membership } = await supabaseAdmin
-          .from('project_members')
-          .select('project_id')
-          .eq('project_id', singleProject.id)
-          .eq('member_id', userId)
-          .maybeSingle();
-        if (membership) hasAccess = true;
+        if (userId) {
+          const { data: membership } = await supabaseAdmin
+            .from('project_members')
+            .select('project_id')
+            .eq('project_id', singleProject.id)
+            .eq('member_id', userId)
+            .maybeSingle();
+          if (membership) hasAccess = true;
+        }
       }
 
       if (!hasAccess) {
@@ -69,6 +79,14 @@ export async function GET(req: NextRequest) {
 
       baseProjects = [singleProject];
     } else {
+      if (shareContext && !userId) {
+        const { data: shareProject } = await supabaseAdmin
+          .from('projects')
+          .select('*')
+          .eq('id', shareContext.projectId)
+          .maybeSingle();
+        baseProjects = shareProject ? [shareProject] : [];
+      } else {
       const [
         { data: ownedProjects },
         { data: membershipRows }
@@ -96,7 +114,8 @@ export async function GET(req: NextRequest) {
         sharedProjects = data || [];
       }
 
-      baseProjects = [...(ownedProjects || []), ...sharedProjects];
+        baseProjects = [...(ownedProjects || []), ...sharedProjects];
+      }
     }
 
     const projectIds = baseProjects.map(p => p.id);
@@ -261,15 +280,61 @@ export async function GET(req: NextRequest) {
 
     const versionIds = allVersions.map(v => v.id);
 
+    // Load approvals and delivery configs
+    const approvalsPromise = versionIds.length > 0
+      ? supabaseAdmin.from('version_approvals').select('*').in('version_id', versionIds)
+      : Promise.resolve({ data: [] });
+
+    const deliveriesPromise = versionIds.length > 0
+      ? supabaseAdmin.from('version_deliveries').select('*').in('version_id', versionIds)
+      : Promise.resolve({ data: [] });
+
+    const cueSheetProjectsPromise = projectIds.length > 0
+      ? supabaseAdmin.from('cue_sheet_projects').select('*').in('project_id', projectIds)
+      : Promise.resolve({ data: [] });
+
+    const cueSheetEntriesPromise = cueIds.length > 0
+      ? supabaseAdmin.from('cue_sheet_entries').select('*').in('cue_id', cueIds)
+      : Promise.resolve({ data: [] });
+
     // Step 4: Load comments (only if we have versions)
     let allComments = [];
+    let approvals: any[] = [];
+    let deliveries: any[] = [];
+    let cueSheetProjects: any[] = [];
+    let cueSheetEntries: any[] = [];
+
     if (versionIds.length > 0) {
-      const { data } = await supabaseAdmin
-        .from('comments')
-        .select('*')
-        .in('version_id', versionIds)
-        .order('time_seconds', { ascending: true });
-      allComments = data || [];
+      const [
+        { data: commentsData },
+        { data: approvalsData },
+        { data: deliveriesData },
+        { data: cueSheetProjectsData },
+        { data: cueSheetEntriesData }
+      ] = await Promise.all([
+        supabaseAdmin
+          .from('comments')
+          .select('*')
+          .in('version_id', versionIds)
+          .order('time_seconds', { ascending: true }),
+        approvalsPromise,
+        deliveriesPromise,
+        cueSheetProjectsPromise,
+        cueSheetEntriesPromise
+      ]);
+
+      allComments = commentsData || [];
+      approvals = approvalsData || [];
+      deliveries = deliveriesData || [];
+      cueSheetProjects = cueSheetProjectsData || [];
+      cueSheetEntries = cueSheetEntriesData || [];
+    } else {
+      const [{ data: cueSheetProjectsData }, { data: cueSheetEntriesData }] = await Promise.all([
+        cueSheetProjectsPromise,
+        cueSheetEntriesPromise
+      ]);
+      cueSheetProjects = cueSheetProjectsData || [];
+      cueSheetEntries = cueSheetEntriesData || [];
     }
 
     // Process references
@@ -324,10 +389,31 @@ export async function GET(req: NextRequest) {
         author: c.author || 'Client',
         actorId: c.actor_id,
         text: c.text || '',
+        audio_url: c.audio_url || null,
         created_at: c.created_at
       });
       return acc;
     }, {} as Record<string, any[]>);
+
+    const approvalsByVersion = (approvals || []).reduce((acc, row) => {
+      if (row.version_id) acc[row.version_id] = row;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const deliveriesByVersion = (deliveries || []).reduce((acc, row) => {
+      if (row.version_id) acc[row.version_id] = row;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const cueSheetByCue = (cueSheetEntries || []).reduce((acc, row) => {
+      if (row.cue_id) acc[row.cue_id] = row;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const cueSheetProjectByProject = (cueSheetProjects || []).reduce((acc, row) => {
+      if (row.project_id) acc[row.project_id] = row;
+      return acc;
+    }, {} as Record<string, any>);
 
     // Group versions by cue
     const versionsByCue = allVersions.reduce((acc, v) => {
@@ -351,6 +437,16 @@ export async function GET(req: NextRequest) {
           waveformImageUrl: v.media_waveform_image_url || null,
           waveformImageSaved: !!v.media_waveform_image_url
         } : null,
+        referenceVideo: (v.reference_video_storage_path || v.reference_video_url) ? {
+          storagePath: v.reference_video_storage_path || null,
+          url: v.reference_video_url || null,
+          displayName: v.reference_video_display_name || null,
+          offsetMs: v.reference_video_offset_ms || 0,
+          startTimecode: v.reference_video_start_tc || null,
+          duration: v.reference_video_duration || null
+        } : null,
+        approval: approvalsByVersion[v.id] || null,
+        delivery: deliveriesByVersion[v.id] || null,
         comments: commentsByVersion[v.id] || [],
         deliverables: versionFilesByVersion[v.id] || []
       });
@@ -369,6 +465,7 @@ export async function GET(req: NextRequest) {
         maxRevisions: typeof c.max_revisions === "number" ? c.max_revisions : null,
         status: c.status || 'in_review',
         versions: versionsByCue[c.id] || [],
+        cueSheet: cueSheetByCue[c.id] || null,
         isOpen: true
       });
       return acc;
@@ -398,6 +495,49 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {} as Record<string, Record<string, any[]>>);
 
+    // Compute roles for current user or share link
+    const roleByProject = new Map<string, string>();
+    const teamRoleByTeam = new Map<string, string>();
+    if (userId && isUuid(userId)) {
+      const { data: membershipRows } = await supabaseAdmin
+        .from('project_members')
+        .select('project_id, role')
+        .eq('member_id', userId)
+        .in('project_id', projectIds);
+      (membershipRows || []).forEach((row: any) => {
+        if (row?.project_id) roleByProject.set(row.project_id, row.role || '');
+      });
+
+      const teamIds = Array.from(new Set(baseProjects.map(p => p.team_id).filter(Boolean))) as string[];
+      if (teamIds.length > 0) {
+        const { data: teamRows } = await supabaseAdmin
+          .from('team_members')
+          .select('team_id, role')
+          .eq('user_id', userId)
+          .in('team_id', teamIds);
+        (teamRows || []).forEach((row: any) => {
+          if (row?.team_id) teamRoleByTeam.set(row.team_id, row.role || '');
+        });
+      }
+    }
+
+    if (shareContext && shareContext.projectId && !roleByProject.get(shareContext.projectId)) {
+      roleByProject.set(shareContext.projectId, shareContext.role);
+    }
+
+    const normalizeRole = (role: string | null | undefined) => {
+      if (!role) return null;
+      const lower = String(role).toLowerCase();
+      if (lower === 'owner') return 'owner';
+      if (lower === 'editor') return 'editor';
+      if (lower === 'commenter') return 'commenter';
+      if (lower === 'viewer') return 'viewer';
+      if (lower === 'view') return 'viewer';
+      if (lower === 'manage') return 'editor';
+      if (lower === 'contribute') return 'commenter';
+      return null;
+    };
+
     // Assemble final projects structure
     const enrichedProjects = baseProjects.map(project => ({
       id: project.id,
@@ -410,7 +550,12 @@ export async function GET(req: NextRequest) {
       cues: cuesByProject[project.id] || [],
       references: referencesByProject[project.id] || [],
       notes: notesByProject[project.id] || [],
-      cueNotes: cueNotesByProject[project.id] || {}
+      cueNotes: cueNotesByProject[project.id] || {},
+      cueSheetProject: cueSheetProjectByProject[project.id] || null,
+      project_role: project.owner_id && userId && project.owner_id === userId
+        ? 'owner'
+        : normalizeRole(roleByProject.get(project.id) || '') ||
+          normalizeRole(teamRoleByTeam.get(project.team_id || '') || '')
     }));
 
     const elapsed = Date.now() - startTime;

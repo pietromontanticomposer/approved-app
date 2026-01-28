@@ -196,6 +196,28 @@ export default function SharePage() {
     }
   }, [email, router, sendMagicLink, supabase, token, user]);
 
+  const handleOpenWithoutAccount = useCallback(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tokenQuery = params.get('token') || '';
+      if (!share || !tokenQuery) {
+        setError('Link non valido');
+        return;
+      }
+      localStorage.setItem('approved_share_link', JSON.stringify({
+        share_id: share.share_id || token,
+        token: tokenQuery,
+        project_id: share.project_id,
+        role: share.role || 'viewer'
+      }));
+      localStorage.setItem('open_project', share.project_id);
+      router.push(`/?shared_project=${encodeURIComponent(share.project_id || '')}`);
+    } catch (e) {
+      console.warn('[Share] Unable to open without account', e);
+      setError('Impossibile aprire il progetto senza account.');
+    }
+  }, [router, share, token]);
+
   // Auto-redeem when user is already logged in and share details loaded
   useEffect(() => {
     if (user && !loading && share && !success) {
@@ -249,12 +271,15 @@ export default function SharePage() {
               placeholder="La tua email"
               style={{ padding: '8px 10px', fontSize: 16 }}
             />
-            <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => sendMagicLink(email)} disabled={sending || !email} style={{ padding: '10px 14px' }}>
                 {sending ? 'Invio…' : 'Ricevi link magico'}
               </button>
               <button onClick={() => { localStorage.setItem('pending_share', JSON.stringify({ share_id: token, token: (new URLSearchParams(window.location.search)).get('token') || '' })); router.push('/login'); }} style={{ padding: '10px 14px' }}>
                 Ho già un account (Accedi)
+              </button>
+              <button onClick={handleOpenWithoutAccount} style={{ padding: '10px 14px' }}>
+                Continua senza account
               </button>
             </div>
           </div>

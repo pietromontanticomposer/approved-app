@@ -9,12 +9,63 @@ const state = {
   playerMode: "review" // "review" | "refs"
 };
 
+const DELIVERY_TEMPLATES = {
+  adv: {
+    name: "ADV / Advertising",
+    checklist: [
+      "Full mix (print master)",
+      "Instrumental mix",
+      "Stems (drums, bass, music, vocals)",
+      "Alt 30s / 15s / 6s cutdowns",
+      "Loopable tail"
+    ],
+    naming: [
+      "<Project>_<Cue>_FullMix.wav",
+      "<Project>_<Cue>_Instrumental.wav",
+      "<Project>_<Cue>_Stems.zip",
+      "<Project>_<Cue>_30s.wav",
+      "<Project>_<Cue>_15s.wav"
+    ]
+  },
+  film_tv: {
+    name: "Film / TV",
+    checklist: [
+      "Full mix (print master)",
+      "Stems (DX/MX/FX or music stems)",
+      "Alt mixes (no drums, no lead)",
+      "Cutdowns (if required)",
+      "Track sheet / cue sheet"
+    ],
+    naming: [
+      "<Show>_<Episode>_<Cue>_FullMix.wav",
+      "<Show>_<Episode>_<Cue>_Stems.zip",
+      "<Show>_<Episode>_<Cue>_AltMix.wav"
+    ]
+  },
+  social: {
+    name: "Social / Short-form",
+    checklist: [
+      "Full mix (print master)",
+      "Short loop (5-10s)",
+      "Alt mix (no vocals)",
+      "Stems (if required)"
+    ],
+    naming: [
+      "<Brand>_<Cue>_FullMix.wav",
+      "<Brand>_<Cue>_Loop10s.wav",
+      "<Brand>_<Cue>_AltMix.wav"
+    ]
+  }
+};
+
 let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
 let draggedCueId = null;
 let mainWaveLayer = null;
 let playerWaveLoadToken = 0;
+let pendingApprovalContext = null;
+let deliverySaveTimer = null;
 const PLAYER_WAVE_FADE_MS = 140;
 const miniWaves = {};
 const MAX_CACHE_SIZE = 500; // Limit cache size to prevent memory growth
@@ -513,6 +564,65 @@ const commentsSummaryEl = document.getElementById("commentsSummary");
 if (!commentsSummaryEl) console.error('[FlowPreview] commentsSummaryEl not found in DOM');
 const commentInputEl = document.getElementById("commentInput");
 if (!commentInputEl) console.error('[FlowPreview] commentInputEl not found in DOM');
+const exportMarkersBtn = document.getElementById("exportMarkersBtn");
+const markersExportModal = document.getElementById("markersExportModal");
+const closeMarkersExportModalBtn = document.getElementById("closeMarkersExportModal");
+const markersFormatSelect = document.getElementById("markersFormatSelect");
+const markersFpsSelect = document.getElementById("markersFpsSelect");
+const markersStartTcInput = document.getElementById("markersStartTcInput");
+const markersIncludeVoice = document.getElementById("markersIncludeVoice");
+const exportMarkersConfirmBtn = document.getElementById("exportMarkersConfirmBtn");
+const approvalModal = document.getElementById("approvalModal");
+const closeApprovalModalBtn = document.getElementById("closeApprovalModal");
+const approvalNoteInput = document.getElementById("approvalNoteInput");
+const approvalChangelogInput = document.getElementById("approvalChangelogInput");
+const confirmApprovalBtn = document.getElementById("confirmApprovalBtn");
+const downloadApprovalPackBtn = document.getElementById("downloadApprovalPackBtn");
+const approvalPackModal = document.getElementById("approvalPackModal");
+const closeApprovalPackModalBtn = document.getElementById("closeApprovalPackModal");
+const approvalPackIncludeMedia = document.getElementById("approvalPackIncludeMedia");
+const approvalPackIncludeVoice = document.getElementById("approvalPackIncludeVoice");
+const approvalPackFpsSelect = document.getElementById("approvalPackFpsSelect");
+const approvalPackStartTcInput = document.getElementById("approvalPackStartTcInput");
+const downloadApprovalPackConfirmBtn = document.getElementById("downloadApprovalPackConfirmBtn");
+const cueSheetBtn = document.getElementById("cueSheetBtn");
+const cueSheetModal = document.getElementById("cueSheetModal");
+const closeCueSheetModalBtn = document.getElementById("closeCueSheetModal");
+const cueSheetCueSelect = document.getElementById("cueSheetCueSelect");
+const cueSheetProduction = document.getElementById("cueSheetProduction");
+const cueSheetClient = document.getElementById("cueSheetClient");
+const cueSheetEpisode = document.getElementById("cueSheetEpisode");
+const cueSheetWorkTitle = document.getElementById("cueSheetWorkTitle");
+const cueSheetComposers = document.getElementById("cueSheetComposers");
+const cueSheetPublishers = document.getElementById("cueSheetPublishers");
+const cueSheetPro = document.getElementById("cueSheetPro");
+const cueSheetUsage = document.getElementById("cueSheetUsage");
+const cueSheetStartTc = document.getElementById("cueSheetStartTc");
+const cueSheetDuration = document.getElementById("cueSheetDuration");
+const cueSheetNotes = document.getElementById("cueSheetNotes");
+const cueSheetSaveBtn = document.getElementById("cueSheetSaveBtn");
+const cueSheetExportCsvBtn = document.getElementById("cueSheetExportCsvBtn");
+const cueSheetExportPdfBtn = document.getElementById("cueSheetExportPdfBtn");
+const deliveryTemplateSelect = document.getElementById("deliveryTemplateSelect");
+const deliveryChecklistEl = document.getElementById("deliveryChecklist");
+const deliveryNamingListEl = document.getElementById("deliveryNamingList");
+const deliveryTemplateBadge = document.getElementById("deliveryTemplateBadge");
+const generateManifestBtn = document.getElementById("generateManifestBtn");
+const pictureReviewCard = document.getElementById("pictureReviewCard");
+const attachVideoBtn = document.getElementById("attachVideoBtn");
+const removeVideoBtn = document.getElementById("removeVideoBtn");
+const saveVideoSyncBtn = document.getElementById("saveVideoSyncBtn");
+const referenceVideoInput = document.getElementById("referenceVideoInput");
+const videoOffsetInput = document.getElementById("videoOffsetInput");
+const videoStartTcInput = document.getElementById("videoStartTcInput");
+const onboardingOverlay = document.getElementById("onboardingOverlay");
+const onboardingStepTitle = document.getElementById("onboardingStepTitle");
+const onboardingStepText = document.getElementById("onboardingStepText");
+const onboardingPrevBtn = document.getElementById("onboardingPrevBtn");
+const onboardingNextBtn = document.getElementById("onboardingNextBtn");
+const onboardingDismissBtn = document.getElementById("onboardingDismissBtn");
+const onboardingDontShow = document.getElementById("onboardingDontShow");
+const onboardingShowAgainBtn = document.getElementById("onboardingShowAgainBtn");
 const addCommentBtn = document.getElementById("addCommentBtn");
 if (!addCommentBtn) console.error('[FlowPreview] addCommentBtn not found in DOM');
 const voiceRecordBtn = document.getElementById("voiceRecordBtn");
@@ -1365,6 +1475,21 @@ function triggerDownload(url, filename) {
   a.remove();
 }
 
+function triggerBlobDownload(blob, filename) {
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  triggerDownload(url, filename);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function openModal(el) {
+  if (el) el.style.display = 'flex';
+}
+
+function closeModal(el) {
+  if (el) el.style.display = 'none';
+}
+
 function formatFileSize(bytes) {
   if (!bytes && bytes !== 0) return "";
   const kb = bytes / 1024;
@@ -1437,7 +1562,9 @@ function isOwnerOfProject(project) {
   const user = window.flowAuth && typeof window.flowAuth.getUser === "function"
     ? window.flowAuth.getUser()
     : null;
-  if (!user || !project || !project.owner_id) return false;
+  if (!project) return false;
+  if (project.project_role === 'owner') return true;
+  if (!user || !project.owner_id) return false;
   return user.id === project.owner_id;
 }
 
@@ -1447,6 +1574,22 @@ function isCollaboratorOfProject(project) {
   // If project has is_shared flag and user is logged in but not owner
   if (project.is_shared && !isOwnerOfProject(project)) return true;
   return false;
+}
+
+function getProjectRole(project) {
+  if (!project) return null;
+  if (project.project_role) return project.project_role;
+  if (isOwnerOfProject(project)) return 'owner';
+  if (project.is_shared) return 'viewer';
+  return null;
+}
+
+function roleCanModify(role) {
+  return role === 'owner' || role === 'editor';
+}
+
+function roleCanReview(role) {
+  return role === 'owner' || role === 'editor' || role === 'commenter';
 }
 
 function canAddCommentsForVersion(status) {
@@ -1461,45 +1604,43 @@ function toggleActionContainer(container, buttons) {
 
 function updateReviewUI(project, version) {
   const status = normalizeVersionStatus(version.status);
-  const isOwner = isOwnerOfProject(project);
-  const isCollaborator = isCollaboratorOfProject(project);
-  const canComment = canAddCommentsForVersion(status);
-
-  // Collaborators (clients) can mark review complete and approve
-  const canCollaboratorAct = isCollaborator && (status === "in_review" || status === "review_completed");
+  const role = getProjectRole(project);
+  const canModify = roleCanModify(role);
+  const canReview = roleCanReview(role);
+  const canComment = canAddCommentsForVersion(status) && canReview;
 
   if (reviewCompleteBtn) {
-    // Collaborators CAN mark review as complete when status is in_review
-    const showReviewComplete = isCollaborator && status === "in_review";
+    const showReviewComplete = canModify && status === "in_review";
     reviewCompleteBtn.style.display = showReviewComplete ? "inline-flex" : "none";
   }
 
-  // Hide Start revision button - no longer needed, owner just uploads new version
   if (startRevisionBtn) {
     startRevisionBtn.style.display = "none";
   }
 
   if (statusInReviewBtn) {
-    statusInReviewBtn.style.display = "none";
+    const showInReview = canModify && status !== "in_review";
+    statusInReviewBtn.style.display = showInReview ? "inline-flex" : "none";
   }
   if (statusApprovedBtn) {
-    statusApprovedBtn.style.display = "none";
+    const showApproved = canModify && status !== "approved";
+    statusApprovedBtn.style.display = showApproved ? "inline-flex" : "none";
   }
 
   if (approveVersionBtn) {
-    // Collaborators CAN approve when status is in_review or review_completed
-    const showApprove = isCollaborator && (status === "in_review" || status === "review_completed");
+    const showApprove = canModify && (status === "in_review" || status === "review_completed");
     approveVersionBtn.style.display = showApprove ? "inline-flex" : "none";
     approveVersionBtn.disabled = !showApprove;
   }
 
-  // Hide Request changes button - removed from flow
   if (requestChangesBtn) {
-    requestChangesBtn.style.display = "none";
+    const showRequest = canModify && (status === "in_review" || status === "review_completed");
+    requestChangesBtn.style.display = showRequest ? "inline-flex" : "none";
+    requestChangesBtn.disabled = !showRequest;
   }
 
   toggleActionContainer(reviewActionsEl, [reviewCompleteBtn]);
-  toggleActionContainer(decisionActionsEl, [approveVersionBtn]);
+  toggleActionContainer(decisionActionsEl, [approveVersionBtn, requestChangesBtn]);
 
   setCommentsEnabled(canComment);
   if (commentInputEl) {
@@ -1510,10 +1651,14 @@ function updateReviewUI(project, version) {
     }
   }
 
+  if (downloadApprovalPackBtn) {
+    downloadApprovalPackBtn.style.display = status === "approved" ? "inline-flex" : "none";
+  }
+
   if (reviewStatusMessageEl) {
     let message = "";
     if (status === "in_review") {
-      message = isOwner
+      message = canModify
         ? tr("review.messageInReviewOwner")
         : tr("review.messageInReviewClient");
     } else if (status === "review_completed") {
@@ -1556,8 +1701,57 @@ function computeCueStatus(cue) {
   return "in_review";
 }
 
+function openApprovalModalForContext(ctx) {
+  if (!approvalModal || !ctx) return;
+  pendingApprovalContext = ctx;
+  if (approvalNoteInput) approvalNoteInput.value = "";
+  if (approvalChangelogInput) {
+    const prev = ctx.cue?.versions?.[ctx.cue.versions.length - 2] || null;
+    approvalChangelogInput.value = prev ? "" : "Initial approval.";
+  }
+  openModal(approvalModal);
+}
+
+async function approveVersionWithRecord(ctx) {
+  if (!ctx) return;
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+    const res = await fetch('/api/versions/approve', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        versionId: ctx.version.id,
+        projectId: ctx.project.id,
+        approval_note: approvalNoteInput ? approvalNoteInput.value.trim() : '',
+        changelog: approvalChangelogInput ? approvalChangelogInput.value.trim() : ''
+      })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showAlert(payload?.error || 'Errore durante approvazione');
+      return;
+    }
+    ctx.version.status = payload?.version?.status || 'approved';
+    ctx.version.approval = payload?.approval || null;
+    ctx.cue.status = computeCueStatus(ctx.cue);
+    renderCueList();
+    renderVersionPreviews();
+    renderPlayer();
+    closeModal(approvalModal);
+    pendingApprovalContext = null;
+  } catch (err) {
+    console.error('[Approve] Error', err);
+    showAlert('Errore durante approvazione');
+  }
+}
+
 async function setVersionStatus(project, cue, version, status) {
   if (!STATUS_LABEL_KEYS[status]) return;
+  if (status === "approved") {
+    openApprovalModalForContext({ project, cue, version });
+    return;
+  }
 
   try {
     const headers = await getAuthHeaders();
@@ -2285,6 +2479,22 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
               markUploadJobComplete(jobId, tr("upload.completed"));
               renderVersionPreviews();
             }
+          } else if (options.uploadType === 'reference_video') {
+            version.referenceVideo = {
+              storagePath: storedPath,
+              url: getProxiedUrl(storedPath),
+              displayName: file.name,
+              offsetMs: 0,
+              startTimecode: null,
+              duration: null
+            };
+            const saved = await saveReferenceVideoToDatabase(project.id, version.id, storedPath, file.name);
+            if (saved) {
+              markUploadJobComplete(jobId, tr("upload.completed"));
+              renderPlayer();
+            } else {
+              markUploadJobError(jobId, tr("upload.error"));
+            }
           } else if (version.media) {
             version.media.url = getProxiedUrl(storedPath);
             version.media.storagePath = storedPath;
@@ -2399,6 +2609,34 @@ async function saveDeliverableToDatabase(projectId, versionId, deliverable, stor
   } catch (err) {
     console.error('[Deliverables] Exception saving file', err);
     throw err;
+  }
+}
+
+async function saveReferenceVideoToDatabase(projectId, versionId, storagePath, displayName) {
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+    const res = await fetch('/api/versions/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        versionId,
+        projectId,
+        updates: {
+          reference_video_storage_path: storagePath,
+          reference_video_url: null,
+          reference_video_display_name: displayName || null
+        }
+      })
+    });
+    if (!res.ok) {
+      console.error('[ReferenceVideo] Failed to save reference video', await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[ReferenceVideo] Error saving reference video', err);
+    return false;
   }
 }
 
@@ -3326,7 +3564,33 @@ function loadAudioPlayer(project, cue, version) {
   const mediaUrl = resolveVersionMediaUrl(version);
   if (!mediaUrl || !version || !version.media) return;
 
-  const waveformEl = ensurePlayerWaveShell();
+  let waveformEl = null;
+  const refVideo = version.referenceVideo && (version.referenceVideo.storagePath || version.referenceVideo.url)
+    ? version.referenceVideo
+    : null;
+
+  if (refVideo && playerMediaEl) {
+    playerMediaEl.innerHTML = "";
+    const wrapper = document.createElement("div");
+    wrapper.className = "audio-picture-shell";
+    const videoWrap = document.createElement("div");
+    videoWrap.className = "audio-picture-video";
+    const video = document.createElement("video");
+    video.src = getProxiedUrl(refVideo.storagePath || refVideo.url);
+    video.playsInline = true;
+    video.muted = true;
+    video.preload = "metadata";
+    videoWrap.appendChild(video);
+    wrapper.appendChild(videoWrap);
+    const waveShell = document.createElement("div");
+    waveShell.id = "waveform";
+    wrapper.appendChild(waveShell);
+    playerMediaEl.appendChild(wrapper);
+    activeVideoEl = video;
+    waveformEl = waveShell;
+  } else {
+    waveformEl = ensurePlayerWaveShell();
+  }
   if (!waveformEl) return;
 
   waveformEl.classList.add("is-loading");
@@ -3375,6 +3639,16 @@ function loadAudioPlayer(project, cue, version) {
   const syncPlayState = () => {
     if (!playPauseBtn || mainWave !== ws || playerWaveLoadToken !== loadToken) return;
     playPauseBtn.textContent = ws.isPlaying() ? "Pause" : "Play";
+  };
+
+  const syncVideo = (force = false) => {
+    if (!activeVideoEl || !version.referenceVideo) return;
+    const offsetMs = Number(version.referenceVideo.offsetMs || 0);
+    const offsetSeconds = offsetMs / 1000;
+    const targetTime = Math.max(0, ws.getCurrentTime() - offsetSeconds);
+    if (force || Math.abs(activeVideoEl.currentTime - targetTime) > 0.15) {
+      activeVideoEl.currentTime = targetTime;
+    }
   };
 
   const finalizeSwap = () => {
@@ -3426,6 +3700,7 @@ function loadAudioPlayer(project, cue, version) {
       volumeSlider.style.display = "block";
       volumeSlider.disabled = false;
     }
+    syncVideo(true);
     finalizeSwap();
     syncPlayState();
 
@@ -3462,6 +3737,7 @@ function loadAudioPlayer(project, cue, version) {
     const cur = ws.getCurrentTime();
     const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
+    syncVideo(false);
   });
 
   ws.on("seek", () => {
@@ -3469,11 +3745,24 @@ function loadAudioPlayer(project, cue, version) {
     const cur = ws.getCurrentTime();
     const tot = ws.getDuration();
     timeLabelEl.textContent = `${formatTime(cur)} / ${formatTime(tot)}`;
+    syncVideo(true);
   });
 
-  ws.on("play", syncPlayState);
-  ws.on("pause", syncPlayState);
-  ws.on("finish", syncPlayState);
+  ws.on("play", () => {
+    syncVideo(true);
+    if (activeVideoEl) {
+      activeVideoEl.play().catch(() => {});
+    }
+    syncPlayState();
+  });
+  ws.on("pause", () => {
+    if (activeVideoEl) activeVideoEl.pause();
+    syncPlayState();
+  });
+  ws.on("finish", () => {
+    if (activeVideoEl) activeVideoEl.pause();
+    syncPlayState();
+  });
 
   playPauseBtn.onclick = () => {
     if (mainWave !== ws) return;
@@ -4192,6 +4481,9 @@ async function loadProjectCues(projectId) {
     if (!projectData) throw new Error('Project missing in aggregated response');
 
     project.cues = projectData.cues || [];
+    if (projectData.project_role) {
+      project.project_role = projectData.project_role;
+    }
     project.cues.forEach(cue => {
       if (typeof cue.maxRevisions !== "number" || cue.maxRevisions <= 0) {
         const localMax = loadCueMaxRevisions(cue.id);
@@ -4224,6 +4516,7 @@ async function loadProjectCues(projectId) {
     project.references = sanitizeProjectReferences(projectData.references);
     project.cueNotes = projectData.cueNotes || {};
     project.notes = projectData.notes || [];
+    project.cueSheetProject = projectData.cueSheetProject || project.cueSheetProject || null;
     if (!project.activeReferenceId && project.references.length) {
       project.activeReferenceId = project.references[0].id;
     }
@@ -4271,11 +4564,11 @@ async function loadProjectCuesLegacy(projectId, headers) {
           versions.map(async (v) => {
             const mediaOriginalName = v.media_original_name || v.media_filename || "Media";
             const mediaDisplayName = v.media_display_name || mediaOriginalName;
-            const ver = {
-              id: v.id,
-              index: v.index_in_cue || 0,
-              media: v.media_type
-                ? {
+              const ver = {
+                id: v.id,
+                index: v.index_in_cue || 0,
+                media: v.media_type
+                  ? {
                     type: v.media_type,
                     url: v.media_url,
                     originalName: mediaOriginalName,
@@ -4287,10 +4580,20 @@ async function loadProjectCuesLegacy(projectId, headers) {
                     waveformSaved: !!(v.waveform || v.media_waveform_data)
                   }
                 : null,
-              comments: [],
-              deliverables: [],
-              status: v.status || "in_review"
-            };
+              referenceVideo: (v.reference_video_storage_path || v.reference_video_url) ? {
+                storagePath: v.reference_video_storage_path || null,
+                url: v.reference_video_url || null,
+                displayName: v.reference_video_display_name || null,
+                offsetMs: v.reference_video_offset_ms || 0,
+                startTimecode: v.reference_video_start_tc || null,
+                duration: v.reference_video_duration || null
+              } : null,
+              approval: v.approval || null,
+              delivery: v.delivery || null,
+                comments: [],
+                deliverables: [],
+                status: v.status || "in_review"
+              };
             try {
               const commentResp = await fetch(
                 `/api/comments?versionId=${encodeURIComponent(v.id)}&projectId=${encodeURIComponent(projectId)}`,
@@ -4782,7 +5085,7 @@ function cleanupMiniWaves() {
 }
 
 async function persistCueOrder(project) {
-  if (!project || !isOwnerOfProject(project)) return;
+  if (!project || !roleCanModify(getProjectRole(project))) return;
   const headers =
     (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
       ? window.flowAuth.getAuthHeaders()
@@ -4906,8 +5209,8 @@ function renderCueList(options = {}) {
 
     const menu = document.createElement("div");
     menu.className = "download-menu";
-    const canOwnerActions = isOwnerOfProject(project);
-    const canClientApprove = !canOwnerActions;
+    const canOwnerActions = roleCanModify(getProjectRole(project));
+    const canClientApprove = false;
     menu.innerHTML = `
       <button data-action="rename">${tr("action.rename")}</button>
       <button data-action="delete">${tr("action.delete")}</button>
@@ -5052,8 +5355,8 @@ function renderCueList(options = {}) {
             return;
           }
           const nextStatus = action === "set-approved" ? "approved" : "in_review";
-          if (action === "set-in-review" && !isOwnerOfProject(project)) return;
-          if (action === "set-approved" && isOwnerOfProject(project)) return;
+          if (action === "set-in-review" && !roleCanModify(getProjectRole(project))) return;
+          if (action === "set-approved" && !roleCanModify(getProjectRole(project))) return;
           if (nextStatus === "approved") {
             const confirmed = await showConfirmDialog({
               title: tr("cues.approveConfirmTitle"),
@@ -5094,7 +5397,7 @@ function renderCueList(options = {}) {
       }, 0);
     });
 
-    const canReorder = isOwnerOfProject(project);
+    const canReorder = roleCanModify(getProjectRole(project));
     if (canReorder) {
       summary.draggable = true;
       summary.classList.add("cue-draggable");
@@ -5519,7 +5822,7 @@ function renderCueList(options = {}) {
       row.addEventListener("dragover", e => {
         if (!isFileDragEvent(e)) return;
         const projectNow = getActiveProject();
-        if (!projectNow || !isOwnerOfProject(projectNow)) return;
+        if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
         e.preventDefault();
         row.classList.add("drag-over");
       });
@@ -5537,7 +5840,7 @@ function renderCueList(options = {}) {
         row.classList.remove("drag-over");
 
         const projectNow = getActiveProject();
-        if (!projectNow || !isOwnerOfProject(projectNow)) return;
+        if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
 
       const files = e.dataTransfer.files;
       if (!files || !files.length) return;
@@ -5554,7 +5857,7 @@ function renderCueList(options = {}) {
     // Add cue notes section
     const cueNotesSection = document.createElement('div');
     cueNotesSection.className = 'cue-notes-section';
-    const canEditCueNotes = isOwnerOfProject(project);
+    const canEditCueNotes = roleCanModify(getProjectRole(project));
     cueNotesSection.innerHTML = `
       <div class="cue-notes-header">
         <span class="cue-notes-title">NOTE GENERALI</span>
@@ -5625,7 +5928,7 @@ function renderCueList(options = {}) {
 
     details.addEventListener("dragover", e => {
       const projectNow = getActiveProject();
-      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
       if (isFileDragEvent(e)) {
         e.preventDefault();
         details.classList.add("drag-over");
@@ -5644,7 +5947,7 @@ function renderCueList(options = {}) {
 
     details.addEventListener("drop", e => {
       const projectNow = getActiveProject();
-      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
       if (isFileDragEvent(e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -6471,7 +6774,7 @@ function renderReferences() {
     details.addEventListener("dragover", e => {
       if (!isFileDragEvent(e)) return;
       const projectNow = getActiveProject();
-      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
       e.preventDefault();
       details.classList.add("drag-over");
     });
@@ -6489,7 +6792,7 @@ function renderReferences() {
       details.classList.remove("drag-over");
 
       const projectNow = getActiveProject();
-      if (!projectNow || !isOwnerOfProject(projectNow)) return;
+      if (!projectNow || !roleCanModify(getProjectRole(projectNow))) return;
 
       const files = e.dataTransfer.files;
       if (!files || !files.length) return;
@@ -6722,6 +7025,8 @@ function renderPlayer() {
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
+    if (exportMarkersBtn) exportMarkersBtn.disabled = true;
+    if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
     return;
   }
 
@@ -6751,6 +7056,8 @@ function renderPlayer() {
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
+    if (exportMarkersBtn) exportMarkersBtn.disabled = true;
+    if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
     return;
   }
 
@@ -6793,6 +7100,8 @@ function renderPlayer() {
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
+    if (exportMarkersBtn) exportMarkersBtn.disabled = true;
+    if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
     return;
   }
 
@@ -6821,6 +7130,8 @@ function renderPlayer() {
     if (volumeSlider) {
       volumeSlider.style.display = "none";
     }
+    if (exportMarkersBtn) exportMarkersBtn.disabled = true;
+    if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
     return;
   }
 
@@ -6852,7 +7163,10 @@ function renderPlayer() {
 
   renderComments();
   updateReviewUI(project, version);
+  renderDeliverySection({ project, cue, version });
+  renderPictureReview({ project, cue, version });
   updateActiveVersionRowStyles();
+  if (exportMarkersBtn) exportMarkersBtn.disabled = false;
 }
 
 // =======================
@@ -7490,15 +7804,15 @@ function refreshTranslationsOnly() {
 
 function updateVisibility() {
   const project = getActiveProject();
-  const isOwner = project ? isOwnerOfProject(project) : false;
+  const canModify = project ? roleCanModify(getProjectRole(project)) : false;
   if (contentEl) contentEl.style.display = project ? "grid" : "none";
   if (shareBtn) shareBtn.disabled = !project;
   if (deliverBtn) deliverBtn.disabled = !project;
   if (copyLinkBtn) copyLinkBtn.disabled = !project;
-  if (addCueBtn) addCueBtn.disabled = !project || !isOwner;
-  if (addReferenceBtn) addReferenceBtn.disabled = !project;
-  setDropzoneEnabled(cuesDropzoneEl, !!project && isOwner);
-  setDropzoneEnabled(refsDropzoneEl, !!project);
+  if (addCueBtn) addCueBtn.disabled = !project || !canModify;
+  if (addReferenceBtn) addReferenceBtn.disabled = !project || !canModify;
+  setDropzoneEnabled(cuesDropzoneEl, !!project && canModify);
+  setDropzoneEnabled(refsDropzoneEl, !!project && canModify);
 }
 
 function setSectionSubtitle(el, key, fallback) {
@@ -7839,14 +8153,7 @@ if (approveVersionBtn) {
   approveVersionBtn.addEventListener("click", async () => {
     const ctx = getActiveContext();
     if (!ctx) return;
-    const confirmed = await showConfirmDialog({
-      title: tr('review.confirmApproveTitle') || 'Conferma approvazione',
-      message: tr('review.confirmApproveMessage') || 'Sei sicuro di voler approvare questa versione?',
-      confirmText: tr('review.confirmApproveBtn') || 'Sì, approva',
-      cancelText: tr('common.cancel') || 'Annulla'
-    });
-    if (!confirmed) return;
-    setVersionStatus(ctx.project, ctx.cue, ctx.version, "approved");
+    openApprovalModalForContext(ctx);
   });
 }
 
@@ -7872,7 +8179,7 @@ if (statusApprovedBtn) {
   statusApprovedBtn.addEventListener("click", () => {
     const ctx = getActiveContext();
     if (!ctx) return;
-    setVersionStatus(ctx.project, ctx.cue, ctx.version, "approved");
+    openApprovalModalForContext(ctx);
   });
 }
 
@@ -8200,6 +8507,7 @@ async function initializeFromSupabase() {
       owner_id: p.owner_id || null,
       team_members: p.team_members || [],
       is_shared: sharedIds.has(p.id),
+      project_role: p.project_role || p.share_role || null,
       cues: [],
       activeCueId: null,
       activeVersionId: null,
@@ -8263,6 +8571,23 @@ function renderAll() {
   renderNotesPanel();
   refreshSharedWithPanel(false);
   updateProjectNotesButton();
+  maybeShowOnboarding();
+}
+
+function maybeShowOnboarding() {
+  const project = getActiveProject();
+  if (!project || !onboardingOverlay) return;
+  const role = getProjectRole(project);
+  if (roleCanModify(role)) return;
+  try {
+    const shareRaw = localStorage.getItem('approved_share_link');
+    const share = shareRaw ? JSON.parse(shareRaw) : null;
+    const key = `onboarding_done:${share?.share_id || project.id}`;
+    if (localStorage.getItem(key)) return;
+  } catch (e) {}
+  if (typeof window.showOnboardingOverlay === 'function') {
+    window.showOnboardingOverlay();
+  }
 }
 
 // Export for page.tsx to call after auth
@@ -8339,6 +8664,614 @@ function initNotesUI() {
       loadAndRenderProjectNotes();
     });
   }
+}
+
+function initMarkersExportUI() {
+  if (!exportMarkersBtn || !markersExportModal) return;
+
+  exportMarkersBtn.addEventListener('click', () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+    if (markersStartTcInput) {
+      const startTc = ctx.version?.referenceVideo?.startTimecode || '00:00:00.000';
+      markersStartTcInput.value = startTc;
+    }
+    openModal(markersExportModal);
+  });
+
+  if (closeMarkersExportModalBtn) {
+    closeMarkersExportModalBtn.addEventListener('click', () => closeModal(markersExportModal));
+  }
+
+  if (markersExportModal) {
+    markersExportModal.addEventListener('click', (e) => {
+      if (e.target === markersExportModal) closeModal(markersExportModal);
+    });
+  }
+
+  if (exportMarkersConfirmBtn) {
+    exportMarkersConfirmBtn.addEventListener('click', async () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const payload = {
+        versionId: ctx.version.id,
+        projectId: ctx.project.id,
+        format: markersFormatSelect ? markersFormatSelect.value : 'universal_csv',
+        fps: markersFpsSelect ? markersFpsSelect.value : 25,
+        start_timecode: markersStartTcInput ? markersStartTcInput.value : '00:00:00.000',
+        include_voice: markersIncludeVoice ? !!markersIncludeVoice.checked : false
+      };
+      try {
+        exportMarkersConfirmBtn.disabled = true;
+        const res = await fetch('/api/markers/export', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showAlert(err?.error || 'Errore export markers');
+          return;
+        }
+        const blob = await res.blob();
+        const dispo = res.headers.get('Content-Disposition') || '';
+        const match = dispo.match(/filename=\"?([^\";]+)\"?/i);
+        const filename = match ? match[1] : 'markers.csv';
+        triggerBlobDownload(blob, filename);
+        closeModal(markersExportModal);
+      } finally {
+        exportMarkersConfirmBtn.disabled = false;
+      }
+    });
+  }
+}
+
+function initApprovalUI() {
+  if (closeApprovalModalBtn) {
+    closeApprovalModalBtn.addEventListener('click', () => {
+      closeModal(approvalModal);
+      pendingApprovalContext = null;
+    });
+  }
+  if (approvalModal) {
+    approvalModal.addEventListener('click', (e) => {
+      if (e.target === approvalModal) {
+        closeModal(approvalModal);
+        pendingApprovalContext = null;
+      }
+    });
+  }
+  if (confirmApprovalBtn) {
+    confirmApprovalBtn.addEventListener('click', async () => {
+      const ctx = pendingApprovalContext || getActiveContext();
+      await approveVersionWithRecord(ctx);
+    });
+  }
+}
+
+function initApprovalPackUI() {
+  if (!downloadApprovalPackBtn || !approvalPackModal) return;
+
+  downloadApprovalPackBtn.addEventListener('click', () => {
+    const ctx = getActiveContext();
+    if (!ctx) return;
+    if (approvalPackStartTcInput) {
+      approvalPackStartTcInput.value = ctx.version?.referenceVideo?.startTimecode || '00:00:00.000';
+    }
+    openModal(approvalPackModal);
+  });
+
+  if (closeApprovalPackModalBtn) {
+    closeApprovalPackModalBtn.addEventListener('click', () => closeModal(approvalPackModal));
+  }
+
+  if (approvalPackModal) {
+    approvalPackModal.addEventListener('click', (e) => {
+      if (e.target === approvalPackModal) closeModal(approvalPackModal);
+    });
+  }
+
+  if (downloadApprovalPackConfirmBtn) {
+    downloadApprovalPackConfirmBtn.addEventListener('click', async () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const payload = {
+        versionId: ctx.version.id,
+        projectId: ctx.project.id,
+        include_media: approvalPackIncludeMedia ? !!approvalPackIncludeMedia.checked : false,
+        include_voice: approvalPackIncludeVoice ? !!approvalPackIncludeVoice.checked : false,
+        fps: approvalPackFpsSelect ? approvalPackFpsSelect.value : 25,
+        start_timecode: approvalPackStartTcInput ? approvalPackStartTcInput.value : '00:00:00.000'
+      };
+      try {
+        downloadApprovalPackConfirmBtn.disabled = true;
+        const res = await fetch('/api/approval-pack', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showAlert(err?.error || 'Errore download approval pack');
+          return;
+        }
+        const blob = await res.blob();
+        const dispo = res.headers.get('Content-Disposition') || '';
+        const match = dispo.match(/filename=\"?([^\";]+)\"?/i);
+        const filename = match ? match[1] : 'approval_pack.zip';
+        triggerBlobDownload(blob, filename);
+        closeModal(approvalPackModal);
+      } finally {
+        downloadApprovalPackConfirmBtn.disabled = false;
+      }
+    });
+  }
+}
+
+function populateCueSheetCueOptions(project) {
+  if (!cueSheetCueSelect || !project) return;
+  cueSheetCueSelect.innerHTML = '';
+  project.cues.forEach((cue) => {
+    const opt = document.createElement('option');
+    opt.value = cue.id;
+    opt.textContent = cue.displayName || cue.name || 'Cue';
+    cueSheetCueSelect.appendChild(opt);
+  });
+}
+
+function loadCueSheetFields(project, cueId) {
+  if (!project) return;
+  const cue = project.cues.find(c => c.id === cueId) || project.cues[0];
+  if (!cue) return;
+
+  const sheet = cue.cueSheet || {};
+  if (cueSheetWorkTitle) cueSheetWorkTitle.value = sheet.work_title || cue.displayName || cue.name || '';
+  if (cueSheetComposers) cueSheetComposers.value = sheet.composers || '';
+  if (cueSheetPublishers) cueSheetPublishers.value = sheet.publishers || '';
+  if (cueSheetPro) cueSheetPro.value = sheet.pro || '';
+  if (cueSheetUsage) cueSheetUsage.value = sheet.usage_type || '';
+  if (cueSheetStartTc) cueSheetStartTc.value = sheet.start_timecode || '';
+  if (cueSheetDuration) {
+    const fallbackDuration = cue.versions?.length ? formatTime(cue.versions[cue.versions.length - 1]?.media?.duration || 0) : '';
+    cueSheetDuration.value = sheet.duration || fallbackDuration;
+  }
+  if (cueSheetNotes) cueSheetNotes.value = sheet.notes || '';
+}
+
+function initCueSheetUI() {
+  if (!cueSheetBtn || !cueSheetModal) return;
+
+  cueSheetBtn.addEventListener('click', () => {
+    const project = getActiveProject();
+    if (!project) return;
+    const role = getProjectRole(project);
+    const canModify = roleCanModify(role);
+
+    if (cueSheetProduction) cueSheetProduction.value = project.cueSheetProject?.production || '';
+    if (cueSheetClient) cueSheetClient.value = project.cueSheetProject?.client || '';
+    if (cueSheetEpisode) cueSheetEpisode.value = project.cueSheetProject?.episode || '';
+
+    populateCueSheetCueOptions(project);
+    if (cueSheetCueSelect) {
+      const activeCueId = project.activeCueId || (project.cues[0] && project.cues[0].id);
+      cueSheetCueSelect.value = activeCueId || '';
+      loadCueSheetFields(project, cueSheetCueSelect.value);
+      cueSheetCueSelect.disabled = !canModify;
+    }
+
+    [
+      cueSheetProduction, cueSheetClient, cueSheetEpisode,
+      cueSheetWorkTitle, cueSheetComposers, cueSheetPublishers,
+      cueSheetPro, cueSheetUsage, cueSheetStartTc, cueSheetDuration, cueSheetNotes
+    ].forEach((el) => {
+      if (el) el.disabled = !canModify;
+    });
+
+    if (cueSheetSaveBtn) cueSheetSaveBtn.style.display = canModify ? 'inline-flex' : 'none';
+    openModal(cueSheetModal);
+  });
+
+  if (closeCueSheetModalBtn) {
+    closeCueSheetModalBtn.addEventListener('click', () => closeModal(cueSheetModal));
+  }
+  if (cueSheetModal) {
+    cueSheetModal.addEventListener('click', (e) => {
+      if (e.target === cueSheetModal) closeModal(cueSheetModal);
+    });
+  }
+
+  if (cueSheetCueSelect) {
+    cueSheetCueSelect.addEventListener('change', () => {
+      const project = getActiveProject();
+      if (!project) return;
+      loadCueSheetFields(project, cueSheetCueSelect.value);
+    });
+  }
+
+  if (cueSheetSaveBtn) {
+    cueSheetSaveBtn.addEventListener('click', async () => {
+      const project = getActiveProject();
+      if (!project) return;
+      const cueId = cueSheetCueSelect ? cueSheetCueSelect.value : null;
+      if (!cueId) return;
+
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const payload = {
+        projectId: project.id,
+        cueId,
+        projectMeta: {
+          production: cueSheetProduction ? cueSheetProduction.value : '',
+          client: cueSheetClient ? cueSheetClient.value : '',
+          episode: cueSheetEpisode ? cueSheetEpisode.value : ''
+        },
+        entry: {
+          work_title: cueSheetWorkTitle ? cueSheetWorkTitle.value : '',
+          composers: cueSheetComposers ? cueSheetComposers.value : '',
+          publishers: cueSheetPublishers ? cueSheetPublishers.value : '',
+          pro: cueSheetPro ? cueSheetPro.value : '',
+          usage_type: cueSheetUsage ? cueSheetUsage.value : '',
+          start_timecode: cueSheetStartTc ? cueSheetStartTc.value : '',
+          duration: cueSheetDuration ? cueSheetDuration.value : '',
+          notes: cueSheetNotes ? cueSheetNotes.value : ''
+        }
+      };
+
+      const res = await fetch('/api/cue-sheet', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showAlert(err?.error || 'Errore salvataggio cue sheet');
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      project.cueSheetProject = data.project || project.cueSheetProject;
+      const cue = project.cues.find(c => c.id === cueId);
+      if (cue) cue.cueSheet = data.entry || cue.cueSheet;
+      showAlert('Cue sheet salvata');
+    });
+  }
+
+  if (cueSheetExportCsvBtn) {
+    cueSheetExportCsvBtn.addEventListener('click', async () => {
+      const project = getActiveProject();
+      if (!project) return;
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/cue-sheet/export?projectId=${project.id}&format=csv`, { headers });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      triggerBlobDownload(blob, `cue_sheet_${project.name || 'project'}.csv`);
+    });
+  }
+
+  if (cueSheetExportPdfBtn) {
+    cueSheetExportPdfBtn.addEventListener('click', async () => {
+      const project = getActiveProject();
+      if (!project) return;
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/cue-sheet/export?projectId=${project.id}&format=pdf`, { headers });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      triggerBlobDownload(blob, `cue_sheet_${project.name || 'project'}.pdf`);
+    });
+  }
+}
+
+function normalizeDeliveryConfig(version) {
+  const delivery = version.delivery || null;
+  const templateKey = delivery?.template_key || '';
+  const template = DELIVERY_TEMPLATES[templateKey] || null;
+  const checklistRaw = Array.isArray(delivery?.checklist) ? delivery.checklist : (template ? template.checklist : []);
+  const checklist = checklistRaw.map((item) => {
+    if (typeof item === 'string') return { label: item, done: false };
+    return { label: item.label || '', done: !!item.done };
+  });
+  const naming = Array.isArray(delivery?.naming) ? delivery.naming : (template ? template.naming : []);
+  return { templateKey, template, checklist, naming };
+}
+
+async function saveDeliveryConfig(ctx, config) {
+  if (!ctx) return;
+  if (deliverySaveTimer) clearTimeout(deliverySaveTimer);
+  deliverySaveTimer = setTimeout(async () => {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+    const res = await fetch('/api/delivery', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        projectId: ctx.project.id,
+        cueId: ctx.cue.id,
+        versionId: ctx.version.id,
+        template_key: config.templateKey,
+        checklist: config.checklist,
+        naming: config.naming
+      })
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      ctx.version.delivery = data.delivery || ctx.version.delivery;
+    }
+  }, 300);
+}
+
+function renderDeliverySection(ctx) {
+  if (!deliveryTemplateSelect || !deliveryChecklistEl || !deliveryNamingListEl || !deliveryTemplateBadge) return;
+  if (!ctx) {
+    deliveryTemplateSelect.value = '';
+    deliveryChecklistEl.innerHTML = '';
+    deliveryNamingListEl.innerHTML = '';
+    deliveryTemplateBadge.textContent = tr('delivery.noTemplate');
+    return;
+  }
+
+  const role = getProjectRole(ctx.project);
+  const canModify = roleCanModify(role);
+  const config = normalizeDeliveryConfig(ctx.version);
+  const templateKey = config.templateKey || '';
+  const templateName = config.template ? config.template.name : 'Delivery';
+  deliveryTemplateBadge.textContent = templateKey ? templateName : tr('delivery.noTemplate');
+  deliveryTemplateSelect.value = templateKey;
+  deliveryTemplateSelect.disabled = !canModify;
+
+  deliveryChecklistEl.innerHTML = '';
+  config.checklist.forEach((item, idx) => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!item.done;
+    input.disabled = !canModify;
+    input.addEventListener('change', () => {
+      config.checklist[idx].done = input.checked;
+      ctx.version.delivery = ctx.version.delivery || {};
+      ctx.version.delivery.checklist = config.checklist;
+      saveDeliveryConfig(ctx, { ...config, templateKey: templateKey || 'adv' });
+    });
+    const span = document.createElement('span');
+    span.textContent = item.label;
+    label.appendChild(input);
+    label.appendChild(span);
+    deliveryChecklistEl.appendChild(label);
+  });
+
+  deliveryNamingListEl.innerHTML = '';
+  config.naming.forEach((name, idx) => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = String(name);
+    input.disabled = !canModify;
+    input.addEventListener('change', () => {
+      config.naming[idx] = input.value;
+      ctx.version.delivery = ctx.version.delivery || {};
+      ctx.version.delivery.naming = config.naming;
+      saveDeliveryConfig(ctx, { ...config, templateKey: templateKey || 'adv' });
+    });
+    deliveryNamingListEl.appendChild(input);
+  });
+}
+
+function initDeliveryUI() {
+  if (deliveryTemplateSelect) {
+    deliveryTemplateSelect.addEventListener('change', () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      const templateKey = deliveryTemplateSelect.value;
+      if (!templateKey || !DELIVERY_TEMPLATES[templateKey]) return;
+      const template = DELIVERY_TEMPLATES[templateKey];
+      ctx.version.delivery = ctx.version.delivery || {};
+      ctx.version.delivery.template_key = templateKey;
+      ctx.version.delivery.checklist = template.checklist.map(label => ({ label, done: false }));
+      ctx.version.delivery.naming = [...template.naming];
+      renderDeliverySection(ctx);
+      saveDeliveryConfig(ctx, normalizeDeliveryConfig(ctx.version));
+    });
+  }
+
+  if (generateManifestBtn) {
+    generateManifestBtn.addEventListener('click', async () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const res = await fetch('/api/delivery/manifest', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ projectId: ctx.project.id, versionId: ctx.version.id })
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      triggerBlobDownload(blob, 'delivery_manifest.pdf');
+    });
+  }
+}
+
+function renderPictureReview(ctx) {
+  if (!pictureReviewCard) return;
+  if (!ctx || !ctx.version || ctx.version.media?.type !== 'audio') {
+    pictureReviewCard.style.display = 'none';
+    return;
+  }
+  pictureReviewCard.style.display = 'flex';
+  const role = getProjectRole(ctx.project);
+  const canModify = roleCanModify(role);
+  const ref = ctx.version.referenceVideo || null;
+  if (videoOffsetInput) videoOffsetInput.value = ref?.offsetMs || 0;
+  if (videoStartTcInput) videoStartTcInput.value = ref?.startTimecode || '';
+  if (attachVideoBtn) attachVideoBtn.disabled = !canModify;
+  if (removeVideoBtn) removeVideoBtn.disabled = !canModify;
+  if (saveVideoSyncBtn) saveVideoSyncBtn.disabled = !canModify;
+  if (videoOffsetInput) videoOffsetInput.disabled = !canModify;
+  if (videoStartTcInput) videoStartTcInput.disabled = !canModify;
+}
+
+function initPictureReviewUI() {
+  if (attachVideoBtn && referenceVideoInput) {
+    attachVideoBtn.addEventListener('click', () => referenceVideoInput.click());
+  }
+
+  if (referenceVideoInput) {
+    referenceVideoInput.addEventListener('change', () => {
+      const file = referenceVideoInput.files && referenceVideoInput.files[0];
+      if (!file) return;
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      uploadFileToSupabase(file, ctx.project.id, ctx.cue.id, ctx.version.id, { uploadType: 'reference_video', jobId: `ref-${ctx.version.id}` });
+      referenceVideoInput.value = '';
+    });
+  }
+
+  if (removeVideoBtn) {
+    removeVideoBtn.addEventListener('click', async () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      ctx.version.referenceVideo = null;
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      await fetch('/api/versions/update', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          versionId: ctx.version.id,
+          projectId: ctx.project.id,
+          updates: {
+            reference_video_storage_path: null,
+            reference_video_url: null,
+            reference_video_display_name: null,
+            reference_video_offset_ms: 0,
+            reference_video_start_tc: null,
+            reference_video_duration: null
+          }
+        })
+      });
+      renderPlayer();
+    });
+  }
+
+  if (saveVideoSyncBtn) {
+    saveVideoSyncBtn.addEventListener('click', async () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      const offsetMs = videoOffsetInput ? parseInt(videoOffsetInput.value || '0', 10) : 0;
+      const startTc = videoStartTcInput ? videoStartTcInput.value : '';
+      ctx.version.referenceVideo = ctx.version.referenceVideo || {};
+      ctx.version.referenceVideo.offsetMs = offsetMs;
+      ctx.version.referenceVideo.startTimecode = startTc;
+
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      await fetch('/api/versions/update', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          versionId: ctx.version.id,
+          projectId: ctx.project.id,
+          updates: {
+            reference_video_offset_ms: offsetMs,
+            reference_video_start_tc: startTc
+          }
+        })
+      });
+    });
+  }
+}
+
+const onboardingSteps = [
+  {
+    title: 'Play',
+    text: 'Premi Play per ascoltare la versione sincronizzata.'
+  },
+  {
+    title: 'Commenta',
+    text: 'Clicca sul player e scrivi un commento con timecode automatico.'
+  },
+  {
+    title: 'Chiudi review',
+    text: 'Quando hai finito, chiudi la review per segnalare che hai completato i feedback.'
+  },
+  {
+    title: 'Approva o richiedi modifiche',
+    text: 'Se è tutto ok, approva la versione. Altrimenti richiedi modifiche.'
+  }
+];
+
+function initOnboardingUI() {
+  if (!onboardingOverlay) return;
+  let stepIndex = 0;
+
+  const renderStep = () => {
+    const step = onboardingSteps[stepIndex];
+    if (onboardingStepTitle) onboardingStepTitle.textContent = step.title;
+    if (onboardingStepText) onboardingStepText.textContent = step.text;
+    if (onboardingPrevBtn) onboardingPrevBtn.style.display = stepIndex === 0 ? 'none' : 'inline-flex';
+    if (onboardingNextBtn) onboardingNextBtn.textContent = stepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next';
+  };
+
+  const closeOverlay = async (completed) => {
+    onboardingOverlay.style.display = 'none';
+    if (!completed) return;
+    const project = getActiveProject();
+    if (!project) return;
+    const shareRaw = localStorage.getItem('approved_share_link');
+    const share = shareRaw ? JSON.parse(shareRaw) : null;
+    const key = `onboarding_done:${share?.share_id || project.id}`;
+    localStorage.setItem(key, '1');
+    try {
+      const headers = await getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      await fetch('/api/onboarding/complete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ projectId: project.id, shareId: share?.share_id || null })
+      });
+    } catch (e) {}
+  };
+
+  if (onboardingPrevBtn) onboardingPrevBtn.addEventListener('click', () => { stepIndex = Math.max(0, stepIndex - 1); renderStep(); });
+  if (onboardingNextBtn) onboardingNextBtn.addEventListener('click', () => {
+    if (stepIndex < onboardingSteps.length - 1) {
+      stepIndex += 1;
+      renderStep();
+    } else {
+      closeOverlay(true);
+    }
+  });
+  if (onboardingDismissBtn) onboardingDismissBtn.addEventListener('click', () => closeOverlay(false));
+  if (onboardingShowAgainBtn) onboardingShowAgainBtn.addEventListener('click', () => {
+    const project = getActiveProject();
+    const shareRaw = localStorage.getItem('approved_share_link');
+    const share = shareRaw ? JSON.parse(shareRaw) : null;
+    const key = `onboarding_done:${share?.share_id || project?.id}`;
+    if (key) localStorage.removeItem(key);
+    stepIndex = 0;
+    renderStep();
+    onboardingOverlay.style.display = 'flex';
+  });
+
+  if (onboardingDontShow) {
+    onboardingDontShow.addEventListener('change', () => {
+      if (!onboardingDontShow.checked) return;
+      const project = getActiveProject();
+      const shareRaw = localStorage.getItem('approved_share_link');
+      const share = shareRaw ? JSON.parse(shareRaw) : null;
+      const key = `onboarding_done:${share?.share_id || project?.id}`;
+      if (key) localStorage.setItem(key, '1');
+    });
+  }
+
+  window.showOnboardingOverlay = function () {
+    stepIndex = 0;
+    renderStep();
+    onboardingOverlay.style.display = 'flex';
+  };
+
+  maybeShowOnboarding();
 }
 
 async function loadAndRenderProjectNotes() {
@@ -8561,6 +9494,12 @@ async function saveCueNote(cueId, text) {
 }
 
 async function getAuthHeaders() {
+  try {
+    if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
+      return window.flowAuth.getAuthHeaders();
+    }
+  } catch (e) {}
+
   const headers = {};
   try {
     if (window.supabaseClient?.auth) {
@@ -8575,6 +9514,18 @@ async function getAuthHeaders() {
   } catch (err) {
     console.warn('[Notes] Could not get auth headers:', err);
   }
+
+  try {
+    const raw = localStorage.getItem('approved_share_link');
+    if (raw) {
+      const share = JSON.parse(raw);
+      if (share?.share_id && share?.token) {
+        headers['x-share-id'] = share.share_id;
+        headers['x-share-token'] = share.token;
+      }
+    }
+  } catch (e) {}
+
   return headers;
 }
 
@@ -8858,8 +9809,17 @@ function updateProjectNotesButton() {
   }
 }
 
-// Initialize notes UI after DOM is ready
-setTimeout(initNotesUI, 100);
+// Initialize feature UIs after DOM is ready
+setTimeout(() => {
+  initNotesUI();
+  initMarkersExportUI();
+  initApprovalUI();
+  initApprovalPackUI();
+  initCueSheetUI();
+  initDeliveryUI();
+  initPictureReviewUI();
+  initOnboardingUI();
+}, 100);
 
 // ==========================================
 // END NOTES FUNCTIONALITY
@@ -8900,7 +9860,7 @@ window.addEventListener("language-changed", (e) => {
 if (addCueBtn) {
   addCueBtn.addEventListener("click", () => {
     const project = getActiveProject();
-    if (!project) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     openFilePicker({
       accept: "audio/*,video/*,application/zip",
       multiple: true,
@@ -8912,7 +9872,7 @@ if (addCueBtn) {
 if (addReferenceBtn) {
   addReferenceBtn.addEventListener("click", () => {
     const project = getActiveProject();
-    if (!project) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     openFilePicker({
       multiple: true,
       onFiles: files => handleReferenceFiles(files)
@@ -8924,7 +9884,7 @@ if (cuesDropzoneEl) {
   cuesDropzoneEl.addEventListener("dragover", e => {
     if (!isFileDragEvent(e)) return;
     const project = getActiveProject();
-    if (!project || !isOwnerOfProject(project)) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     e.preventDefault();
     cuesDropzoneEl.classList.add("drag-over");
   });
@@ -8938,7 +9898,7 @@ if (cuesDropzoneEl) {
   cuesDropzoneEl.addEventListener("drop", e => {
     if (!isFileDragEvent(e)) return;
     const project = getActiveProject();
-    if (!project || !isOwnerOfProject(project)) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     e.preventDefault();
     cuesDropzoneEl.classList.remove("drag-over");
     if (!e.dataTransfer?.files?.length) return;
@@ -8947,7 +9907,7 @@ if (cuesDropzoneEl) {
 
   cuesDropzoneEl.addEventListener("click", () => {
     const project = getActiveProject();
-    if (!project || !isOwnerOfProject(project)) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     openFilePicker({
       accept: "audio/*,video/*,application/zip",
       multiple: true,
@@ -8959,7 +9919,8 @@ if (cuesDropzoneEl) {
 if (refsDropzoneEl) {
   refsDropzoneEl.addEventListener("dragover", e => {
     if (!isFileDragEvent(e)) return;
-    if (!getActiveProject()) return;
+    const project = getActiveProject();
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     e.preventDefault();
     refsDropzoneEl.classList.add("drag-over");
   });
@@ -8973,6 +9934,8 @@ if (refsDropzoneEl) {
   refsDropzoneEl.addEventListener("drop", e => {
     if (!isFileDragEvent(e)) return;
     e.preventDefault();
+    const project = getActiveProject();
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     refsDropzoneEl.classList.remove("drag-over");
     if (!e.dataTransfer?.files?.length) return;
     handleReferenceFiles(Array.from(e.dataTransfer.files));
@@ -8980,38 +9943,7 @@ if (refsDropzoneEl) {
 
   refsDropzoneEl.addEventListener("click", () => {
     const project = getActiveProject();
-    if (!project) return;
-    openFilePicker({
-      multiple: true,
-      onFiles: files => handleReferenceFiles(files)
-    });
-  });
-}
-
-// =======================
-// ADD CUE BUTTON
-// =======================
-if (addCueBtn) {
-  addCueBtn.addEventListener("click", () => {
-    const project = getActiveProject();
-    if (!project) return;
-    openFilePicker({
-      accept: "audio/*,video/*",
-      multiple: true,
-      onFiles: files => {
-        files.forEach(file => createCueFromFile(file));
-      }
-    });
-  });
-}
-
-// =======================
-// ADD REFERENCE BUTTON
-// =======================
-if (addReferenceBtn) {
-  addReferenceBtn.addEventListener("click", () => {
-    const project = getActiveProject();
-    if (!project) return;
+    if (!project || !roleCanModify(getProjectRole(project))) return;
     openFilePicker({
       multiple: true,
       onFiles: files => handleReferenceFiles(files)

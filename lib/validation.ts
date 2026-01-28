@@ -18,10 +18,16 @@ export const isValidEmail = (value: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 /**
- * Valid project member roles
+ * Valid member roles (team/project)
  */
-export const VALID_ROLES = ['owner', 'admin', 'editor', 'viewer'] as const;
+export const VALID_ROLES = ['owner', 'editor', 'commenter', 'viewer'] as const;
 export type ProjectRole = typeof VALID_ROLES[number];
+
+/**
+ * Valid share/invite roles (subset)
+ */
+export const VALID_SHARE_ROLES = ['editor', 'commenter', 'viewer'] as const;
+export type ShareRole = typeof VALID_SHARE_ROLES[number];
 
 /**
  * Check if a string is a valid project role
@@ -29,3 +35,10 @@ export type ProjectRole = typeof VALID_ROLES[number];
 export const isValidRole = (value: string): value is ProjectRole =>
   typeof value === "string" &&
   VALID_ROLES.includes(value as ProjectRole);
+
+/**
+ * Check if a string is a valid share/invite role
+ */
+export const isValidShareRole = (value: string): value is ShareRole =>
+  typeof value === "string" &&
+  VALID_SHARE_ROLES.includes(value as ShareRole);

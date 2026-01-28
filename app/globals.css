@@ -2140,6 +2140,277 @@ body.resizing {
   gap: 16px;
 }
 
+.modal-footer {
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-weak);
+}
+
+.modal-field input,
+.modal-field textarea,
+.modal-field select {
+  width: 100%;
+  background: var(--surface-1);
+  color: var(--text-strong);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.modal-select {
+  width: 100%;
+}
+
+.modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-weak);
+}
+
+.comments-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-pack-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.picture-review-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.picture-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.picture-review-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.picture-review-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.picture-review-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.picture-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
+.picture-field input {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.delivery-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.delivery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.delivery-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-strong);
+}
+
+.delivery-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.delivery-select {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.delivery-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delivery-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-weak);
+}
+
+.delivery-naming {
+  padding: 10px;
+  background: var(--surface-1);
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+}
+
+.delivery-naming-title {
+  font-size: 12px;
+  color: var(--text-weak);
+  margin-bottom: 6px;
+}
+
+.delivery-naming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.delivery-naming-list input {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.audio-picture-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.audio-picture-video {
+  background: #0b0f18;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.audio-picture-video video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.cue-sheet-body {
+  gap: 20px;
+}
+
+.cue-sheet-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.cue-sheet-footer {
+  justify-content: space-between;
+}
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 15, 24, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  pointer-events: none;
+}
+
+.onboarding-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.onboarding-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.onboarding-text {
+  font-size: 14px;
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.onboarding-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
 /* Project notes list in modal */
 .project-notes-list {
   display: flex;

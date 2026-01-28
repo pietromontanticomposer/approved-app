@@ -25,8 +25,8 @@ CREATE POLICY "Users can view projects via project_members or team_members or ow
     )
   );
 
--- Allow project owners and project_members with role in ('owner','manage') to INSERT into project_members
-CREATE POLICY "Owners and managers can add project members"
+-- Allow project owners and project_members with role in ('owner','editor') to INSERT into project_members
+CREATE POLICY "Owners and editors can add project members"
   ON project_members
   FOR INSERT
   WITH CHECK (
@@ -34,7 +34,7 @@ CREATE POLICY "Owners and managers can add project members"
       SELECT 1 FROM projects p WHERE p.id = project_members.project_id AND p.owner_id = auth.uid()
     )
     OR EXISTS (
-      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','manage')
+      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','editor')
     )
   );
 
@@ -51,8 +51,8 @@ CREATE POLICY "Project members can view members"
     )
   );
 
--- Allow owners/managers to UPDATE project_members
-CREATE POLICY "Owners and managers can update project_members"
+-- Allow owners/editors to UPDATE project_members
+CREATE POLICY "Owners and editors can update project_members"
   ON project_members
   FOR UPDATE
   USING (
@@ -60,7 +60,7 @@ CREATE POLICY "Owners and managers can update project_members"
       SELECT 1 FROM projects p WHERE p.id = project_members.project_id AND p.owner_id = auth.uid()
     )
     OR EXISTS (
-      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','manage')
+      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','editor')
     )
   )
   WITH CHECK (
@@ -68,12 +68,12 @@ CREATE POLICY "Owners and managers can update project_members"
       SELECT 1 FROM projects p WHERE p.id = project_members.project_id AND p.owner_id = auth.uid()
     )
     OR EXISTS (
-      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','manage')
+      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','editor')
     )
   );
 
--- Allow owners/managers to DELETE project_members
-CREATE POLICY "Owners and managers can delete project_members"
+-- Allow owners/editors to DELETE project_members
+CREATE POLICY "Owners and editors can delete project_members"
   ON project_members
   FOR DELETE
   USING (
@@ -81,12 +81,12 @@ CREATE POLICY "Owners and managers can delete project_members"
       SELECT 1 FROM projects p WHERE p.id = project_members.project_id AND p.owner_id = auth.uid()
     )
     OR EXISTS (
-      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','manage')
+      SELECT 1 FROM project_members pm WHERE pm.project_id = project_members.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','editor')
     )
   );
 
--- Allow users to SELECT share_links only if they are owner/manager of the project
-CREATE POLICY "Owners and managers can view share_links"
+-- Allow users to SELECT share_links only if they are owner/editor of the project
+CREATE POLICY "Owners and editors can view share_links"
   ON share_links
   FOR SELECT
   USING (
@@ -94,7 +94,7 @@ CREATE POLICY "Owners and managers can view share_links"
       SELECT 1 FROM projects p WHERE p.id = share_links.project_id AND p.owner_id = auth.uid()
     )
     OR EXISTS (
-      SELECT 1 FROM project_members pm WHERE pm.project_id = share_links.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','manage')
+      SELECT 1 FROM project_members pm WHERE pm.project_id = share_links.project_id AND pm.member_id = auth.uid() AND pm.role IN ('owner','editor')
     )
   );
 

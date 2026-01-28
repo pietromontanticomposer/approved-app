@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { isUuid, isValidEmail, isValidRole } from "@/lib/validation";
+import { isUuid, isValidEmail, isValidShareRole } from "@/lib/validation";
 import crypto from "crypto";
 
 async function resolveActorId(req: Request) {
@@ -26,7 +26,7 @@ async function resolveActorId(req: Request) {
 
 /**
  * POST /api/projects/share
- * Body: { project_id, role?: 'viewer'|'editor', email?: string, expires_at?: string, max_uses?: number, invite?: boolean }
+ * Body: { project_id, role?: 'viewer'|'editor'|'commenter', email?: string, expires_at?: string, max_uses?: number, invite?: boolean }
  * Header: x-actor-id (user id performing the action)
  * Returns: { id, link, invite_id?, invite_url? }
  */
@@ -48,10 +48,15 @@ export async function POST(req: Request) {
     if (!actorId) return NextResponse.json({ error: 'Missing x-actor-id header or Authorization token' }, { status: 403 });
     if (!isUuid(actorId)) return NextResponse.json({ error: 'Invalid user session' }, { status: 401 });
     if (!projectId) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
-    if (!isValidRole(role)) return NextResponse.json({ error: 'Invalid role. Must be owner, admin, editor, or viewer' }, { status: 400 });
+    if (!isValidShareRole(role)) {
+      return NextResponse.json(
+        { error: 'Invalid role. Must be editor, commenter, or viewer' },
+        { status: 400 }
+      );
+    }
     if (email && !isValidEmail(email)) return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
 
-    // Verify actor is owner or manager of the project
+    // Verify actor is owner or editor of the project
     const { data: proj, error: projErr } = await supabaseAdmin
       .from('projects')
       .select('id, team_id, owner_id')
@@ -71,7 +76,7 @@ export async function POST(req: Request) {
         .eq('project_id', projectId)
         .eq('member_id', actorId)
         .limit(1);
-      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'manage' || pm[0].role === 'admin')) {
+      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'editor')) {
         isAuthorized = true;
       }
     }
@@ -84,7 +89,7 @@ export async function POST(req: Request) {
           .select('user_id, role')
           .eq('team_id', proj.team_id)
           .eq('user_id', actorId)
-          .in('role', ['owner', 'admin', 'manage'])
+          .in('role', ['owner', 'editor'])
           .limit(1);
         if (teamRows && teamRows.length > 0) isAuthorized = true;
       } catch (e) {
@@ -199,13 +204,13 @@ export async function DELETE(req: Request) {
     const { data: linkData, error: linkErr } = await supabaseAdmin.from('share_links').select('id, project_id, created_by').eq('id', id).maybeSingle();
     if (linkErr || !linkData) return NextResponse.json({ error: 'Share link not found' }, { status: 404 });
 
-    // Check actor authorization (owner/manage)
+    // Check actor authorization (owner/editor)
     const { data: proj } = await supabaseAdmin.from('projects').select('owner_id').eq('id', linkData.project_id).maybeSingle();
     let isAuthorized = false;
     if (proj?.owner_id === actorId) isAuthorized = true;
     if (!isAuthorized) {
       const { data: pm } = await supabaseAdmin.from('project_members').select('role').eq('project_id', linkData.project_id).eq('member_id', actorId).limit(1);
-      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'manage')) isAuthorized = true;
+      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'editor')) isAuthorized = true;
     }
     if (!isAuthorized) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 

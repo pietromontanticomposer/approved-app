@@ -139,10 +139,9 @@ export async function canAccessProject(userId: string, projectId: string): Promi
   }
 
   try {
-    // Check if user is owner
     const { data: project } = await supabaseAdmin
       .from('projects')
-      .select('owner_id')
+      .select('owner_id, team_id')
       .eq('id', projectId)
       .maybeSingle();
 
@@ -150,16 +149,28 @@ export async function canAccessProject(userId: string, projectId: string): Promi
       return true;
     }
 
-    // Check if user is a member (any role)
-    const { data: membership } = await supabaseAdmin
+    const { data: projectMembership } = await supabaseAdmin
       .from('project_members')
-      .select('member_id')
+      .select('role')
       .eq('project_id', projectId)
       .eq('member_id', userId)
       .maybeSingle();
 
-    if (membership) {
+    if (projectMembership?.role) {
       return true;
+    }
+
+    if (project?.team_id) {
+      const { data: teamMembership } = await supabaseAdmin
+        .from('team_members')
+        .select('role')
+        .eq('team_id', project.team_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (teamMembership?.role) {
+        return true;
+      }
     }
 
     return false;
@@ -196,7 +207,7 @@ export async function isProjectOwner(userId: string, projectId: string): Promise
 
 /**
  * Check if user can modify a project (owner or editor) (SERVER-SIDE)
- * Viewers can only read, comment, and download - NOT modify files
+ * Viewers/commenters can only read/comment - NOT modify files
  */
 export async function canModifyProject(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode without real auth, allow modifications
@@ -206,10 +217,9 @@ export async function canModifyProject(userId: string, projectId: string): Promi
   }
 
   try {
-    // Check if user is owner
     const { data: project } = await supabaseAdmin
       .from('projects')
-      .select('owner_id')
+      .select('owner_id, team_id')
       .eq('id', projectId)
       .maybeSingle();
 
@@ -217,22 +227,31 @@ export async function canModifyProject(userId: string, projectId: string): Promi
       return true;
     }
 
-    // Check if user is a member
-    const { data: membership } = await supabaseAdmin
+    const { data: projectMembership } = await supabaseAdmin
       .from('project_members')
       .select('role')
       .eq('project_id', projectId)
       .eq('member_id', userId)
       .maybeSingle();
 
-    // If user is a member, check their role
-    if (membership) {
-      // Only viewer role is restricted - editor/admin/null can modify
-      if (membership.role === 'viewer') {
-        return false;
-      }
-      // editor, admin, or any other role = can modify
+    const projectRole = projectMembership?.role || null;
+
+    if (projectRole === 'editor' || projectRole === 'owner') {
       return true;
+    }
+
+    if (project?.team_id) {
+      const { data: teamMembership } = await supabaseAdmin
+        .from('team_members')
+        .select('role')
+        .eq('team_id', project.team_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const teamRole = teamMembership?.role || null;
+      if (teamRole === 'editor' || teamRole === 'owner') {
+        return true;
+      }
     }
 
     // If project has no owner set, allow authenticated users to modify
@@ -246,6 +265,60 @@ export async function canModifyProject(userId: string, projectId: string): Promi
   } catch (err) {
     console.error('[canModifyProject] Error checking permissions:', err);
     // On error, deny access for security
+    return false;
+  }
+}
+
+/**
+ * Check if user can review/comment on a project (owner, editor, commenter)
+ */
+export async function canReviewProject(userId: string, projectId: string): Promise<boolean> {
+  // In demo/dev mode without real auth, allow reviews
+  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  if (allowPublic && userId === 'public-user') {
+    return true;
+  }
+
+  try {
+    const { data: project } = await supabaseAdmin
+      .from('projects')
+      .select('owner_id, team_id')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    if (project?.owner_id === userId) {
+      return true;
+    }
+
+    const { data: projectMembership } = await supabaseAdmin
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('member_id', userId)
+      .maybeSingle();
+
+    const projectRole = projectMembership?.role || null;
+    if (projectRole === 'editor' || projectRole === 'commenter' || projectRole === 'owner') {
+      return true;
+    }
+
+    if (project?.team_id) {
+      const { data: teamMembership } = await supabaseAdmin
+        .from('team_members')
+        .select('role')
+        .eq('team_id', project.team_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const teamRole = teamMembership?.role || null;
+      if (teamRole === 'editor' || teamRole === 'commenter' || teamRole === 'owner') {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (err) {
+    console.error('[canReviewProject] Error:', err);
     return false;
   }
 }

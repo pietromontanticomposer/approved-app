@@ -14,6 +14,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
+import { resolveAccessContext, roleCanAccess, roleCanReview, roleCanModify } from '@/lib/shareAccess';
 import { isUuid } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -21,7 +22,8 @@ const isDev = process.env.NODE_ENV !== "production";
 /**
  * Get user display name from auth metadata
  */
-async function getUserDisplayName(userId: string): Promise<string | null> {
+async function getUserDisplayName(userId: string | null): Promise<string | null> {
+  if (!userId) return null;
   try {
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
 
@@ -56,15 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     if (isDev) console.log('[GET /api/comments] Request started');
 
-    // SECURITY: Verify authentication
-    const auth = await verifyAuth(req);
-    if (!auth) {
-      if (isDev) console.log('[GET /api/comments] Unauthorized request');
-      return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
-        { status: 401 }
-      );
-    }
+    // Auth is optional for share-link access; resolveAccessContext handles validation.
 
     const url = new URL(req.url);
     const versionId = url.searchParams.get('versionId');
@@ -81,6 +75,23 @@ export async function GET(req: NextRequest) {
         { error: 'versionId must be a valid UUID' },
         { status: 400 }
       );
+    }
+
+    // SECURITY: Verify version belongs to a project the user can access
+    const { data: version } = await supabaseAdmin
+      .from("versions")
+      .select("id, cues(project_id)")
+      .eq("id", versionId)
+      .single();
+
+    const projectId = (version as any)?.cues?.project_id || null;
+    if (!projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const access = await resolveAccessContext(req, projectId);
+    if (!access || !roleCanAccess(access.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Fetch comments
@@ -121,17 +132,8 @@ export async function POST(req: NextRequest) {
   try {
     if (isDev) console.log('[POST /api/comments] Request started');
 
-    // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
-    if (!auth) {
-      if (isDev) console.log('[POST /api/comments] Unauthorized request');
-      return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const userId = auth.userId;
+    const userId = auth?.userId || null;
 
     // Parse and validate request body
     let body: any;
@@ -193,6 +195,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // SECURITY: Verify version belongs to a project the user can review/comment
+    const { data: version } = await supabaseAdmin
+      .from("versions")
+      .select("id, cues(project_id)")
+      .eq("id", version_id)
+      .single();
+
+    const projectId = (version as any)?.cues?.project_id || null;
+    if (!projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const access = await resolveAccessContext(req, projectId);
+    if (!access || !roleCanReview(access.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     // Determine author name
     let authorName = typeof author === 'string' ? author.trim() : null;
     if (!authorName) {
@@ -209,7 +228,7 @@ export async function POST(req: NextRequest) {
         version_id,
         time_seconds,
         author: authorName || "User",
-        actor_id: userId, // Verified server-side
+        actor_id: isUuid(userId || '') ? userId : null, // Verified server-side
         text: text ? text.trim() : '',
         audio_url: audio_url || null,
       })
@@ -248,17 +267,8 @@ export async function PATCH(req: NextRequest) {
   try {
     if (isDev) console.log('[PATCH /api/comments] Request started');
 
-    // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
-    if (!auth) {
-      if (isDev) console.log('[PATCH /api/comments] Unauthorized request');
-      return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const userId = auth.userId;
+    const userId = auth?.userId || null;
 
     // Parse and validate request body
     let body: any;
@@ -298,7 +308,7 @@ export async function PATCH(req: NextRequest) {
     // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
-      .select('id, actor_id')
+      .select('id, actor_id, version_id, versions(cue_id, cues(project_id))')
       .eq('id', id)
       .maybeSingle();
 
@@ -317,16 +327,19 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    // Check if comment has actor_id set
-    if (!existing.actor_id) {
-      return NextResponse.json(
-        { error: "Comment does not have an actor_id; backfill required to enable editing" },
-        { status: 403 }
-      );
+    const projectId = (existing as any)?.versions?.cues?.project_id || null;
+    if (!projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Check ownership
-    if (existing.actor_id !== userId) {
+    const access = await resolveAccessContext(req, projectId);
+    if (!access) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const isOwnerEditor = roleCanModify(access.role);
+    const isAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    if (!isOwnerEditor && !isAuthor) {
       if (isDev) console.log('[PATCH /api/comments] User not authorized to edit comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to edit this comment' },
@@ -374,17 +387,8 @@ export async function DELETE(req: NextRequest) {
   try {
     if (isDev) console.log('[DELETE /api/comments] Request started');
 
-    // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
-    if (!auth) {
-      if (isDev) console.log('[DELETE /api/comments] Unauthorized request');
-      return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const userId = auth.userId;
+    const userId = auth?.userId || null;
 
     // Get comment ID from query
     const { searchParams } = new URL(req.url);
@@ -407,7 +411,7 @@ export async function DELETE(req: NextRequest) {
     // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
-      .select('id, actor_id')
+      .select('id, actor_id, version_id, versions(cue_id, cues(project_id))')
       .eq('id', id)
       .maybeSingle();
 
@@ -426,16 +430,19 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // Check if comment has actor_id set
-    if (!existing.actor_id) {
-      return NextResponse.json(
-        { error: "Comment does not have an actor_id; backfill required to enable deletion" },
-        { status: 403 }
-      );
+    const projectId = (existing as any)?.versions?.cues?.project_id || null;
+    if (!projectId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Check ownership
-    if (existing.actor_id !== userId) {
+    const access = await resolveAccessContext(req, projectId);
+    if (!access) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const isOwnerEditor = roleCanModify(access.role);
+    const isAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    if (!isOwnerEditor && !isAuthor) {
       if (isDev) console.log('[DELETE /api/comments] User not authorized to delete comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this comment' },

@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, isProjectOwner } from '@/lib/auth';
+import { getShareLinkContext } from '@/lib/shareAccess';
 import { isUuid } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -41,6 +42,19 @@ type TeamMember = {
   role: string;
   joined_at: string;
 };
+
+function normalizeRole(role: string | null | undefined) {
+  if (!role) return null;
+  const lower = String(role).toLowerCase();
+  if (lower === 'owner') return 'owner';
+  if (lower === 'editor') return 'editor';
+  if (lower === 'commenter') return 'commenter';
+  if (lower === 'viewer') return 'viewer';
+  if (lower === 'view') return 'viewer';
+  if (lower === 'manage') return 'editor';
+  if (lower === 'contribute') return 'commenter';
+  return null;
+}
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -163,6 +177,29 @@ export async function GET(req: NextRequest) {
   try {
     if (isDev) console.log('[GET /api/projects] Request started');
 
+    // Allow share-link access without authentication (returns a single shared project)
+    const shareContext = await getShareLinkContext(req);
+    if (shareContext) {
+      const { data: sharedProject } = await supabaseAdmin
+        .from('projects')
+        .select('*')
+        .eq('id', shareContext.projectId)
+        .maybeSingle();
+
+      if (!sharedProject) {
+        return NextResponse.json({ projects: [], my_projects: [], shared_with_me: [], public: true }, { status: 200 });
+      }
+
+      const enriched = await hydrateProjectsWithTeamMembers([sharedProject]);
+      return NextResponse.json({
+        my_projects: [],
+        shared_with_me: enriched.map(p => ({ ...p, is_shared: true, share_role: shareContext.role, project_role: shareContext.role })),
+        projects: enriched.map(p => ({ ...p, is_shared: true, share_role: shareContext.role, project_role: shareContext.role })),
+        public: true,
+        share: { role: shareContext.role }
+      }, { status: 200 });
+    }
+
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
     if (!auth) {
@@ -201,10 +238,48 @@ export async function GET(req: NextRequest) {
     // Combine for backward compatibility
     const allProjects = [...myProjectsHydrated, ...sharedProjectsHydrated];
 
+    // Compute roles for current user across projects
+    const allProjectIds = allProjects.map(p => p.id);
+    const { data: membershipRows } = await supabaseAdmin
+      .from('project_members')
+      .select('project_id, role')
+      .eq('member_id', userId)
+      .in('project_id', allProjectIds);
+
+    const roleByProject = new Map<string, string>();
+    (membershipRows || []).forEach((row: any) => {
+      if (row?.project_id) roleByProject.set(row.project_id, row.role || '');
+    });
+
+    const teamIds = Array.from(new Set(allProjects.map(p => p.team_id).filter(Boolean))) as string[];
+    const teamRoleByTeam = new Map<string, string>();
+    if (teamIds.length > 0) {
+      const { data: teamRows } = await supabaseAdmin
+        .from('team_members')
+        .select('team_id, role')
+        .eq('user_id', userId)
+        .in('team_id', teamIds);
+      (teamRows || []).forEach((row: any) => {
+        if (row?.team_id) teamRoleByTeam.set(row.team_id, row.role || '');
+      });
+    }
+
+    const attachRole = (project: any) => {
+      if (project.owner_id === userId) return { ...project, project_role: 'owner' };
+      const projectRole = normalizeRole(roleByProject.get(project.id) || '');
+      if (projectRole) return { ...project, project_role: projectRole };
+      const teamRole = normalizeRole(teamRoleByTeam.get(project.team_id || '') || '');
+      return { ...project, project_role: teamRole || null };
+    };
+
+    const myProjectsWithRole = myProjectsHydrated.map(attachRole);
+    const sharedProjectsWithRole = sharedProjectsHydrated.map(attachRole);
+    const allProjectsWithRole = [...myProjectsWithRole, ...sharedProjectsWithRole];
+
     return NextResponse.json({
-      my_projects: myProjectsHydrated,
-      shared_with_me: sharedProjectsHydrated,
-      projects: allProjects, // Backward compatibility
+        my_projects: myProjectsWithRole,
+        shared_with_me: sharedProjectsWithRole,
+        projects: allProjectsWithRole, // Backward compatibility
     }, { status: 200 });
 
   } catch (err: any) {
@@ -307,7 +382,7 @@ export async function POST(req: NextRequest) {
           .insert({
             team_id: teamId,
             user_id: userId,
-            role: 'admin'
+            role: 'owner'
           });
       }
     }
@@ -364,7 +439,7 @@ export async function POST(req: NextRequest) {
  * PATCH /api/projects
  *
  * Updates a project's name or description
- * Requires: Authentication + ownership/admin permission
+ * Requires: Authentication + ownership permission
  * Body: { id: string, name?: string, description?: string }
  * Returns: { project: Project }
  */
@@ -461,7 +536,7 @@ export async function PATCH(req: NextRequest) {
  * DELETE /api/projects
  *
  * Deletes a project
- * Requires: Authentication + ownership/admin permission
+ * Requires: Authentication + ownership permission
  * Query: ?id=<project_id> OR Body: { id: string }
  * Returns: { success: true }
  */

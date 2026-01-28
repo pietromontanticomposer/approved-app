@@ -111,6 +111,9 @@ export default function Page() {
         </div>
       </div>
       <div class="topbar-actions">
+        <button id="cueSheetBtn" class="ghost-btn" data-i18n="header.cueSheet">
+          Cue sheet
+        </button>
         <button id="myAccountBtn" class="ghost-btn" data-i18n="header.myAccount" onclick="window.location.href='/account'">
           My account
         </button>
@@ -226,6 +229,194 @@ export default function Page() {
         </div>
       </div>
 
+      <!-- MARKERS EXPORT MODAL -->
+      <div id="markersExportModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content markers-modal">
+          <div class="modal-header">
+            <h2 data-i18n="markers.title">Export markers</h2>
+            <button id="closeMarkersExportModal" class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <label class="modal-field">
+              <span data-i18n="markers.format">Format</span>
+              <select id="markersFormatSelect" class="modal-select">
+                <option value="universal_csv">Universal CSV</option>
+                <option value="reaper_tsv">Reaper (TXT/TSV)</option>
+                <option value="audition_tsv">Audition (TSV)</option>
+              </select>
+            </label>
+            <label class="modal-field">
+              <span data-i18n="markers.fps">FPS</span>
+              <select id="markersFpsSelect" class="modal-select">
+                <option value="24">24</option>
+                <option value="25" selected>25</option>
+                <option value="29.97">29.97</option>
+                <option value="30">30</option>
+              </select>
+            </label>
+            <label class="modal-field">
+              <span data-i18n="markers.startTc">Start timecode</span>
+              <input id="markersStartTcInput" type="text" value="00:00:00.000" />
+            </label>
+            <label class="modal-checkbox">
+              <input id="markersIncludeVoice" type="checkbox" />
+              <span data-i18n="markers.includeVoice">Include voice comment links</span>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button id="exportMarkersConfirmBtn" class="primary-btn small" data-i18n="markers.export">Export</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- APPROVAL MODAL -->
+      <div id="approvalModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content approval-modal">
+          <div class="modal-header">
+            <h2 data-i18n="approval.title">Approve version</h2>
+            <button id="closeApprovalModal" class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <label class="modal-field">
+              <span data-i18n="approval.note">Approval note</span>
+              <textarea id="approvalNoteInput" rows="3" placeholder="Optional note..."></textarea>
+            </label>
+            <label class="modal-field">
+              <span data-i18n="approval.changelog">Changelog (vs previous)</span>
+              <textarea id="approvalChangelogInput" rows="3" placeholder="What changed since the previous version?"></textarea>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button id="confirmApprovalBtn" class="primary-btn small" data-i18n="approval.confirm">Approve</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- APPROVAL PACK MODAL -->
+      <div id="approvalPackModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content approval-pack-modal">
+          <div class="modal-header">
+            <h2 data-i18n="approval.packTitle">Approval pack</h2>
+            <button id="closeApprovalPackModal" class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <label class="modal-checkbox">
+              <input id="approvalPackIncludeMedia" type="checkbox" />
+              <span data-i18n="approval.includeMedia">Include media file in zip</span>
+            </label>
+            <label class="modal-checkbox">
+              <input id="approvalPackIncludeVoice" type="checkbox" />
+              <span data-i18n="approval.includeVoice">Include voice comment links</span>
+            </label>
+            <label class="modal-field">
+              <span data-i18n="approval.fps">FPS</span>
+              <select id="approvalPackFpsSelect" class="modal-select">
+                <option value="24">24</option>
+                <option value="25" selected>25</option>
+                <option value="29.97">29.97</option>
+                <option value="30">30</option>
+              </select>
+            </label>
+            <label class="modal-field">
+              <span data-i18n="approval.startTc">Start timecode</span>
+              <input id="approvalPackStartTcInput" type="text" value="00:00:00.000" />
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button id="downloadApprovalPackConfirmBtn" class="primary-btn small" data-i18n="approval.download">Download pack</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CUE SHEET MODAL -->
+      <div id="cueSheetModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content cue-sheet-modal">
+          <div class="modal-header">
+            <h2 data-i18n="cueSheet.title">Cue sheet</h2>
+            <button id="closeCueSheetModal" class="modal-close">&times;</button>
+          </div>
+          <div class="modal-body cue-sheet-body">
+            <div class="cue-sheet-section">
+              <h4 data-i18n="cueSheet.projectMeta">Project metadata</h4>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.production">Production</span>
+                <input id="cueSheetProduction" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.client">Client</span>
+                <input id="cueSheetClient" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.episode">Episode</span>
+                <input id="cueSheetEpisode" type="text" />
+              </label>
+            </div>
+            <div class="cue-sheet-section">
+              <h4 data-i18n="cueSheet.cueMeta">Cue data</h4>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.selectCue">Cue</span>
+                <select id="cueSheetCueSelect" class="modal-select"></select>
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.workTitle">Work title</span>
+                <input id="cueSheetWorkTitle" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.composers">Composer(s)</span>
+                <input id="cueSheetComposers" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.publishers">Publisher(s)</span>
+                <input id="cueSheetPublishers" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.pro">PRO</span>
+                <input id="cueSheetPro" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.usage">Usage type</span>
+                <input id="cueSheetUsage" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.startTc">Start timecode</span>
+                <input id="cueSheetStartTc" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.duration">Duration</span>
+                <input id="cueSheetDuration" type="text" />
+              </label>
+              <label class="modal-field">
+                <span data-i18n="cueSheet.notes">Notes</span>
+                <textarea id="cueSheetNotes" rows="3"></textarea>
+              </label>
+            </div>
+          </div>
+          <div class="modal-footer cue-sheet-footer">
+            <button id="cueSheetSaveBtn" class="primary-btn small" data-i18n="cueSheet.save">Save</button>
+            <button id="cueSheetExportCsvBtn" class="ghost-btn small" data-i18n="cueSheet.exportCsv">Export CSV</button>
+            <button id="cueSheetExportPdfBtn" class="ghost-btn small" data-i18n="cueSheet.exportPdf">Export PDF</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ONBOARDING OVERLAY -->
+      <div id="onboardingOverlay" class="onboarding-overlay" style="display: none;">
+        <div class="onboarding-card">
+          <div id="onboardingStepTitle" class="onboarding-title">Welcome</div>
+          <div id="onboardingStepText" class="onboarding-text">Step content</div>
+          <div class="onboarding-actions">
+            <button id="onboardingPrevBtn" class="ghost-btn tiny">Back</button>
+            <button id="onboardingNextBtn" class="primary-btn tiny">Next</button>
+            <button id="onboardingDismissBtn" class="ghost-btn tiny">Skip</button>
+          </div>
+          <label class="onboarding-checkbox">
+            <input id="onboardingDontShow" type="checkbox" />
+            <span>Non mostrare più</span>
+          </label>
+          <button id="onboardingShowAgainBtn" class="ghost-btn tiny">Mostra di nuovo</button>
+        </div>
+      </div>
+
       <!-- RIGHT COLUMN -->
       <div class="right-column">
         <div class="player-card">
@@ -270,12 +461,37 @@ export default function Page() {
               Approved
             </button>
           </div>
+
+          <div id="pictureReviewCard" class="picture-review-card" style="display: none;">
+            <div class="picture-review-header">
+              <h4 data-i18n="picture.title">Audio to picture</h4>
+              <div class="picture-review-actions">
+                <button id="attachVideoBtn" class="ghost-btn tiny" data-i18n="picture.attach">Attach video</button>
+                <button id="removeVideoBtn" class="ghost-btn tiny" data-i18n="picture.remove">Remove</button>
+              </div>
+            </div>
+            <div class="picture-review-controls">
+              <label class="picture-field">
+                <span data-i18n="picture.offset">Offset (ms)</span>
+                <input id="videoOffsetInput" type="number" value="0" />
+              </label>
+              <label class="picture-field">
+                <span data-i18n="picture.startTc">Start TC</span>
+                <input id="videoStartTcInput" type="text" placeholder="00:00:00.000" />
+              </label>
+              <button id="saveVideoSyncBtn" class="primary-btn tiny" data-i18n="picture.save">Save sync</button>
+            </div>
+            <input id="referenceVideoInput" type="file" accept="video/*" style="display:none;" />
+          </div>
         </div>
 
           <div class="comments-card">
             <div class="comments-header">
               <h3 data-i18n="comments.title">Comments</h3>
-              <span id="commentsSummary" class="tag small" data-i18n="comments.noComments">No comments</span>
+              <div class="comments-header-actions">
+                <span id="commentsSummary" class="tag small" data-i18n="comments.noComments">No comments</span>
+                <button id="exportMarkersBtn" class="ghost-btn tiny" data-i18n="comments.exportMarkers">Export markers</button>
+              </div>
             </div>
             <div id="reviewStatusMessage" class="review-status-message"></div>
             <ul id="commentsList" class="comments-list"></ul>
@@ -297,6 +513,11 @@ export default function Page() {
                 Richiedi modifiche
               </button>
             </div>
+            <div class="approval-pack-actions">
+              <button id="downloadApprovalPackBtn" class="ghost-btn small" data-i18n="review.downloadApprovalPack" style="display: none;">
+                Download Approval Pack
+              </button>
+            </div>
 
             <div class="comment-input">
               <input
@@ -316,6 +537,27 @@ export default function Page() {
               <button id="addCommentBtn" class="primary-btn small" disabled data-i18n="comments.send">
                 Send
               </button>
+            </div>
+          </div>
+
+          <div class="delivery-card">
+            <div class="delivery-header">
+              <h3 data-i18n="delivery.title">Delivery</h3>
+              <span id="deliveryTemplateBadge" class="tag small" data-i18n="delivery.noTemplate">No template</span>
+            </div>
+            <div class="delivery-body">
+              <select id="deliveryTemplateSelect" class="delivery-select">
+                <option value="">Select template…</option>
+                <option value="adv">ADV / Advertising</option>
+                <option value="film_tv">Film / TV</option>
+                <option value="social">Social</option>
+              </select>
+              <div id="deliveryChecklist" class="delivery-checklist"></div>
+              <div class="delivery-naming">
+                <div class="delivery-naming-title" data-i18n="delivery.naming">Naming helper</div>
+                <div id="deliveryNamingList" class="delivery-naming-list"></div>
+              </div>
+              <button id="generateManifestBtn" class="ghost-btn small" data-i18n="delivery.generateManifest">Generate manifest</button>
             </div>
           </div>
 

@@ -42,8 +42,11 @@ CREATE POLICY "Users can view own or shared projects"
 -- Drop the problematic policies
 DROP POLICY IF EXISTS "Project members can view members" ON project_members;
 DROP POLICY IF EXISTS "Owners and managers can add project members" ON project_members;
+DROP POLICY IF EXISTS "Owners and editors can add project members" ON project_members;
 DROP POLICY IF EXISTS "Owners and managers can update project_members" ON project_members;
+DROP POLICY IF EXISTS "Owners and editors can update project_members" ON project_members;
 DROP POLICY IF EXISTS "Owners and managers can delete project_members" ON project_members;
+DROP POLICY IF EXISTS "Owners and editors can delete project_members" ON project_members;
 
 -- Recreate policies WITHOUT self-referencing project_members queries
 -- Use projects.owner_id check and team_members check only (no circular reference)
@@ -70,8 +73,8 @@ CREATE POLICY "Project members can view members"
     )
   );
 
--- INSERT: Only project owners or team admins can add members
-CREATE POLICY "Owners and managers can add project members"
+-- INSERT: Only project owners or team owners/editors can add members
+CREATE POLICY "Owners and editors can add project members"
   ON project_members
   FOR INSERT
   WITH CHECK (
@@ -79,18 +82,18 @@ CREATE POLICY "Owners and managers can add project members"
     EXISTS (
       SELECT 1 FROM projects p WHERE p.id = project_members.project_id AND p.owner_id = auth.uid()
     )
-    -- Or user is team admin
+    -- Or user is team owner/editor
     OR EXISTS (
       SELECT 1 FROM projects p
       JOIN team_members tm ON tm.team_id = p.team_id
       WHERE p.id = project_members.project_id
         AND tm.user_id = auth.uid()
-        AND tm.role IN ('admin', 'owner')
+        AND tm.role IN ('owner', 'editor')
     )
   );
 
--- UPDATE: Only project owners or team admins can update members
-CREATE POLICY "Owners and managers can update project_members"
+-- UPDATE: Only project owners or team owners/editors can update members
+CREATE POLICY "Owners and editors can update project_members"
   ON project_members
   FOR UPDATE
   USING (
@@ -102,7 +105,7 @@ CREATE POLICY "Owners and managers can update project_members"
       JOIN team_members tm ON tm.team_id = p.team_id
       WHERE p.id = project_members.project_id
         AND tm.user_id = auth.uid()
-        AND tm.role IN ('admin', 'owner')
+        AND tm.role IN ('owner', 'editor')
     )
   )
   WITH CHECK (
@@ -114,12 +117,12 @@ CREATE POLICY "Owners and managers can update project_members"
       JOIN team_members tm ON tm.team_id = p.team_id
       WHERE p.id = project_members.project_id
         AND tm.user_id = auth.uid()
-        AND tm.role IN ('admin', 'owner')
+        AND tm.role IN ('owner', 'editor')
     )
   );
 
--- DELETE: Only project owners or team admins can delete members
-CREATE POLICY "Owners and managers can delete project_members"
+-- DELETE: Only project owners or team owners/editors can delete members
+CREATE POLICY "Owners and editors can delete project_members"
   ON project_members
   FOR DELETE
   USING (
@@ -131,7 +134,7 @@ CREATE POLICY "Owners and managers can delete project_members"
       JOIN team_members tm ON tm.team_id = p.team_id
       WHERE p.id = project_members.project_id
         AND tm.user_id = auth.uid()
-        AND tm.role IN ('admin', 'owner')
+        AND tm.role IN ('owner', 'editor')
     )
   );
 

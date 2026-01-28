@@ -10,7 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from '@/lib/auth';
 import { sendInviteEmail } from '@/lib/email';
-import { isUuid, isValidEmail, isValidRole } from '@/lib/validation';
+import { isUuid, isValidEmail, isValidShareRole } from '@/lib/validation';
 
 export const runtime = "nodejs";
 const isDev = process.env.NODE_ENV !== "production";
@@ -120,9 +120,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!isValidRole(role)) {
+    if (!isValidShareRole(role)) {
       return NextResponse.json(
-        { error: "Invalid role. Must be owner, admin, editor, or viewer" },
+        { error: "Invalid role. Must be editor, commenter, or viewer" },
         { status: 400 }
       );
     }
