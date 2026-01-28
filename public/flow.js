@@ -1607,10 +1607,12 @@ function updateReviewUI(project, version) {
   const role = getProjectRole(project);
   const canModify = roleCanModify(role);
   const canReview = roleCanReview(role);
+  const isOwner = isOwnerOfProject(project) || role === 'owner';
+  const isCollaborator = !isOwner && canReview;
   const canComment = canAddCommentsForVersion(status) && canReview;
 
   if (reviewCompleteBtn) {
-    const showReviewComplete = canModify && status === "in_review";
+    const showReviewComplete = isCollaborator && status === "in_review";
     reviewCompleteBtn.style.display = showReviewComplete ? "inline-flex" : "none";
   }
 
@@ -1628,15 +1630,14 @@ function updateReviewUI(project, version) {
   }
 
   if (approveVersionBtn) {
-    const showApprove = canModify && (status === "in_review" || status === "review_completed");
+    const showApprove = !isOwner && canModify && (status === "in_review" || status === "review_completed");
     approveVersionBtn.style.display = showApprove ? "inline-flex" : "none";
     approveVersionBtn.disabled = !showApprove;
   }
 
   if (requestChangesBtn) {
-    const showRequest = canModify && (status === "in_review" || status === "review_completed");
-    requestChangesBtn.style.display = showRequest ? "inline-flex" : "none";
-    requestChangesBtn.disabled = !showRequest;
+    requestChangesBtn.style.display = "none";
+    requestChangesBtn.disabled = true;
   }
 
   toggleActionContainer(reviewActionsEl, [reviewCompleteBtn]);
