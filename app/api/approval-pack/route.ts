@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
       files.push({ name: 'media_link.txt', data: mediaUrl });
     }
 
-    const zip = createZip(files);
+    const zip = new Uint8Array(createZip(files));
     const filename = `approval_pack_${projectName.replace(/\s+/g, '_')}_${cueName.replace(/\s+/g, '_')}_${versionLabel}.zip`;
 
     return new NextResponse(zip, {
