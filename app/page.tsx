@@ -462,27 +462,6 @@ export default function Page() {
             </button>
           </div>
 
-          <div id="pictureReviewCard" class="picture-review-card" style="display: none;">
-            <div class="picture-review-header">
-              <h4 data-i18n="picture.title">Audio to picture</h4>
-              <div class="picture-review-actions">
-                <button id="attachVideoBtn" class="ghost-btn tiny" data-i18n="picture.attach">Attach video</button>
-                <button id="removeVideoBtn" class="ghost-btn tiny" data-i18n="picture.remove">Remove</button>
-              </div>
-            </div>
-            <div class="picture-review-controls">
-              <label class="picture-field">
-                <span data-i18n="picture.offset">Offset (ms)</span>
-                <input id="videoOffsetInput" type="number" value="0" />
-              </label>
-              <label class="picture-field">
-                <span data-i18n="picture.startTc">Start TC</span>
-                <input id="videoStartTcInput" type="text" placeholder="00:00:00.000" />
-              </label>
-              <button id="saveVideoSyncBtn" class="primary-btn tiny" data-i18n="picture.save">Save sync</button>
-            </div>
-            <input id="referenceVideoInput" type="file" accept="video/*" style="display:none;" />
-          </div>
         </div>
 
           <div class="comments-card">

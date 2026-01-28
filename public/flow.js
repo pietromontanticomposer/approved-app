@@ -608,13 +608,6 @@ const deliveryChecklistEl = document.getElementById("deliveryChecklist");
 const deliveryNamingListEl = document.getElementById("deliveryNamingList");
 const deliveryTemplateBadge = document.getElementById("deliveryTemplateBadge");
 const generateManifestBtn = document.getElementById("generateManifestBtn");
-const pictureReviewCard = document.getElementById("pictureReviewCard");
-const attachVideoBtn = document.getElementById("attachVideoBtn");
-const removeVideoBtn = document.getElementById("removeVideoBtn");
-const saveVideoSyncBtn = document.getElementById("saveVideoSyncBtn");
-const referenceVideoInput = document.getElementById("referenceVideoInput");
-const videoOffsetInput = document.getElementById("videoOffsetInput");
-const videoStartTcInput = document.getElementById("videoStartTcInput");
 const onboardingOverlay = document.getElementById("onboardingOverlay");
 const onboardingStepTitle = document.getElementById("onboardingStepTitle");
 const onboardingStepText = document.getElementById("onboardingStepText");
@@ -7283,7 +7276,6 @@ function renderPlayer() {
   renderComments();
   updateReviewUI(project, version);
   renderDeliverySection({ project, cue, version });
-  renderPictureReview({ project, cue, version });
   updateActiveVersionRowStyles();
   if (exportMarkersBtn) exportMarkersBtn.disabled = false;
 }
@@ -9211,96 +9203,6 @@ function initDeliveryUI() {
   }
 }
 
-function renderPictureReview(ctx) {
-  if (!pictureReviewCard) return;
-  if (!ctx || !ctx.version || ctx.version.media?.type !== 'audio') {
-    pictureReviewCard.style.display = 'none';
-    return;
-  }
-  pictureReviewCard.style.display = 'flex';
-  const role = getProjectRole(ctx.project);
-  const canModify = roleCanModify(role);
-  const ref = ctx.version.referenceVideo || null;
-  if (videoOffsetInput) videoOffsetInput.value = ref?.offsetMs || 0;
-  if (videoStartTcInput) videoStartTcInput.value = ref?.startTimecode || '';
-  if (attachVideoBtn) attachVideoBtn.disabled = !canModify;
-  if (removeVideoBtn) removeVideoBtn.disabled = !canModify;
-  if (saveVideoSyncBtn) saveVideoSyncBtn.disabled = !canModify;
-  if (videoOffsetInput) videoOffsetInput.disabled = !canModify;
-  if (videoStartTcInput) videoStartTcInput.disabled = !canModify;
-}
-
-function initPictureReviewUI() {
-  if (attachVideoBtn && referenceVideoInput) {
-    attachVideoBtn.addEventListener('click', () => referenceVideoInput.click());
-  }
-
-  if (referenceVideoInput) {
-    referenceVideoInput.addEventListener('change', () => {
-      const file = referenceVideoInput.files && referenceVideoInput.files[0];
-      if (!file) return;
-      const ctx = getActiveContext();
-      if (!ctx) return;
-      uploadFileToSupabase(file, ctx.project.id, ctx.cue.id, ctx.version.id, { uploadType: 'reference_video', jobId: `ref-${ctx.version.id}` });
-      referenceVideoInput.value = '';
-    });
-  }
-
-  if (removeVideoBtn) {
-    removeVideoBtn.addEventListener('click', async () => {
-      const ctx = getActiveContext();
-      if (!ctx) return;
-      ctx.version.referenceVideo = null;
-      const headers = await getAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      await fetch('/api/versions/update', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          versionId: ctx.version.id,
-          projectId: ctx.project.id,
-          updates: {
-            reference_video_storage_path: null,
-            reference_video_url: null,
-            reference_video_display_name: null,
-            reference_video_offset_ms: 0,
-            reference_video_start_tc: null,
-            reference_video_duration: null
-          }
-        })
-      });
-      renderPlayer();
-    });
-  }
-
-  if (saveVideoSyncBtn) {
-    saveVideoSyncBtn.addEventListener('click', async () => {
-      const ctx = getActiveContext();
-      if (!ctx) return;
-      const offsetMs = videoOffsetInput ? parseInt(videoOffsetInput.value || '0', 10) : 0;
-      const startTc = videoStartTcInput ? videoStartTcInput.value : '';
-      ctx.version.referenceVideo = ctx.version.referenceVideo || {};
-      ctx.version.referenceVideo.offsetMs = offsetMs;
-      ctx.version.referenceVideo.startTimecode = startTc;
-
-      const headers = await getAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      await fetch('/api/versions/update', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          versionId: ctx.version.id,
-          projectId: ctx.project.id,
-          updates: {
-            reference_video_offset_ms: offsetMs,
-            reference_video_start_tc: startTc
-          }
-        })
-      });
-    });
-  }
-}
-
 const onboardingSteps = [
   {
     title: 'Play',
@@ -9936,7 +9838,6 @@ setTimeout(() => {
   initApprovalPackUI();
   initCueSheetUI();
   initDeliveryUI();
-  initPictureReviewUI();
   initOnboardingUI();
 }, 100);
 
