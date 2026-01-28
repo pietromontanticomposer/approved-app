@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { roleCanModify, roleCanReview } from '../lib/roles.ts';
+import { roleCanModify, roleCanReview } from '../lib/roles';
 
 function testRoles() {
   assert.strictEqual(roleCanModify('owner'), true);

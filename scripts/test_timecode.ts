@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { formatTimecode, parseTimecodeToSeconds } from '../lib/timecode.ts';
+import { formatTimecode, parseTimecodeToSeconds } from '../lib/timecode';
 
 function testFormat() {
   assert.strictEqual(formatTimecode(0, 24), '00:00:00.000');
