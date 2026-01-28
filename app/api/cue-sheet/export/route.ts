@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
         lines.push('');
       });
 
-      const pdf = buildSimplePdf(lines, { title: 'Cue Sheet' });
+      const pdf = new Uint8Array(buildSimplePdf(lines, { title: 'Cue Sheet' }));
       return new NextResponse(pdf, {
         status: 200,
         headers: {

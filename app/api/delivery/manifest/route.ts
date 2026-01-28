@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       lines.push(`- ${String(name)}`);
     });
 
-    const pdf = buildSimplePdf(lines, { title: 'Delivery Manifest' });
+    const pdf = new Uint8Array(buildSimplePdf(lines, { title: 'Delivery Manifest' }));
 
     return new NextResponse(pdf, {
       status: 200,
