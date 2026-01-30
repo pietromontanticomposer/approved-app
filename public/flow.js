@@ -9,55 +9,6 @@ const state = {
   playerMode: "review" // "review" | "refs"
 };
 
-const DELIVERY_TEMPLATES = {
-  adv: {
-    name: "ADV / Advertising",
-    checklist: [
-      "Full mix (print master)",
-      "Instrumental mix",
-      "Stems (drums, bass, music, vocals)",
-      "Alt 30s / 15s / 6s cutdowns",
-      "Loopable tail"
-    ],
-    naming: [
-      "<Project>_<Cue>_FullMix.wav",
-      "<Project>_<Cue>_Instrumental.wav",
-      "<Project>_<Cue>_Stems.zip",
-      "<Project>_<Cue>_30s.wav",
-      "<Project>_<Cue>_15s.wav"
-    ]
-  },
-  film_tv: {
-    name: "Film / TV",
-    checklist: [
-      "Full mix (print master)",
-      "Stems (DX/MX/FX or music stems)",
-      "Alt mixes (no drums, no lead)",
-      "Cutdowns (if required)",
-      "Track sheet / cue sheet"
-    ],
-    naming: [
-      "<Show>_<Episode>_<Cue>_FullMix.wav",
-      "<Show>_<Episode>_<Cue>_Stems.zip",
-      "<Show>_<Episode>_<Cue>_AltMix.wav"
-    ]
-  },
-  social: {
-    name: "Social / Short-form",
-    checklist: [
-      "Full mix (print master)",
-      "Short loop (5-10s)",
-      "Alt mix (no vocals)",
-      "Stems (if required)"
-    ],
-    naming: [
-      "<Brand>_<Cue>_FullMix.wav",
-      "<Brand>_<Cue>_Loop10s.wav",
-      "<Brand>_<Cue>_AltMix.wav"
-    ]
-  }
-};
-
 let mainWave = null;
 let activeVideoEl = null;
 let activeAudioEl = null;
@@ -65,7 +16,6 @@ let draggedCueId = null;
 let mainWaveLayer = null;
 let playerWaveLoadToken = 0;
 let pendingApprovalContext = null;
-let deliverySaveTimer = null;
 const PLAYER_WAVE_FADE_MS = 140;
 const miniWaves = {};
 const MAX_CACHE_SIZE = 500; // Limit cache size to prevent memory growth
@@ -603,11 +553,13 @@ const cueSheetNotes = document.getElementById("cueSheetNotes");
 const cueSheetSaveBtn = document.getElementById("cueSheetSaveBtn");
 const cueSheetExportCsvBtn = document.getElementById("cueSheetExportCsvBtn");
 const cueSheetExportPdfBtn = document.getElementById("cueSheetExportPdfBtn");
-const deliveryTemplateSelect = document.getElementById("deliveryTemplateSelect");
-const deliveryChecklistEl = document.getElementById("deliveryChecklist");
-const deliveryNamingListEl = document.getElementById("deliveryNamingList");
-const deliveryTemplateBadge = document.getElementById("deliveryTemplateBadge");
-const generateManifestBtn = document.getElementById("generateManifestBtn");
+const finalDeliveryStatusBadge = document.getElementById("finalDeliveryStatusBadge");
+const finalDeliveryOwnerWrap = document.getElementById("finalDeliveryOwner");
+const finalDeliveryCollaboratorWrap = document.getElementById("finalDeliveryCollaborator");
+const finalDeliveryDropzoneEl = document.getElementById("finalDeliveryDropzone");
+const finalDeliveryListEl = document.getElementById("finalDeliveryList");
+const finalDeliveryDownloadBtn = document.getElementById("finalDeliveryDownloadBtn");
+const finalDeliveryEmptyHint = document.getElementById("finalDeliveryEmptyHint");
 const onboardingOverlay = document.getElementById("onboardingOverlay");
 const onboardingStepTitle = document.getElementById("onboardingStepTitle");
 const onboardingStepText = document.getElementById("onboardingStepText");
@@ -7139,6 +7091,7 @@ function renderPlayer() {
     }
     if (exportMarkersBtn) exportMarkersBtn.disabled = true;
     if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
+    renderFinalDeliverySection(null);
     return;
   }
 
@@ -7170,6 +7123,7 @@ function renderPlayer() {
     }
     if (exportMarkersBtn) exportMarkersBtn.disabled = true;
     if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
+    renderFinalDeliverySection(null);
     return;
   }
 
@@ -7187,6 +7141,7 @@ function renderPlayer() {
 
   if (state.playerMode === "refs" && hasRefs) {
     renderReferencePlayer(project);
+    renderFinalDeliverySection(null);
     return;
   }
 
@@ -7214,6 +7169,7 @@ function renderPlayer() {
     }
     if (exportMarkersBtn) exportMarkersBtn.disabled = true;
     if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
+    renderFinalDeliverySection(null);
     return;
   }
 
@@ -7244,6 +7200,7 @@ function renderPlayer() {
     }
     if (exportMarkersBtn) exportMarkersBtn.disabled = true;
     if (downloadApprovalPackBtn) downloadApprovalPackBtn.style.display = "none";
+    renderFinalDeliverySection(null);
     return;
   }
 
@@ -7275,7 +7232,7 @@ function renderPlayer() {
 
   renderComments();
   updateReviewUI(project, version);
-  renderDeliverySection({ project, cue, version });
+  renderFinalDeliverySection({ project, cue, version });
   updateActiveVersionRowStyles();
   if (exportMarkersBtn) exportMarkersBtn.disabled = false;
 }
@@ -9075,130 +9032,171 @@ function initCueSheetUI() {
   }
 }
 
-function normalizeDeliveryConfig(version) {
-  const delivery = version.delivery || null;
-  const templateKey = delivery?.template_key || '';
-  const template = DELIVERY_TEMPLATES[templateKey] || null;
-  const checklistRaw = Array.isArray(delivery?.checklist) ? delivery.checklist : (template ? template.checklist : []);
-  const checklist = checklistRaw.map((item) => {
-    if (typeof item === 'string') return { label: item, done: false };
-    return { label: item.label || '', done: !!item.done };
-  });
-  const naming = Array.isArray(delivery?.naming) ? delivery.naming : (template ? template.naming : []);
-  return { templateKey, template, checklist, naming };
+function getFinalDeliveryFiles(ctx) {
+  if (!ctx || !ctx.version || !Array.isArray(ctx.version.deliverables)) return [];
+  return ctx.version.deliverables;
 }
 
-async function saveDeliveryConfig(ctx, config) {
-  if (!ctx) return;
-  if (deliverySaveTimer) clearTimeout(deliverySaveTimer);
-  deliverySaveTimer = setTimeout(async () => {
-    const headers = await getAuthHeaders();
-    headers['Content-Type'] = 'application/json';
-    const res = await fetch('/api/delivery', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        projectId: ctx.project.id,
-        cueId: ctx.cue.id,
-        versionId: ctx.version.id,
-        template_key: config.templateKey,
-        checklist: config.checklist,
-        naming: config.naming
-      })
-    });
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      ctx.version.delivery = data.delivery || ctx.version.delivery;
-    }
-  }, 300);
-}
+function renderFinalDeliverySection(ctx) {
+  if (!finalDeliveryStatusBadge || !finalDeliveryOwnerWrap || !finalDeliveryCollaboratorWrap || !finalDeliveryListEl || !finalDeliveryDropzoneEl) return;
 
-function renderDeliverySection(ctx) {
-  if (!deliveryTemplateSelect || !deliveryChecklistEl || !deliveryNamingListEl || !deliveryTemplateBadge) return;
   if (!ctx) {
-    deliveryTemplateSelect.value = '';
-    deliveryChecklistEl.innerHTML = '';
-    deliveryNamingListEl.innerHTML = '';
-    deliveryTemplateBadge.textContent = tr('delivery.noTemplate');
+    finalDeliveryStatusBadge.textContent = tr('finalDelivery.emptyBadge', {}, 'No files');
+    finalDeliveryOwnerWrap.style.display = 'none';
+    finalDeliveryCollaboratorWrap.style.display = 'none';
+    finalDeliveryListEl.innerHTML = '';
+    finalDeliveryDropzoneEl.classList.add('disabled');
+    if (finalDeliveryDownloadBtn) finalDeliveryDownloadBtn.disabled = true;
+    if (finalDeliveryEmptyHint) finalDeliveryEmptyHint.style.display = 'none';
     return;
   }
 
-  const role = getProjectRole(ctx.project);
-  const canModify = roleCanModify(role);
-  const config = normalizeDeliveryConfig(ctx.version);
-  const templateKey = config.templateKey || '';
-  const templateName = config.template ? config.template.name : 'Delivery';
-  deliveryTemplateBadge.textContent = templateKey ? templateName : tr('delivery.noTemplate');
-  deliveryTemplateSelect.value = templateKey;
-  deliveryTemplateSelect.disabled = !canModify;
+  const isOwner = isOwnerOfProject(ctx.project) || getProjectRole(ctx.project) === 'owner';
+  const files = getFinalDeliveryFiles(ctx);
+  const count = files.length;
+  const badgeText = count
+    ? tr('finalDelivery.filesBadge', { n: count }, `${count} file${count === 1 ? '' : 's'}`)
+    : tr('finalDelivery.emptyBadge', {}, 'No files');
 
-  deliveryChecklistEl.innerHTML = '';
-  config.checklist.forEach((item, idx) => {
-    const label = document.createElement('label');
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = !!item.done;
-    input.disabled = !canModify;
-    input.addEventListener('change', () => {
-      config.checklist[idx].done = input.checked;
-      ctx.version.delivery = ctx.version.delivery || {};
-      ctx.version.delivery.checklist = config.checklist;
-      saveDeliveryConfig(ctx, { ...config, templateKey: templateKey || 'adv' });
-    });
-    const span = document.createElement('span');
-    span.textContent = item.label;
-    label.appendChild(input);
-    label.appendChild(span);
-    deliveryChecklistEl.appendChild(label);
-  });
+  finalDeliveryStatusBadge.textContent = badgeText;
+  finalDeliveryDropzoneEl.classList.toggle('disabled', !isOwner);
+  finalDeliveryOwnerWrap.style.display = isOwner ? 'flex' : 'none';
+  finalDeliveryCollaboratorWrap.style.display = isOwner ? 'none' : 'flex';
 
-  deliveryNamingListEl.innerHTML = '';
-  config.naming.forEach((name, idx) => {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = String(name);
-    input.disabled = !canModify;
-    input.addEventListener('change', () => {
-      config.naming[idx] = input.value;
-      ctx.version.delivery = ctx.version.delivery || {};
-      ctx.version.delivery.naming = config.naming;
-      saveDeliveryConfig(ctx, { ...config, templateKey: templateKey || 'adv' });
-    });
-    deliveryNamingListEl.appendChild(input);
-  });
+  finalDeliveryListEl.innerHTML = '';
+  if (isOwner) {
+    if (!count) {
+      finalDeliveryListEl.innerHTML = `<div class="final-delivery-empty">${tr('finalDelivery.emptyHint', {}, 'No final delivery yet.')}</div>`;
+    } else {
+      files.forEach(dv => {
+        const row = document.createElement('div');
+        row.className = 'final-delivery-item';
+
+        const nameWrap = document.createElement('div');
+        nameWrap.className = 'final-delivery-item-name';
+        const nameEl = document.createElement('div');
+        nameEl.textContent = dv.name || 'File';
+        nameWrap.appendChild(nameEl);
+
+        const metaText = formatFileSize(dv.size);
+        if (metaText) {
+          const metaEl = document.createElement('div');
+          metaEl.className = 'final-delivery-item-meta';
+          metaEl.textContent = metaText;
+          nameWrap.appendChild(metaEl);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'final-delivery-item-actions';
+        const dlBtn = document.createElement('button');
+        dlBtn.type = 'button';
+        dlBtn.className = 'ghost-btn tiny';
+        dlBtn.textContent = tr('action.download', {}, 'Download');
+        dlBtn.disabled = !dv.url;
+        dlBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (!dv.url) return;
+          triggerDownload(getProxiedUrl(dv.url), dv.name || 'file');
+        });
+        actions.appendChild(dlBtn);
+
+        row.appendChild(nameWrap);
+        row.appendChild(actions);
+        finalDeliveryListEl.appendChild(row);
+      });
+    }
+  }
+
+  if (finalDeliveryDownloadBtn) finalDeliveryDownloadBtn.disabled = count === 0;
+  if (finalDeliveryEmptyHint) finalDeliveryEmptyHint.style.display = count === 0 ? 'block' : 'none';
 }
 
-function initDeliveryUI() {
-  if (deliveryTemplateSelect) {
-    deliveryTemplateSelect.addEventListener('change', () => {
+function handleFinalDeliveryFiles(files) {
+  const ctx = getActiveContext();
+  if (!ctx) return;
+  if (!isOwnerOfProject(ctx.project) && getProjectRole(ctx.project) !== 'owner') return;
+  files.forEach(file => handleFileDropOnVersion(ctx.project, ctx.cue, ctx.version, file));
+  renderFinalDeliverySection(getActiveContext());
+}
+
+async function downloadFinalDeliveryPack(ctx) {
+  if (!ctx) return;
+  const files = getFinalDeliveryFiles(ctx);
+  if (!files.length) return;
+
+  if (files.length === 1 && files[0]?.url) {
+    triggerDownload(getProxiedUrl(files[0].url), files[0].name || 'final_delivery');
+    return;
+  }
+
+  const headers = await getAuthHeaders();
+  headers['Content-Type'] = 'application/json';
+  const res = await fetch('/api/final-delivery', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ projectId: ctx.project.id, versionId: ctx.version.id })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    showAlert(err?.error || 'Errore download consegna finale');
+    return;
+  }
+  const blob = await res.blob();
+  const dispo = res.headers.get('Content-Disposition') || '';
+  const match = dispo.match(/filename=\"?([^\";]+)\"?/i);
+  const filename = match ? match[1] : 'final_delivery.zip';
+  triggerBlobDownload(blob, filename);
+}
+
+function initFinalDeliveryUI() {
+  if (finalDeliveryDropzoneEl) {
+    finalDeliveryDropzoneEl.addEventListener('dragover', e => {
+      if (!isFileDragEvent(e)) return;
       const ctx = getActiveContext();
       if (!ctx) return;
-      const templateKey = deliveryTemplateSelect.value;
-      if (!templateKey || !DELIVERY_TEMPLATES[templateKey]) return;
-      const template = DELIVERY_TEMPLATES[templateKey];
-      ctx.version.delivery = ctx.version.delivery || {};
-      ctx.version.delivery.template_key = templateKey;
-      ctx.version.delivery.checklist = template.checklist.map(label => ({ label, done: false }));
-      ctx.version.delivery.naming = [...template.naming];
-      renderDeliverySection(ctx);
-      saveDeliveryConfig(ctx, normalizeDeliveryConfig(ctx.version));
+      if (!isOwnerOfProject(ctx.project) && getProjectRole(ctx.project) !== 'owner') return;
+      e.preventDefault();
+      finalDeliveryDropzoneEl.classList.add('drag-over');
+    });
+
+    finalDeliveryDropzoneEl.addEventListener('dragleave', e => {
+      if (!finalDeliveryDropzoneEl.contains(e.relatedTarget)) {
+        finalDeliveryDropzoneEl.classList.remove('drag-over');
+      }
+    });
+
+    finalDeliveryDropzoneEl.addEventListener('drop', e => {
+      if (!isFileDragEvent(e)) return;
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      if (!isOwnerOfProject(ctx.project) && getProjectRole(ctx.project) !== 'owner') return;
+      e.preventDefault();
+      finalDeliveryDropzoneEl.classList.remove('drag-over');
+      if (!e.dataTransfer?.files?.length) return;
+      handleFinalDeliveryFiles(Array.from(e.dataTransfer.files));
+    });
+
+    finalDeliveryDropzoneEl.addEventListener('click', () => {
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      if (!isOwnerOfProject(ctx.project) && getProjectRole(ctx.project) !== 'owner') return;
+      openFilePicker({
+        multiple: true,
+        onFiles: handleFinalDeliveryFiles
+      });
     });
   }
 
-  if (generateManifestBtn) {
-    generateManifestBtn.addEventListener('click', async () => {
+  if (finalDeliveryDownloadBtn) {
+    finalDeliveryDownloadBtn.addEventListener('click', async () => {
       const ctx = getActiveContext();
       if (!ctx) return;
-      const headers = await getAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      const res = await fetch('/api/delivery/manifest', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ projectId: ctx.project.id, versionId: ctx.version.id })
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      triggerBlobDownload(blob, 'delivery_manifest.pdf');
+      try {
+        finalDeliveryDownloadBtn.disabled = true;
+        await downloadFinalDeliveryPack(ctx);
+      } finally {
+        renderFinalDeliverySection(getActiveContext());
+      }
     });
   }
 }
@@ -9837,7 +9835,7 @@ setTimeout(() => {
   initApprovalUI();
   initApprovalPackUI();
   initCueSheetUI();
-  initDeliveryUI();
+  initFinalDeliveryUI();
   initOnboardingUI();
 }, 100);
 

@@ -112,6 +112,14 @@
       'review.messageChangesRequested': 'Changes requested. Waiting for the new version.',
       'review.messageApproved': 'Version approved.',
 
+      // Final delivery
+      'finalDelivery.title': 'Final delivery',
+      'finalDelivery.emptyBadge': 'No files',
+      'finalDelivery.filesBadge': '{n} files',
+      'finalDelivery.dropHere': 'Drop final delivery files here',
+      'finalDelivery.download': 'Download final delivery',
+      'finalDelivery.emptyHint': 'No final delivery yet.',
+
       // Comments
       'comments.title': 'Comments',
       'comments.noComments': 'No comments',
@@ -330,6 +338,14 @@
       'review.messageInRevision': 'Versione in lavorazione.',
       'review.messageChangesRequested': 'Modifiche richieste. In attesa della nuova versione.',
       'review.messageApproved': 'Versione approvata.',
+
+      // Final delivery
+      'finalDelivery.title': 'Consegna finale',
+      'finalDelivery.emptyBadge': 'Nessun file',
+      'finalDelivery.filesBadge': '{n} file',
+      'finalDelivery.dropHere': 'Trascina qui i file finali',
+      'finalDelivery.download': 'Scarica consegna finale',
+      'finalDelivery.emptyHint': 'Nessuna consegna finale disponibile.',
 
       // Comments
       'comments.title': 'Commenti',

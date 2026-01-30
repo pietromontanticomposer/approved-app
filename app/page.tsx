@@ -519,24 +519,27 @@ export default function Page() {
             </div>
           </div>
 
-          <div class="delivery-card">
+          <div class="delivery-card final-delivery-card">
             <div class="delivery-header">
-              <h3 data-i18n="delivery.title">Delivery</h3>
-              <span id="deliveryTemplateBadge" class="tag small" data-i18n="delivery.noTemplate">No template</span>
+              <h3 data-i18n="finalDelivery.title">Final delivery</h3>
+              <span id="finalDeliveryStatusBadge" class="tag small" data-i18n="finalDelivery.emptyBadge">No files</span>
             </div>
             <div class="delivery-body">
-              <select id="deliveryTemplateSelect" class="delivery-select">
-                <option value="">Select template…</option>
-                <option value="adv">ADV / Advertising</option>
-                <option value="film_tv">Film / TV</option>
-                <option value="social">Social</option>
-              </select>
-              <div id="deliveryChecklist" class="delivery-checklist"></div>
-              <div class="delivery-naming">
-                <div class="delivery-naming-title" data-i18n="delivery.naming">Naming helper</div>
-                <div id="deliveryNamingList" class="delivery-naming-list"></div>
+              <div id="finalDeliveryOwner" class="final-delivery-owner">
+                <div id="finalDeliveryDropzone" class="card-dropzone disabled">
+                  <span class="dropzone-icon">📦</span>
+                  <span data-i18n="finalDelivery.dropHere">Drop final delivery files here</span>
+                </div>
+                <div id="finalDeliveryList" class="final-delivery-list"></div>
               </div>
-              <button id="generateManifestBtn" class="ghost-btn small" data-i18n="delivery.generateManifest">Generate manifest</button>
+              <div id="finalDeliveryCollaborator" class="final-delivery-collab" style="display: none;">
+                <button id="finalDeliveryDownloadBtn" class="primary-btn small" disabled data-i18n="finalDelivery.download">
+                  Download final delivery
+                </button>
+                <div id="finalDeliveryEmptyHint" class="final-delivery-empty" data-i18n="finalDelivery.emptyHint">
+                  No final delivery yet.
+                </div>
+              </div>
             </div>
           </div>
 
