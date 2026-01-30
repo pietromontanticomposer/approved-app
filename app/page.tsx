@@ -111,9 +111,6 @@ export default function Page() {
         </div>
       </div>
       <div class="topbar-actions">
-        <button id="cueSheetBtn" class="ghost-btn" data-i18n="header.cueSheet">
-          Cue sheet
-        </button>
         <button id="myAccountBtn" class="ghost-btn" data-i18n="header.myAccount" onclick="window.location.href='/account'">
           My account
         </button>
@@ -469,7 +466,6 @@ export default function Page() {
               <h3 data-i18n="comments.title">Comments</h3>
               <div class="comments-header-actions">
                 <span id="commentsSummary" class="tag small" data-i18n="comments.noComments">No comments</span>
-                <button id="exportMarkersBtn" class="ghost-btn tiny" data-i18n="comments.exportMarkers">Export markers</button>
               </div>
             </div>
             <div id="reviewStatusMessage" class="review-status-message"></div>
