@@ -22,6 +22,7 @@
       'header.getStarted': 'Click "New project" to get started',
       'header.projectNotes': 'Project notes',
       'header.projectOptions': 'Project options',
+      'header.cueSheet': 'Cue sheet',
       'header.myAccount': 'My account',
 
       // Upload
@@ -119,6 +120,26 @@
       'finalDelivery.dropHere': 'Drop final delivery files here',
       'finalDelivery.download': 'Download final delivery',
       'finalDelivery.emptyHint': 'No final delivery yet.',
+
+      // Cue sheet
+      'cueSheet.title': 'Cue sheet',
+      'cueSheet.projectMeta': 'Project metadata',
+      'cueSheet.production': 'Production',
+      'cueSheet.client': 'Client',
+      'cueSheet.episode': 'Episode',
+      'cueSheet.cueMeta': 'Cue data',
+      'cueSheet.selectCue': 'Cue',
+      'cueSheet.workTitle': 'Work title',
+      'cueSheet.composers': 'Composer(s)',
+      'cueSheet.publishers': 'Publisher(s)',
+      'cueSheet.pro': 'PRO',
+      'cueSheet.usage': 'Usage type',
+      'cueSheet.startTc': 'Start timecode',
+      'cueSheet.duration': 'Duration',
+      'cueSheet.notes': 'Notes',
+      'cueSheet.save': 'Save',
+      'cueSheet.exportCsv': 'Export CSV',
+      'cueSheet.exportPdf': 'Export PDF',
 
       // Comments
       'comments.title': 'Comments',
@@ -249,6 +270,7 @@
       'header.getStarted': 'Clicca "Nuovo progetto" per iniziare',
       'header.projectNotes': 'Note progetto',
       'header.projectOptions': 'Opzioni progetto',
+      'header.cueSheet': 'Cue sheet',
       'header.myAccount': 'Il mio account',
 
       // Upload
@@ -346,6 +368,26 @@
       'finalDelivery.dropHere': 'Trascina qui i file finali',
       'finalDelivery.download': 'Scarica consegna finale',
       'finalDelivery.emptyHint': 'Nessuna consegna finale disponibile.',
+
+      // Cue sheet
+      'cueSheet.title': 'Cue sheet',
+      'cueSheet.projectMeta': 'Metadati progetto',
+      'cueSheet.production': 'Produzione',
+      'cueSheet.client': 'Cliente',
+      'cueSheet.episode': 'Episodio',
+      'cueSheet.cueMeta': 'Dati cue',
+      'cueSheet.selectCue': 'Cue',
+      'cueSheet.workTitle': 'Titolo brano',
+      'cueSheet.composers': 'Compositori',
+      'cueSheet.publishers': 'Editori',
+      'cueSheet.pro': 'PRO',
+      'cueSheet.usage': 'Tipo utilizzo',
+      'cueSheet.startTc': 'Timecode inizio',
+      'cueSheet.duration': 'Durata',
+      'cueSheet.notes': 'Note',
+      'cueSheet.save': 'Salva',
+      'cueSheet.exportCsv': 'Esporta CSV',
+      'cueSheet.exportPdf': 'Esporta PDF',
 
       // Comments
       'comments.title': 'Commenti',
@@ -501,7 +543,10 @@
     for (var i = 0; i < elements.length; i++) {
       var el = elements[i];
       var key = el.getAttribute('data-i18n');
-      if (key) el.textContent = t(key);
+      if (!key) continue;
+      var translated = t(key);
+      // Avoid showing raw keys when a translation is missing.
+      if (translated !== key) el.textContent = translated;
     }
 
     // Update placeholders
@@ -509,7 +554,9 @@
     for (var j = 0; j < placeholders.length; j++) {
       var el2 = placeholders[j];
       var key2 = el2.getAttribute('data-i18n-placeholder');
-      if (key2) el2.placeholder = t(key2);
+      if (!key2) continue;
+      var translatedPlaceholder = t(key2);
+      if (translatedPlaceholder !== key2) el2.placeholder = translatedPlaceholder;
     }
 
     // Update titles
@@ -517,7 +564,9 @@
     for (var k = 0; k < titles.length; k++) {
       var el3 = titles[k];
       var key3 = el3.getAttribute('data-i18n-title');
-      if (key3) el3.title = t(key3);
+      if (!key3) continue;
+      var translatedTitle = t(key3);
+      if (translatedTitle !== key3) el3.title = translatedTitle;
     }
 
     // Update language selector if present
