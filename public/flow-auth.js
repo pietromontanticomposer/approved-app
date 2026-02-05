@@ -19,32 +19,26 @@ async function initAuth() {
 
   try {
     const { data: { session }, error } = await window.supabaseClient.auth.getSession();
-    
+
     if (error || !session) {
-      console.log('[FlowAuth] No session found, using demo mode');
-      // DEMO MODE: create a stable fake user id (UUID) persisted in localStorage
-      function getOrCreateDemoId() {
-        try {
-          const key = 'approved_demo_actor_id';
-          let id = localStorage.getItem(key);
-          if (id && typeof id === 'string') return id;
-          // simple UUID v4 generator
-          id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-            const r = (Math.random() * 16) | 0;
-            const v = c === 'x' ? r : (r & 0x3) | 0x8;
-            return v.toString(16);
-          });
-          localStorage.setItem(key, id);
-          return id;
-        } catch (e) {
-          return 'demo-user';
-        }
+      console.log('[FlowAuth] No session found');
+
+      // Check if user is accessing via share link - allow anonymous access in that case
+      const isSharePage = window.location.pathname.startsWith('/share/');
+      const isInvitePage = window.location.pathname.startsWith('/invite/');
+      const hasShareContext = localStorage.getItem('approved_share_link');
+
+      if (isSharePage || isInvitePage || hasShareContext) {
+        console.log('[FlowAuth] Anonymous access allowed for share/invite flow');
+        authState.user = null;
+        authState.session = null;
+        return true; // Allow access but without user
       }
 
-      const demoId = getOrCreateDemoId();
-      authState.user = { id: demoId, email: 'demo@approved.local' };
-      authState.session = { access_token: 'demo', user: authState.user };
-      console.log('[FlowAuth] ✅ Demo mode active (demo id=', demoId, ')');
+      // No session and not a share flow - redirect to login
+      console.log('[FlowAuth] Redirecting to /login (no session)');
+      window.location.replace('/login');
+      return false;
     } else {
       authState.session = session;
       authState.user = session.user;

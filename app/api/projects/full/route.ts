@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
 
       if (!hasAccess) {
         if (userId) {
+          // Check project_members
           const { data: membership } = await supabaseAdmin
             .from('project_members')
             .select('project_id')
@@ -70,6 +71,17 @@ export async function GET(req: NextRequest) {
             .maybeSingle();
           if (membership) hasAccess = true;
         }
+      }
+
+      // Also check team_members if project has a team
+      if (!hasAccess && userId && singleProject.team_id) {
+        const { data: teamMembership } = await supabaseAdmin
+          .from('team_members')
+          .select('team_id')
+          .eq('team_id', singleProject.team_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (teamMembership) hasAccess = true;
       }
 
       if (!hasAccess) {
@@ -87,9 +99,11 @@ export async function GET(req: NextRequest) {
           .maybeSingle();
         baseProjects = shareProject ? [shareProject] : [];
       } else {
+      // Load owned projects, project memberships, and team memberships in parallel
       const [
         { data: ownedProjects },
-        { data: membershipRows }
+        { data: membershipRows },
+        { data: teamMembershipRows }
       ] = await Promise.all([
         supabaseAdmin
           .from('projects')
@@ -99,17 +113,37 @@ export async function GET(req: NextRequest) {
         supabaseAdmin
           .from('project_members')
           .select('project_id')
-          .eq('member_id', userId)
+          .eq('member_id', userId),
+        supabaseAdmin
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', userId)
       ]);
 
+      const ownedProjectIds = new Set((ownedProjects || []).map(p => p.id));
       const sharedProjectIds = (membershipRows || []).map(r => r.project_id).filter(Boolean);
 
-      let sharedProjects = [];
-      if (sharedProjectIds.length > 0) {
+      // Get projects from teams where user is a member
+      const userTeamIds = (teamMembershipRows || []).map(r => r.team_id).filter(Boolean);
+      let teamProjectIds: string[] = [];
+      if (userTeamIds.length > 0) {
+        const { data: teamProjects } = await supabaseAdmin
+          .from('projects')
+          .select('id')
+          .in('team_id', userTeamIds);
+        teamProjectIds = (teamProjects || []).map(p => p.id).filter(Boolean);
+      }
+
+      // Combine all shared project IDs (excluding owned)
+      const allSharedIds = new Set([...sharedProjectIds, ...teamProjectIds]);
+      const finalSharedIds = Array.from(allSharedIds).filter(id => !ownedProjectIds.has(id));
+
+      let sharedProjects: any[] = [];
+      if (finalSharedIds.length > 0) {
         const { data } = await supabaseAdmin
           .from('projects')
           .select('*')
-          .in('id', sharedProjectIds)
+          .in('id', finalSharedIds)
           .order('created_at', { ascending: false });
         sharedProjects = data || [];
       }

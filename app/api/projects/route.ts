@@ -122,8 +122,10 @@ async function getOwnedProjects(userId: string): Promise<Project[]> {
 
 /**
  * Get projects shared with user
+ * Includes projects where user is in project_members OR team_members
  */
 async function getSharedProjects(userId: string, ownedProjectIds: string[]): Promise<Project[]> {
+  // 1. Get projects from direct project_members
   const membershipResult = await supabaseAdmin
     .from('project_members')
     .select('project_id')
@@ -138,8 +140,39 @@ async function getSharedProjects(userId: string, ownedProjectIds: string[]): Pro
     .map((row: any) => row.project_id)
     .filter(Boolean);
 
-  // Combine and deduplicate, excluding owned projects
-  const allSharedIds = new Set([...projectIdsFromMembership]);
+  // 2. Get teams where user is a member
+  const teamMembershipResult = await supabaseAdmin
+    .from('team_members')
+    .select('team_id')
+    .eq('user_id', userId);
+
+  if (teamMembershipResult.error) {
+    console.error('[Projects] Error loading team memberships:', teamMembershipResult.error);
+    throw new Error(`Failed to load team memberships: ${teamMembershipResult.error.message}`);
+  }
+
+  const userTeamIds = (teamMembershipResult.data || [])
+    .map((row: any) => row.team_id)
+    .filter(Boolean);
+
+  // 3. Get projects from those teams (excluding owned projects)
+  let projectIdsFromTeams: string[] = [];
+  if (userTeamIds.length > 0) {
+    const { data: teamProjects, error: teamProjectsError } = await supabaseAdmin
+      .from('projects')
+      .select('id')
+      .in('team_id', userTeamIds)
+      .not('owner_id', 'eq', userId); // Exclude projects user owns
+
+    if (teamProjectsError) {
+      console.warn('[Projects] Warning loading team projects:', teamProjectsError);
+    } else {
+      projectIdsFromTeams = (teamProjects || []).map((p: any) => p.id).filter(Boolean);
+    }
+  }
+
+  // 4. Combine and deduplicate, excluding owned projects
+  const allSharedIds = new Set([...projectIdsFromMembership, ...projectIdsFromTeams]);
   const ownedIdsSet = new Set(ownedProjectIds);
   const finalSharedIds = Array.from(allSharedIds).filter(id => !ownedIdsSet.has(id));
 
