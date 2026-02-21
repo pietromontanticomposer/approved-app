@@ -23,7 +23,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://unpkg.com" crossOrigin="anonymous" />
         {/* Preload critical external scripts */}
         <link rel="preload" href="https://unpkg.com/@supabase/supabase-js@2" as="script" />
-        <link rel="preload" href="https://unpkg.com/wavesurfer.js@6" as="script" />
+        <link rel="preload" href="/vendor/wavesurfer.min.js?v=6.6.4" as="script" />
       </head>
       <body style={{ margin: 0, padding: 0 }}>
         {children}

@@ -697,14 +697,14 @@ export default function Page() {
         strategy="beforeInteractive"
       />
       <Script
-        src="https://unpkg.com/wavesurfer.js@6"
+        src="/vendor/wavesurfer.min.js?v=6.6.4"
         strategy="beforeInteractive"
       />
       <Script src="/i18n.js?v=11" strategy="afterInteractive" />
       <Script src="/flow-auth.js?v=9" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=9"
+        src="/flow.js?v=10"
         strategy="afterInteractive"
         onLoad={() => {
           console.log('[PageInit] Scripts loaded');

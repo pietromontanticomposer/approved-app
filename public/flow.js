@@ -45,6 +45,65 @@ const MAX_CONCURRENT_WAVEFORM_DECODES = 4;
 const waveformRetryState = new Map();
 const MAX_WAVEFORM_RETRIES = 2;
 const WAVEFORM_RETRY_DELAY_MS = 1200;
+let waveSurferLoadPromise = null;
+
+function ensureWaveSurferReady() {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if (typeof WaveSurfer !== "undefined") return Promise.resolve(true);
+  if (waveSurferLoadPromise) return waveSurferLoadPromise;
+
+  waveSurferLoadPromise = new Promise(resolve => {
+    const onReady = (ok) => {
+      resolve(ok && typeof WaveSurfer !== "undefined");
+    };
+
+    const attachListeners = (el) => {
+      if (!el) {
+        onReady(false);
+        return;
+      }
+      el.addEventListener(
+        "load",
+        () => {
+          el.setAttribute("data-loaded", "1");
+          onReady(true);
+        },
+        { once: true }
+      );
+      el.addEventListener(
+        "error",
+        () => {
+          onReady(false);
+        },
+        { once: true }
+      );
+    };
+
+    const existing = document.querySelector('script[data-wavesurfer-loader="1"]');
+    if (existing) {
+      if (existing.getAttribute("data-loaded") === "1" && typeof WaveSurfer !== "undefined") {
+        onReady(true);
+        return;
+      }
+      attachListeners(existing);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "/vendor/wavesurfer.min.js?v=6.6.4";
+    script.async = true;
+    script.defer = true;
+    script.setAttribute("data-wavesurfer-loader", "1");
+    attachListeners(script);
+    document.head.appendChild(script);
+  }).finally(() => {
+    if (typeof WaveSurfer === "undefined") {
+      waveSurferLoadPromise = null;
+    }
+  });
+
+  return waveSurferLoadPromise;
+}
 
 // Waveform generation queue - limit concurrent generation to avoid overwhelming the browser
 const waveformQueue = [];
@@ -1919,7 +1978,32 @@ async function createNewProject() {
       return;
     }
     const data = await res.json();
-    // Support both response shapes:
+
+    // Handle single project response from POST (newly created project)
+    if (data.project && typeof data.project === 'object' && data.project.id) {
+      const newProject = {
+        id: data.project.id,
+        name: data.project.name || finalName,
+        team_id: data.project.team_id,
+        owner_id: data.project.owner_id || null,
+        team_members: data.project.team_members || [],
+        cues: [],
+        activeCueId: null,
+        activeVersionId: null,
+        references: data.project.references || []
+      };
+
+      // Add to existing projects list (don't replace!)
+      state.projects.unshift(newProject);
+      console.log("[Flow] New project created:", newProject.id, newProject.name);
+
+      // Auto-select the new project
+      renderAll();
+      selectProject(newProject.id);
+      return;
+    }
+
+    // Support both response shapes for GET:
     // - { projects: [...] }
     // - { my_projects: [...], shared_with_me: [...] }
     let projects = [];
@@ -2905,6 +2989,15 @@ function createRefMiniWave(refVersion, container) {
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
     console.warn('[createRefMiniWave] WaveSurfer not loaded yet');
+    renderNeutralWavePlaceholder(container, {
+      height: 32,
+      color: "rgba(148,163,184,0.45)"
+    });
+    ensureWaveSurferReady().then(ready => {
+      if (!ready || !container || !container.isConnected) return;
+      waveformRenderCache.delete(cacheId);
+      createRefMiniWave(refVersion, container);
+    });
     return;
   }
 
@@ -3561,6 +3654,12 @@ function loadAudioPlayer(project, cue, version) {
   // Check if WaveSurfer is available
   if (typeof WaveSurfer === 'undefined') {
     console.warn('[loadAudioPlayer] WaveSurfer not loaded yet');
+    ensureWaveSurferReady().then(ready => {
+      if (!ready || playerWaveLoadToken !== loadToken) return;
+      const activeProject = getActiveProject();
+      if (!activeProject) return;
+      loadAudioPlayer(activeProject, cue, version);
+    });
     return;
   }
 
@@ -3848,6 +3947,12 @@ function renderReferencePlayer(project) {
     // Check if WaveSurfer is available
     if (typeof WaveSurfer === 'undefined') {
       console.warn('[showReferenceInPlayer] WaveSurfer not loaded yet');
+      ensureWaveSurferReady().then(ready => {
+        if (!ready) return;
+        const activeProject = getActiveProject();
+        if (!activeProject || activeProject.playerMode !== "refs") return;
+        showReferenceInPlayer(activeProject);
+      });
       return;
     }
 
