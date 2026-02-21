@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export default function LandingPage() {
+export function LandingContent() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const toggleFaq = (index: number) => {
@@ -884,4 +884,8 @@ export default function LandingPage() {
       </footer>
     </div>
   );
+}
+
+export default function LandingPage() {
+  return <LandingContent />;
 }

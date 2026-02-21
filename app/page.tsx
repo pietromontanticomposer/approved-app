@@ -4,6 +4,7 @@
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import ShareModal from "./components/ShareModal";
+import { LandingContent } from "./landing/page";
 
 // Force rebuild - Jan 8 2026 - v8 - Enhanced error logging for Supabase Storage
 
@@ -14,8 +15,37 @@ export default function Page() {
     projectName: string;
     teamId: string;
   } | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { getSupabaseClient } = await import("@/lib/supabaseClient");
+        const client = getSupabaseClient();
+        const { data } = await client.auth.getSession();
+
+        if (data?.session?.user) {
+          setIsLoggedIn(true);
+        } else {
+          setIsLoggedIn(false);
+        }
+      } catch (e) {
+        console.warn('[HomePage] Auth check failed', e);
+        setIsLoggedIn(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   useEffect(() => {
+    // Only run app initialization if logged in
+    if (isLoggedIn !== true) return;
+
     console.log("Home page mounted - initializing Supabase client");
     // Reset sign-out flag on fresh page load to allow bootstrap
     (window as any).__isSigningOut = false;
@@ -42,7 +72,7 @@ export default function Page() {
     return () => {
       window.removeEventListener('open-share-modal', handleOpenShareModal);
     };
-  }, []);
+  }, [isLoggedIn]);
 
   const html = `<div class="app">
   <aside class="sidebar">
@@ -594,6 +624,38 @@ export default function Page() {
   </div>
   `;
 
+  // Show loading while checking auth
+  if (checkingAuth) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: '#f8f9ff'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: 40,
+            height: 40,
+            border: '3px solid #e5e7eb',
+            borderTopColor: '#6366f1',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  // Show landing page if not logged in
+  if (!isLoggedIn) {
+    return <LandingContent />;
+  }
+
+  // Show app if logged in
   return (
     <>
       <Script
