@@ -9,9 +9,11 @@ import type { AccessRole } from './roles';
 export interface AccessContext {
   projectId: string;
   role: AccessRole;
-  source: 'user' | 'share';
+  source: 'user' | 'share' | 'guest';
   userId?: string | null;
   shareId?: string | null;
+  guestSessionId?: string | null;
+  guestNickname?: string | null;
 }
 
 function normalizeRole(role: string | null | undefined): AccessRole | null {
@@ -133,8 +135,72 @@ export async function getShareLinkContext(req: Request | NextRequest, projectId?
   }
 }
 
+function extractGuestToken(req: Request | NextRequest): string {
+  // Check header first
+  const headerToken = getHeader(req, 'x-guest-session');
+  if (headerToken) return headerToken;
+
+  // Check cookie
+  const cookieHeader = req.headers.get('cookie') || '';
+  const match = cookieHeader.match(/guest_session=([^;]+)/);
+  if (match) return match[1];
+
+  // Check query param as fallback
+  try {
+    const url = new URL(req.url);
+    return url.searchParams.get('guest_session') || '';
+  } catch {
+    return '';
+  }
+}
+
+export async function getGuestSessionContext(
+  req: Request | NextRequest,
+  projectId?: string
+): Promise<AccessContext | null> {
+  const sessionToken = extractGuestToken(req);
+  if (!sessionToken) return null;
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
+
+    const { data: session } = await supabaseAdmin
+      .from('guest_sessions')
+      .select('*')
+      .eq('session_token_hash', tokenHash)
+      .maybeSingle();
+
+    if (!session) return null;
+    if (session.revoked_at) return null;
+    if (session.expires_at && new Date(session.expires_at) < new Date()) return null;
+    if (projectId && session.project_id !== projectId) return null;
+
+    const role = normalizeRole(session.role) || 'viewer';
+
+    // Update last_active_at (fire-and-forget)
+    supabaseAdmin
+      .from('guest_sessions')
+      .update({ last_active_at: new Date().toISOString() })
+      .eq('id', session.id)
+      .then(() => {})
+      .catch(() => {});
+
+    return {
+      projectId: session.project_id,
+      role,
+      source: 'guest',
+      guestSessionId: session.id,
+      guestNickname: session.nickname,
+    };
+  } catch (err) {
+    console.error('[shareAccess] getGuestSessionContext error', err);
+    return null;
+  }
+}
+
 export async function resolveAccessContext(req: Request | NextRequest, projectId: string): Promise<AccessContext | null> {
   try {
+    // 1. Try user authentication
     const auth = await verifyAuth(req as NextRequest);
     if (auth && auth.userId && isUuid(auth.userId)) {
       const role = await getProjectRoleForUser(auth.userId, projectId);
@@ -148,8 +214,13 @@ export async function resolveAccessContext(req: Request | NextRequest, projectId
       }
     }
 
+    // 2. Try share link
     const shareContext = await getShareLinkContext(req, projectId);
     if (shareContext) return shareContext;
+
+    // 3. Try guest session
+    const guestContext = await getGuestSessionContext(req, projectId);
+    if (guestContext) return guestContext;
 
     return null;
   } catch (err) {

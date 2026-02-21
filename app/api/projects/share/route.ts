@@ -26,7 +26,7 @@ async function resolveActorId(req: Request) {
 
 /**
  * POST /api/projects/share
- * Body: { project_id, role?: 'viewer'|'editor'|'commenter', email?: string, expires_at?: string, max_uses?: number, invite?: boolean }
+ * Body: { project_id, role?: 'viewer'|'editor'|'commenter', email?: string, expires_at?: string, max_uses?: number, invite?: boolean, guest_enabled?: boolean }
  * Header: x-actor-id (user id performing the action)
  * Returns: { id, link, invite_id?, invite_url? }
  */
@@ -41,6 +41,7 @@ export async function POST(req: Request) {
     const expiresAt = typeof body.expires_at === 'string' ? body.expires_at : null;
     const maxUses = typeof body.max_uses === 'number' ? body.max_uses : null;
     const invite = body.invite === true || body.type === 'invite';
+    const guestEnabled = body.guest_enabled === true;
 
     // Prefer server-verified actor via Authorization: Bearer <token>
     const actorId = await resolveActorId(req);
@@ -159,13 +160,18 @@ export async function POST(req: Request) {
     const token = crypto.randomBytes(32).toString('base64url');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
+    // For guest links, default to single-use and limit role to commenter/viewer
+    const effectiveMaxUses = guestEnabled ? (maxUses ?? 1) : maxUses;
+    const effectiveRole = guestEnabled && role === 'editor' ? 'commenter' : role;
+
     const insert = {
       project_id: projectId,
-      role,
+      role: effectiveRole,
       token_hash: tokenHash,
       created_by: actorId,
       expires_at: expiresAt,
-      max_uses: maxUses,
+      max_uses: effectiveMaxUses,
+      guest_enabled: guestEnabled,
     };
 
     const { data, error } = await supabaseAdmin.from('share_links').insert(insert).select().single();

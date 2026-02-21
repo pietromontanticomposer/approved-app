@@ -23,9 +23,10 @@ export default function ShareModal({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [linkInvite, setLinkInvite] = useState("");
-  const [inviteRole, setInviteRole] = useState("viewer");
+  const [inviteRole, setInviteRole] = useState("commenter");
   const [activeTab, setActiveTab] = useState<"email" | "link">("email");
   const [invites, setInvites] = useState<any[]>([]);
+  const [linkType, setLinkType] = useState<"standard" | "guest">("guest");
 
   const getAuthHeaders = useCallback(async () => {
     try {
@@ -137,26 +138,51 @@ export default function ShareModal({
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch("/api/invites", {
-        method: "POST",
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({
-          team_id: teamId,
-          project_id: projectId,
-          role: inviteRole,
-          is_link_invite: true,
-        }),
-      });
 
-      const data = await res.json();
+      if (linkType === "guest") {
+        // Create guest-enabled share link (single-use, no account required)
+        const res = await fetch("/api/projects/share", {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({
+            project_id: projectId,
+            role: "commenter", // Guest always commenter
+            guest_enabled: true,
+            max_uses: 1,
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create invite link");
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to create guest link");
+        }
+
+        setLinkInvite(data.link);
+        setMessage("✅ Link guest generato! Chi lo usa potrà commentare con un nickname.");
+      } else {
+        // Standard invite link (requires account)
+        const res = await fetch("/api/invites", {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({
+            team_id: teamId,
+            project_id: projectId,
+            role: inviteRole,
+            is_link_invite: true,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to create invite link");
+        }
+
+        setLinkInvite(data.invite_url);
+        setMessage("✅ Link generato!");
+        loadInvites();
       }
-
-      setLinkInvite(data.invite_url);
-      setMessage("✅ Link generato!");
-      loadInvites();
     } catch (error: any) {
       setMessage(`❌ ${error.message}`);
     } finally {
@@ -375,28 +401,77 @@ export default function ShareModal({
           </form>
         ) : (
           <div>
-            <div style={{ marginBottom: "1rem" }}>
+            {/* Link Type Selection */}
+            <div style={{ marginBottom: "1.5rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Ruolo per il link
+                Tipo di link
               </label>
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "0.75rem",
-                  borderRadius: "4px",
-                  border: "1px solid #333",
-                  background: "#0a0a0a",
-                  color: "#fff",
-                  fontSize: "1rem",
-                }}
-              >
-                <option value="viewer">👁️ Visualizzatore (solo lettura)</option>
-                <option value="commenter">💬 Commentatore (può commentare)</option>
-                <option value="editor">✏️ Editor (può modificare)</option>
-              </select>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setLinkType("guest")}
+                  style={{
+                    flex: 1,
+                    padding: "0.75rem",
+                    background: linkType === "guest" ? "#0066ff" : "#0a0a0a",
+                    border: linkType === "guest" ? "none" : "1px solid #333",
+                    borderRadius: "4px",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  👤 Guest (solo nickname)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLinkType("standard")}
+                  style={{
+                    flex: 1,
+                    padding: "0.75rem",
+                    background: linkType === "standard" ? "#0066ff" : "#0a0a0a",
+                    border: linkType === "standard" ? "none" : "1px solid #333",
+                    borderRadius: "4px",
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  🔐 Standard (richiede account)
+                </button>
+              </div>
             </div>
+
+            {linkType === "guest" ? (
+              <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#1a2a1a", borderRadius: "4px", border: "1px solid #2a4a2a" }}>
+                <p style={{ margin: 0, color: "#8f8", fontSize: "0.85rem" }}>
+                  <strong>Link monouso:</strong> Chi riceve il link potrà visualizzare e commentare il progetto inserendo solo un nickname. Non serve creare un account. Il link funziona una sola volta.
+                </p>
+              </div>
+            ) : (
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
+                  Ruolo per il link
+                </label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem",
+                    borderRadius: "4px",
+                    border: "1px solid #333",
+                    background: "#0a0a0a",
+                    color: "#fff",
+                    fontSize: "1rem",
+                  }}
+                >
+                  <option value="viewer">👁️ Visualizzatore (solo lettura)</option>
+                  <option value="commenter">💬 Commentatore (può commentare)</option>
+                  <option value="editor">✏️ Editor (può modificare)</option>
+                </select>
+              </div>
+            )}
 
             <button
               onClick={handleGenerateLink}
@@ -414,7 +489,7 @@ export default function ShareModal({
                 marginBottom: "1rem",
               }}
             >
-              {loading ? "Generazione..." : "Genera link di invito"}
+              {loading ? "Generazione..." : linkType === "guest" ? "Genera link guest" : "Genera link di invito"}
             </button>
 
             {linkInvite && (

@@ -212,15 +212,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Determine author name
+    // Determine author name and actor based on access source
     let authorName = typeof author === 'string' ? author.trim() : null;
-    if (!authorName) {
-      authorName = await getUserDisplayName(userId);
+    let actorId: string | null = null;
+    let guestSessionId: string | null = null;
+
+    if (access.source === 'guest') {
+      // Guest: use nickname from session
+      authorName = authorName || access.guestNickname || 'Guest';
+      actorId = null;
+      guestSessionId = access.guestSessionId || null;
+    } else if (access.source === 'user' && access.userId) {
+      // Authenticated user
+      actorId = isUuid(access.userId) ? access.userId : null;
+      if (!authorName) {
+        authorName = await getUserDisplayName(access.userId);
+      }
+    } else {
+      // Fallback for share link access
+      if (!authorName && userId) {
+        authorName = await getUserDisplayName(userId);
+      }
+      actorId = isUuid(userId || '') ? userId : null;
     }
 
     const comment_id = uuidv4();
 
-    // Insert comment with verified actor_id
+    // Insert comment
     const { data, error: insertError } = await supabaseAdmin
       .from("comments")
       .insert({
@@ -228,7 +246,8 @@ export async function POST(req: NextRequest) {
         version_id,
         time_seconds,
         author: authorName || "User",
-        actor_id: isUuid(userId || '') ? userId : null, // Verified server-side
+        actor_id: actorId,
+        guest_session_id: guestSessionId,
         text: text ? text.trim() : '',
         audio_url: audio_url || null,
       })
@@ -308,7 +327,7 @@ export async function PATCH(req: NextRequest) {
     // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
-      .select('id, actor_id, version_id, versions(cue_id, cues(project_id))')
+      .select('id, actor_id, guest_session_id, version_id, versions(cue_id, cues(project_id))')
       .eq('id', id)
       .maybeSingle();
 
@@ -338,8 +357,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     const isOwnerEditor = roleCanModify(access.role);
-    const isAuthor = existing.actor_id && userId && existing.actor_id === userId;
-    if (!isOwnerEditor && !isAuthor) {
+    const isUserAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    const isGuestAuthor = access.source === 'guest' && existing.guest_session_id && access.guestSessionId === existing.guest_session_id;
+    if (!isOwnerEditor && !isUserAuthor && !isGuestAuthor) {
       if (isDev) console.log('[PATCH /api/comments] User not authorized to edit comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to edit this comment' },
@@ -411,7 +431,7 @@ export async function DELETE(req: NextRequest) {
     // SECURITY: Fetch comment and check ownership
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
-      .select('id, actor_id, version_id, versions(cue_id, cues(project_id))')
+      .select('id, actor_id, guest_session_id, version_id, versions(cue_id, cues(project_id))')
       .eq('id', id)
       .maybeSingle();
 
@@ -441,8 +461,9 @@ export async function DELETE(req: NextRequest) {
     }
 
     const isOwnerEditor = roleCanModify(access.role);
-    const isAuthor = existing.actor_id && userId && existing.actor_id === userId;
-    if (!isOwnerEditor && !isAuthor) {
+    const isUserAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    const isGuestAuthor = access.source === 'guest' && existing.guest_session_id && access.guestSessionId === existing.guest_session_id;
+    if (!isOwnerEditor && !isUserAuthor && !isGuestAuthor) {
       if (isDev) console.log('[DELETE /api/comments] User not authorized to delete comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this comment' },

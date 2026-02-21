@@ -31,6 +31,7 @@ export async function GET(req: Request) {
       project_name: linkData.project_name || linkData.projects?.name || null,
       role: linkData.role || 'view',
       expires_at: linkData.expires_at || null,
+      guest_enabled: linkData.guest_enabled || false,
     };
 
     return NextResponse.json(resp, { status: 200 });

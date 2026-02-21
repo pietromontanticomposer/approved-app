@@ -16,6 +16,8 @@ export default function SharePage() {
   const [success, setSuccess] = useState(false);
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
+  const [nickname, setNickname] = useState('');
+  const [isGuestLink, setIsGuestLink] = useState(false);
 
   const initializeShare = useCallback(async () => {
     try {
@@ -60,6 +62,7 @@ export default function SharePage() {
 
       const body = await resp.json();
       setShare(body);
+      setIsGuestLink(body.guest_enabled === true);
       setLoading(false);
     } catch (err) {
       console.error('[Share] initialize error', err);
@@ -218,16 +221,76 @@ export default function SharePage() {
     }
   }, [router, share, token]);
 
+  const handleGuestAccess = useCallback(async () => {
+    const shareId = token;
+    const params = new URLSearchParams(window.location.search);
+    const tokenQuery = params.get('token') || '';
+
+    if (!nickname || nickname.trim().length < 2) {
+      setError('Il nickname deve avere almeno 2 caratteri');
+      return;
+    }
+
+    setSending(true);
+    setError('');
+
+    try {
+      const resp = await fetch('/api/share/guest-redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          share_id: shareId,
+          token: tokenQuery,
+          nickname: nickname.trim(),
+        }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setError(data.error || 'Impossibile accedere come guest');
+        return;
+      }
+
+      // Save guest session in localStorage
+      localStorage.setItem('approved_guest_session', JSON.stringify({
+        session_token: data.session_token,
+        project_id: data.project_id,
+        nickname: data.nickname,
+        role: data.role,
+        expires_at: data.expires_at,
+      }));
+
+      // Set cookie for API calls
+      const maxAge = 7 * 24 * 60 * 60; // 7 days
+      document.cookie = `guest_session=${data.session_token}; path=/; max-age=${maxAge}; SameSite=Strict`;
+
+      setSuccess(true);
+      localStorage.setItem('open_project', data.project_id);
+
+      setTimeout(() => {
+        router.push(`/?guest=1&project=${encodeURIComponent(data.project_id)}`);
+      }, 400);
+
+    } catch (err: any) {
+      console.error('[Share] guest access error', err);
+      setError(err?.message || 'Errore durante l\'accesso');
+    } finally {
+      setSending(false);
+    }
+  }, [nickname, router, token]);
+
   // Auto-redeem when user is already logged in and share details loaded
+  // Skip auto-redeem for guest links if no user - let them enter nickname
   useEffect(() => {
-    if (user && !loading && share && !success) {
+    if (user && !loading && share && !success && !isGuestLink) {
       // small delay to allow UI to settle
       const t = setTimeout(() => {
         handleOpen();
       }, 200);
       return () => clearTimeout(t);
     }
-  }, [user, loading, share, success, handleOpen]);
+  }, [user, loading, share, success, handleOpen, isGuestLink]);
 
   if (loading) {
     return <div style={{ padding: 40 }}>Caricamento link…</div>;
@@ -255,13 +318,49 @@ export default function SharePage() {
     <div style={{ padding: 24, maxWidth: 680, margin: '40px auto' }}>
       <h2>Progetto condiviso</h2>
       <p style={{ color: '#999' }}>Progetto: <strong>{share.project_name}</strong></p>
-      <p style={{ color: '#999' }}>Ruolo consentito: <strong>{share.role}</strong></p>
+      <p style={{ color: '#999' }}>Ruolo consentito: <strong>{share.role === 'commenter' ? 'Commentatore' : share.role === 'viewer' ? 'Visualizzatore' : share.role}</strong></p>
       <div style={{ marginTop: 20 }}>
         {user ? (
           <button onClick={handleOpen} style={{ padding: '10px 14px' }}>
             Apri progetto
           </button>
+        ) : isGuestLink ? (
+          /* Guest link: only nickname required */
+          <div style={{ display: 'flex', gap: 12, flexDirection: 'column', maxWidth: 420 }}>
+            <div style={{ padding: '12px 16px', background: '#1a2a1a', borderRadius: '6px', border: '1px solid #2a4a2a' }}>
+              <p style={{ margin: 0, color: '#8f8', fontSize: '0.9rem' }}>
+                Questo link ti permette di accedere al progetto senza creare un account. Inserisci un nickname per continuare.
+              </p>
+            </div>
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Il tuo nickname"
+              maxLength={50}
+              style={{ padding: '10px 12px', fontSize: 16, borderRadius: '4px', border: '1px solid #333', background: '#0a0a0a', color: '#fff' }}
+            />
+            <button
+              onClick={handleGuestAccess}
+              disabled={sending || nickname.trim().length < 2}
+              style={{
+                padding: '12px 16px',
+                fontSize: 16,
+                background: sending || nickname.trim().length < 2 ? '#333' : '#0066ff',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: sending || nickname.trim().length < 2 ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {sending ? 'Accesso in corso...' : 'Accedi come Guest'}
+            </button>
+            <p style={{ color: '#666', fontSize: '0.85rem', margin: 0 }}>
+              Oppure <a href="/register" style={{ color: '#0066ff' }}>crea un account</a> per salvare i tuoi progetti.
+            </p>
+          </div>
         ) : (
+          /* Standard link: requires account */
           <div style={{ display: 'flex', gap: 8, flexDirection: 'column', maxWidth: 420 }}>
             <p style={{ color: '#555' }}>Per aprire il progetto devi avere un account. Puoi crearne uno rapidamente inserendo la tua email qui sotto; ti invieremo un link magico per accedere e completare l'apertura.</p>
             <input
@@ -271,7 +370,7 @@ export default function SharePage() {
               placeholder="La tua email"
               style={{ padding: '8px 10px', fontSize: 16 }}
             />
-          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => sendMagicLink(email)} disabled={sending || !email} style={{ padding: '10px 14px' }}>
                 {sending ? 'Invio…' : 'Ricevi link magico'}
               </button>
