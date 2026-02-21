@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { sendConfirmationEmail } from '@/lib/email';
+import { sendConfirmationEmail, sendAdminApprovalRequest } from '@/lib/email';
+import crypto from 'crypto';
 
 export async function POST(req: Request) {
   try {
@@ -66,7 +67,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Account creato ma errore invio email. Contatta il supporto.' }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true });
+    // Get the user ID from the generated link data
+    const userId = linkData?.user?.id;
+
+    // Create user approval record (pending by default)
+    if (userId) {
+      const approvalToken = crypto.randomBytes(32).toString('base64url');
+
+      try {
+        await supabaseAdmin.from('user_approvals').insert({
+          user_id: userId,
+          email: email,
+          status: 'pending',
+          approval_token: approvalToken,
+        });
+
+        // Send notification to admin
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://approved-app-eight.vercel.app';
+        const approveLink = `${baseUrl}/api/admin/approve-user?token=${approvalToken}&action=approve`;
+        const rejectLink = `${baseUrl}/api/admin/approve-user?token=${approvalToken}&action=reject`;
+
+        try {
+          await sendAdminApprovalRequest(email, approveLink, rejectLink);
+        } catch (emailErr) {
+          console.warn('[signup] Could not send admin notification email', emailErr);
+          // Don't fail the signup if admin email fails
+        }
+      } catch (approvalErr) {
+        console.warn('[signup] Could not create approval record', approvalErr);
+        // Don't fail the signup if approval record fails - user just won't need approval
+      }
+    }
+
+    return NextResponse.json({ ok: true, needsApproval: true });
   } catch (err: any) {
     console.error('[signup] Error', err);
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });

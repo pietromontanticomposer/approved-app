@@ -43,6 +43,28 @@ async function initAuth() {
       authState.session = session;
       authState.user = session.user;
       console.log('[FlowAuth] ✅ Session loaded:', session.user.email);
+
+      // Check if user is approved
+      try {
+        const approvalRes = await fetch('/api/auth/check-approval', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+        const approvalData = await approvalRes.json();
+
+        if (!approvalData.approved) {
+          console.log('[FlowAuth] User not approved, status:', approvalData.status);
+          // Redirect to pending approval page
+          if (window.location.pathname !== '/pending-approval') {
+            window.location.replace('/pending-approval');
+            return false;
+          }
+        }
+      } catch (approvalErr) {
+        console.warn('[FlowAuth] Could not check approval status', approvalErr);
+        // If check fails, allow access (graceful degradation)
+      }
     }
 
     // Aggiorna subito la UI utente (evita "Loading...")

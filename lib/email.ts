@@ -121,6 +121,138 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
   return info;
 }
 
+export async function sendAdminApprovalRequest(
+  userEmail: string,
+  approveLink: string,
+  rejectLink: string
+) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error('SMTP not configured');
+  }
+
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!adminEmail) {
+    console.warn('[Email] ADMIN_EMAIL not configured, skipping approval notification');
+    return null;
+  }
+
+  const from = getFromAddress();
+  const subject = `Nuova richiesta di registrazione: ${userEmail}`;
+
+  const text = `Un nuovo utente ha richiesto di registrarsi su Approved.\n\nEmail: ${userEmail}\n\nPer approvare: ${approveLink}\nPer rifiutare: ${rejectLink}\n\nSe non fai nulla, l'utente rimarrà in attesa di approvazione.`;
+
+  const html = `
+    <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; color:#111; max-width:600px; margin:0 auto; padding:20px; background:#fafafa;">
+      <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <h2 style="color:#0b62ff; margin-top:0;">Approved - Nuova Registrazione</h2>
+        <p style="font-size:16px; color:#333;">
+          Un nuovo utente ha richiesto di registrarsi:
+        </p>
+        <div style="background:#f5f5f5; border-left:4px solid #0b62ff; padding:16px; margin:20px 0; border-radius:4px;">
+          <p style="margin:0; font-weight:600; color:#111; font-size:16px;">${userEmail}</p>
+        </div>
+        <p style="margin:24px 0; display:flex; gap:12px;">
+          <a href="${approveLink}" style="display:inline-block;padding:14px 28px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+            Approva
+          </a>
+          <a href="${rejectLink}" style="display:inline-block;padding:14px 28px;background:#dc2626;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;margin-left:12px;">
+            Rifiuta
+          </a>
+        </p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+        <p style="color:#999;font-size:0.85rem;margin-bottom:0;">
+          Se non rispondi, l'utente rimarrà in attesa di approvazione e non potrà accedere all'app.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const info = await t.sendMail({
+    from,
+    to: adminEmail,
+    subject,
+    text,
+    html,
+  });
+
+  if (isDev) console.log('[Email] Admin approval request sent - MessageId:', info.messageId);
+  return info;
+}
+
+export async function sendApprovalStatusEmail(
+  userEmail: string,
+  approved: boolean,
+  loginLink: string,
+  reason?: string
+) {
+  const t = getTransporter();
+  if (!t) {
+    throw new Error('SMTP not configured');
+  }
+
+  const from = getFromAddress();
+  const subject = approved
+    ? 'Il tuo account Approved è stato approvato!'
+    : 'Aggiornamento sulla tua richiesta di registrazione';
+
+  let text: string;
+  let html: string;
+
+  if (approved) {
+    text = `Ottima notizia!\n\nIl tuo account Approved è stato approvato. Ora puoi accedere all'app.\n\nAccedi qui: ${loginLink}\n\nBuon lavoro!`;
+    html = `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; color:#111; max-width:600px; margin:0 auto; padding:20px; background:#fafafa;">
+        <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          <h2 style="color:#16a34a; margin-top:0;">Account Approvato!</h2>
+          <p style="font-size:16px; color:#333;">
+            Ottima notizia! Il tuo account Approved è stato approvato.
+          </p>
+          <p style="margin:24px 0;">
+            <a href="${loginLink}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+              Accedi ora
+            </a>
+          </p>
+          <p style="color:#666;font-size:0.9rem;">
+            Inizia a caricare i tuoi progetti e a gestire le revisioni con i tuoi clienti.
+          </p>
+        </div>
+      </div>
+    `;
+  } else {
+    text = `Ciao,\n\nPurtroppo la tua richiesta di registrazione su Approved non è stata approvata.${reason ? `\n\nMotivo: ${reason}` : ''}\n\nSe ritieni sia un errore, contattaci rispondendo a questa email.`;
+    html = `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; color:#111; max-width:600px; margin:0 auto; padding:20px; background:#fafafa;">
+        <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          <h2 style="color:#dc2626; margin-top:0;">Richiesta Non Approvata</h2>
+          <p style="font-size:16px; color:#333;">
+            Purtroppo la tua richiesta di registrazione su Approved non è stata approvata.
+          </p>
+          ${reason ? `
+          <div style="background:#fef2f2; border-left:4px solid #dc2626; padding:16px; margin:20px 0; border-radius:4px;">
+            <p style="margin:0; color:#7f1d1d; font-size:14px;">Motivo: ${reason}</p>
+          </div>
+          ` : ''}
+          <p style="color:#666;font-size:0.9rem;">
+            Se ritieni sia un errore, puoi contattarci rispondendo a questa email.
+          </p>
+        </div>
+      </div>
+    `;
+  }
+
+  const info = await t.sendMail({
+    from,
+    to: userEmail,
+    subject,
+    text,
+    html,
+  });
+
+  if (isDev) console.log('[Email] Approval status email sent to', userEmail, '- Approved:', approved);
+  return info;
+}
+
 export type UploadType = 'new_cue' | 'new_version' | 'deliverable' | 'unknown';
 
 export async function sendNewVersionNotification(
