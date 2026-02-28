@@ -208,8 +208,23 @@ export async function GET(req: NextRequest) {
     }
 
     // Don't resolve URLs here - let the client proxy storage paths when needed
-    const normalizePath = (value: string | null) =>
-      value ? value.replace(/^\/+/, "") : null;
+    const normalizePath = (value: string | null) => {
+      if (!value) return null;
+      let normalized = value.trim();
+      if (!normalized) return null;
+      // Handle legacy encoded values (projects%2F... and double-encoded variants)
+      for (let i = 0; i < 2; i++) {
+        try {
+          const decoded = decodeURIComponent(normalized);
+          if (decoded === normalized) break;
+          normalized = decoded;
+        } catch {
+          break;
+        }
+      }
+      normalized = normalized.replace(/^\/+/, "");
+      return normalized || null;
+    };
 
     const extractStoragePathFromUrl = (raw: string | null): string | null => {
       if (!raw || typeof raw !== "string") return null;
@@ -220,7 +235,7 @@ export async function GET(req: NextRequest) {
         try {
           const u = new URL(trimmed, "http://localhost");
           const rawPath = u.searchParams.get("path");
-          if (rawPath) return rawPath;
+          if (rawPath) return normalizePath(rawPath);
           const rawUrl = u.searchParams.get("url");
           if (rawUrl) return extractStoragePathFromUrl(rawUrl);
         } catch {
@@ -235,9 +250,15 @@ export async function GET(req: NextRequest) {
         if (objIdx >= 0) {
           const after = parts.slice(objIdx + 1);
           if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
-            const bucket = after[1];
-            const pathParts = after.slice(2);
-            return `${bucket}/${pathParts.join("/")}`;
+            const bucket = decodeURIComponent(after[1]);
+            const pathParts = after.slice(2).map(part => {
+              try {
+                return decodeURIComponent(part);
+              } catch {
+                return part;
+              }
+            });
+            return normalizePath(`${bucket}/${pathParts.join("/")}`);
           }
         }
       } catch {
@@ -246,7 +267,7 @@ export async function GET(req: NextRequest) {
 
       if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) return null;
       if (trimmed.includes("://")) return null;
-      return trimmed;
+      return normalizePath(trimmed);
     };
 
     const sanitizeMediaUrl = (raw: string | null) => {

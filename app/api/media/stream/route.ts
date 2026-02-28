@@ -41,7 +41,18 @@ function isAllowedStorageUrl(raw: string) {
 
 function normalizeStoragePath(path: string | null) {
   if (!path) return null;
-  const trimmed = path.replace(/^\/+/, "");
+  let trimmed = path.replace(/^\/+/, "");
+  // Some legacy rows store encoded paths (e.g. projects%2F... or even double-encoded).
+  for (let i = 0; i < 2; i++) {
+    try {
+      const decoded = decodeURIComponent(trimmed);
+      if (decoded === trimmed) break;
+      trimmed = decoded;
+    } catch {
+      break;
+    }
+  }
+  trimmed = trimmed.replace(/^\/+/, "");
   // If path includes bucket prefix like "media/...", remove the bucket name
   if (trimmed.startsWith(`${STORAGE_BUCKET}/`)) {
     return trimmed.slice(STORAGE_BUCKET.length + 1);

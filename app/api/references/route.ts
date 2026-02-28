@@ -25,7 +25,18 @@ const isAbsoluteUrl = (url: string | null) => !!url && /^https?:\/\//i.test(url)
 
 function normalizeStoragePath(path: string | null) {
   if (!path) return null;
-  const trimmed = path.replace(/^\/+/, "");
+  let trimmed = path.replace(/^\/+/, "");
+  // Handle encoded legacy paths (projects%2F... and double-encoded values)
+  for (let i = 0; i < 2; i++) {
+    try {
+      const decoded = decodeURIComponent(trimmed);
+      if (decoded === trimmed) break;
+      trimmed = decoded;
+    } catch {
+      break;
+    }
+  }
+  trimmed = trimmed.replace(/^\/+/, "");
   if (trimmed.startsWith(`${STORAGE_BUCKET}/`)) {
     return trimmed.slice(STORAGE_BUCKET.length + 1);
   }
@@ -39,11 +50,27 @@ function extractPathFromSupabaseUrl(url: string) {
     const idx = parts.findIndex(p => p === "object");
     if (idx >= 0) {
       const after = parts.slice(idx + 1);
-      if (after.length >= 2 && after[1] === STORAGE_BUCKET) {
-        return after.slice(2).join("/");
-      }
-      if (after.length >= 3 && after[0] === "sign" && after[2] === STORAGE_BUCKET) {
-        return after.slice(3).join("/");
+      if (
+        after.length >= 3 &&
+        (after[0] === "public" || after[0] === "sign")
+      ) {
+        const bucket = (() => {
+          try {
+            return decodeURIComponent(after[1] || "");
+          } catch {
+            return after[1] || "";
+          }
+        })();
+        if (bucket === STORAGE_BUCKET) {
+          const path = after.slice(2).map(part => {
+            try {
+              return decodeURIComponent(part);
+            } catch {
+              return part;
+            }
+          }).join("/");
+          return path;
+        }
       }
     }
   } catch (err) {

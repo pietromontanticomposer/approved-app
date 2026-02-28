@@ -38,7 +38,18 @@ function setCachedSignedUrl(path: string, url: string, ttlSeconds?: number) {
 
 function normalizeStoragePath(path: string | null) {
   if (!path) return null;
-  const trimmed = path.replace(/^\/+/, "");
+  let trimmed = path.replace(/^\/+/, "");
+  // Support legacy encoded storage paths (projects%2F... and double-encoded variants)
+  for (let i = 0; i < 2; i++) {
+    try {
+      const decoded = decodeURIComponent(trimmed);
+      if (decoded === trimmed) break;
+      trimmed = decoded;
+    } catch {
+      break;
+    }
+  }
+  trimmed = trimmed.replace(/^\/+/, "");
   if (trimmed.startsWith(`${STORAGE_BUCKET}/`)) {
     return trimmed.slice(STORAGE_BUCKET.length + 1);
   }
@@ -53,20 +64,34 @@ function extractPathFromSupabaseUrl(url: string) {
     if (storageIdx >= 0) {
       const afterObject = pathParts.slice(storageIdx + 1);
       if (afterObject.length >= 2) {
+        const bucket = (() => {
+          try {
+            return decodeURIComponent(afterObject[1] || "");
+          } catch {
+            return afterObject[1] || "";
+          }
+        })();
+        const decodedPath = afterObject.slice(2).map((part) => {
+          try {
+            return decodeURIComponent(part);
+          } catch {
+            return part;
+          }
+        }).join("/");
         // /storage/v1/object/public/<bucket>/<path>
         if (
           afterObject[0] === "public" &&
-          afterObject[1] === STORAGE_BUCKET
+          bucket === STORAGE_BUCKET
         ) {
-          return afterObject.slice(2).join("/");
+          return decodedPath;
         }
         // /storage/v1/object/sign/<bucket>/<path>?token=...
         if (
           afterObject[0] === "sign" &&
           afterObject.length >= 2 &&
-          afterObject[1] === STORAGE_BUCKET
+          bucket === STORAGE_BUCKET
         ) {
-          return afterObject.slice(2).join("/");
+          return decodedPath;
         }
       }
     }
@@ -108,14 +133,6 @@ export async function resolveMediaUrl(
   if (raw.startsWith("blob:")) return null;
 
   if (isAbsoluteUrl(raw)) {
-    try {
-      const lower = raw.toLowerCase();
-      if (lower.includes("/object/sign/") || lower.includes("?token=")) {
-        return raw;
-      }
-    } catch {
-      // ignore parse errors and attempt to re-sign
-    }
     const supaPath = SUPABASE_URL ? extractPathFromSupabaseUrl(raw) : null;
     if (!supaPath) return raw;
     raw = supaPath;

@@ -1150,6 +1150,24 @@ function buildComposerName(project, cue, version, ext) {
 }
 
 // Return a proxied URL on our domain when media comes from Supabase/storage
+function normalizeExtractedStoragePath(path) {
+  if (!path || typeof path !== "string") return null;
+  let normalized = path.trim();
+  if (!normalized) return null;
+  // Handle legacy encoded storage paths (e.g. projects%2F... or double-encoded values)
+  for (let i = 0; i < 2; i++) {
+    try {
+      const decoded = decodeURIComponent(normalized);
+      if (decoded === normalized) break;
+      normalized = decoded;
+    } catch (e) {
+      break;
+    }
+  }
+  normalized = normalized.replace(/^\/+/, "");
+  return normalized || null;
+}
+
 function extractStoragePathFromUrl(raw) {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -1159,7 +1177,7 @@ function extractStoragePathFromUrl(raw) {
     try {
       const u = new URL(trimmed, window.location.origin);
       const rawPath = u.searchParams.get("path");
-      if (rawPath) return rawPath;
+      if (rawPath) return normalizeExtractedStoragePath(rawPath);
       const rawUrl = u.searchParams.get("url");
       if (rawUrl) return extractStoragePathFromUrl(rawUrl);
     } catch (e) {
@@ -1174,9 +1192,15 @@ function extractStoragePathFromUrl(raw) {
     if (objIdx >= 0) {
       const after = parts.slice(objIdx + 1);
       if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
-        const bucket = after[1];
-        const pathParts = after.slice(2);
-        return `${bucket}/${pathParts.join("/")}`;
+        const bucket = decodeURIComponent(after[1]);
+        const pathParts = after.slice(2).map(part => {
+          try {
+            return decodeURIComponent(part);
+          } catch (e) {
+            return part;
+          }
+        });
+        return normalizeExtractedStoragePath(`${bucket}/${pathParts.join("/")}`);
       }
     }
   } catch (e) {
@@ -1185,7 +1209,7 @@ function extractStoragePathFromUrl(raw) {
 
   if (trimmed.startsWith("blob:") || trimmed.startsWith("data:")) return null;
   if (trimmed.includes("://")) return null;
-  return trimmed.replace(/^\/+/, "");
+  return normalizeExtractedStoragePath(trimmed);
 }
 
 /**
@@ -1258,22 +1282,9 @@ function getProxiedUrl(raw) {
     if (host === window.location.hostname) return raw;
     // If it's a Supabase storage URL (public or signed), proxy through our API
     if (host.includes("supabase.co") || raw.includes("/storage/v1/object/")) {
-      // Try to extract the internal storage path so the server can re-sign it.
-      try {
-        const parts = u.pathname.split("/").filter(Boolean);
-        const objIdx = parts.findIndex(p => p === "object");
-        if (objIdx >= 0) {
-          const after = parts.slice(objIdx + 1); // [public|sign, bucket, ...path]
-          if (after.length >= 3 && (after[0] === "public" || after[0] === "sign") && after[1]) {
-            const bucket = after[1];
-            const pathParts = after.slice(2);
-            const storagePath = `${bucket}/${pathParts.join("/")}`;
-            // Provide path to server so it can create signed url server-side
-            return `/api/media/stream?path=${encodeURIComponent(storagePath)}`;
-          }
-        }
-      } catch (e) {
-        // fall back to proxy by full url
+      const storagePath = extractStoragePathFromUrl(raw);
+      if (storagePath) {
+        return `/api/media/stream?path=${encodeURIComponent(storagePath)}`;
       }
       // Fall back to proxying the whole signed URL so we keep a same-origin request
       return `/api/media/stream?url=${encodeURIComponent(raw)}`;
