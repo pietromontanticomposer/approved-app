@@ -4051,6 +4051,20 @@ function renderReferencePlayer(project) {
 
     const thumb = document.createElement("div");
     thumb.className = "video-thumb";
+    thumb.style.background = "radial-gradient(circle at center, #374151, #0f172a 72%)";
+    thumb.style.backgroundRepeat = "no-repeat";
+
+    if (active.thumbnailUrl) {
+      thumb.style.backgroundImage = `url(${getProxiedUrl(active.thumbnailUrl)})`;
+    } else if (active.url) {
+      generateVideoThumbnailRaw(active.url).then(th => {
+        if (!th || !thumb.isConnected) return;
+        active.thumbnailUrl = th;
+        thumb.style.backgroundImage = `url(${getDirectUrl(th)})`;
+      }).catch(err => {
+        console.error("showReferenceInPlayer: thumbnail generation failed", err, active.id);
+      });
+    }
 
     const playBtn = document.createElement("button");
     playBtn.className = "video-play-button";
@@ -4084,7 +4098,7 @@ function renderReferencePlayer(project) {
     if (volumeSlider) volumeSlider.style.display = "none";
 
     playerMediaEl.innerHTML =
-      `<div class="player-pdf"><iframe src="${active.url}"></iframe></div>`;
+      `<div class="player-pdf"><iframe src="${getDirectUrl(active.url)}"></iframe></div>`;
     return;
   }
 
@@ -4095,7 +4109,7 @@ function renderReferencePlayer(project) {
     if (volumeSlider) volumeSlider.style.display = "none";
 
     playerMediaEl.innerHTML =
-      `<div class="player-image"><img src="${active.url}" alt="${active.name}" /></div>`;
+      `<div class="player-image"><img src="${getDirectUrl(active.url)}" alt="${active.name}" /></div>`;
     return;
   }
 
