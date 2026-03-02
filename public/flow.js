@@ -300,6 +300,303 @@ const projectNotesStore = Object.create(null);
 let referencesCollapsed = false;
 let cuesCollapsed = false;
 let hasInitializedFromSupabase = false; // Prevent double init when fallback kicks in
+const FAST_BOOT_CACHE_KEY = "approved-fast-boot-v1";
+const FAST_BOOT_TTL_MS = 1000 * 60 * 30; // 30 minutes
+const projectDataCache = new Map();
+const commentsLoadInFlight = new Set();
+
+function safeReadLocalStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (err) {
+    return null;
+  }
+}
+
+function safeWriteLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    // Ignore quota/private mode errors
+  }
+}
+
+function clonePlain(value) {
+  if (value === null || value === undefined) return value;
+  try {
+    if (typeof structuredClone === "function") {
+      return structuredClone(value);
+    }
+  } catch (err) {}
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (err) {
+    return value;
+  }
+}
+
+function createProjectShell(raw) {
+  return {
+    id: raw.id,
+    name: raw.name || "Untitled",
+    team_id: raw.team_id || null,
+    owner_id: raw.owner_id || null,
+    team_members: Array.isArray(raw.team_members) ? raw.team_members : [],
+    is_shared: !!raw.is_shared,
+    project_role: raw.project_role || raw.share_role || null,
+    cues: [],
+    activeCueId: null,
+    activeVersionId: null,
+    references: [],
+    activeReferenceId: null,
+    cueNotes: {},
+    notes: [],
+    cueSheetProject: null
+  };
+}
+
+function normalizeProjectForFastRender(project, options = {}) {
+  const collapseCues = options.collapseCues !== false;
+  const commentsLoadedByDefault = options.commentsLoadedByDefault === true;
+
+  project.cues = Array.isArray(project.cues) ? project.cues : [];
+  project.references = Array.isArray(project.references) ? project.references : [];
+  project.cueNotes = project.cueNotes && typeof project.cueNotes === "object" ? project.cueNotes : {};
+  project.notes = Array.isArray(project.notes) ? project.notes : [];
+
+  const fallbackActiveCueId = project.activeCueId || (project.cues[0] && project.cues[0].id) || null;
+
+  project.cues.forEach((cue) => {
+    cue.versions = Array.isArray(cue.versions) ? cue.versions : [];
+    cue.isOpen = collapseCues ? cue.id === fallbackActiveCueId : cue.isOpen !== false;
+    cue.versions.forEach((version) => {
+      version.comments = Array.isArray(version.comments) ? version.comments : [];
+      version.deliverables = Array.isArray(version.deliverables) ? version.deliverables : [];
+      if (typeof version.commentsLoaded !== "boolean") {
+        version.commentsLoaded = commentsLoadedByDefault;
+      }
+      version.commentsLoading = false;
+    });
+  });
+
+  if (project.cues.length > 0) {
+    const activeCue = project.cues.find(c => c.id === project.activeCueId) || project.cues[0];
+    project.activeCueId = activeCue.id;
+    const versions = Array.isArray(activeCue.versions) ? activeCue.versions : [];
+    const activeVersion = versions.find(v => v.id === project.activeVersionId) || versions[0] || null;
+    project.activeVersionId = activeVersion ? activeVersion.id : null;
+  } else {
+    project.activeCueId = null;
+    project.activeVersionId = null;
+  }
+
+  if (!project.activeReferenceId && project.references.length) {
+    project.activeReferenceId = project.references[0].id;
+  }
+}
+
+function compactVersionForCache(version) {
+  return {
+    id: version.id,
+    index: version.index || 0,
+    status: version.status || "in_review",
+    media: version.media
+      ? {
+          type: version.media.type,
+          url: version.media.url || null,
+          storagePath: version.media.storagePath || null,
+          originalName: version.media.originalName || "Media",
+          displayName: version.media.displayName || version.media.originalName || "Media",
+          duration: version.media.duration || null,
+          thumbnailUrl: version.media.thumbnailUrl || null,
+          thumbnailPath: version.media.thumbnailPath || null,
+          waveform: null,
+          waveformSaved: false,
+          waveformImageUrl: version.media.waveformImageUrl || null,
+          waveformImageSaved: !!version.media.waveformImageUrl
+        }
+      : null,
+    referenceVideo: version.referenceVideo || null,
+    approval: version.approval || null,
+    delivery: version.delivery || null,
+    comments: [],
+    commentsLoaded: false,
+    deliverables: Array.isArray(version.deliverables) ? version.deliverables : []
+  };
+}
+
+function compactProjectSnapshot(project) {
+  return {
+    id: project.id,
+    cues: (project.cues || []).map((cue) => ({
+      id: cue.id,
+      index: cue.index || 0,
+      originalName: cue.originalName || cue.name || "Untitled",
+      name: cue.name || "Untitled",
+      displayName: cue.displayName || "",
+      maxRevisions: typeof cue.maxRevisions === "number" ? cue.maxRevisions : null,
+      status: cue.status || "in_review",
+      versions: (cue.versions || []).map(compactVersionForCache),
+      cueSheet: cue.cueSheet || null,
+      isOpen: !!cue.isOpen
+    })),
+    activeCueId: project.activeCueId || null,
+    activeVersionId: project.activeVersionId || null,
+    references: sanitizeProjectReferences(project.references || []),
+    activeReferenceId: project.activeReferenceId || null,
+    cueNotes: project.cueNotes || {},
+    notes: Array.isArray(project.notes) ? project.notes : [],
+    cueSheetProject: project.cueSheetProject || null,
+    project_role: project.project_role || null
+  };
+}
+
+function applyProjectSnapshot(project, snapshot, options = {}) {
+  if (!project || !snapshot) return;
+
+  project.cues = clonePlain(snapshot.cues || []);
+  project.activeCueId = snapshot.activeCueId || null;
+  project.activeVersionId = snapshot.activeVersionId || null;
+  project.references = sanitizeProjectReferences(clonePlain(snapshot.references || []));
+  project.activeReferenceId = snapshot.activeReferenceId || null;
+  project.cueNotes = clonePlain(snapshot.cueNotes || {});
+  project.notes = clonePlain(snapshot.notes || []);
+  project.cueSheetProject = clonePlain(snapshot.cueSheetProject || null);
+  if (snapshot.project_role) {
+    project.project_role = snapshot.project_role;
+  }
+
+  normalizeProjectForFastRender(project, options);
+}
+
+function rememberProjectData(projectId, snapshot) {
+  if (!projectId || !snapshot) return;
+  projectDataCache.set(projectId, clonePlain(snapshot));
+}
+
+function getCachedProjectSnapshot(projectId) {
+  if (!projectId) return null;
+  return projectDataCache.get(projectId) || null;
+}
+
+function persistFastBootCache() {
+  const activeProject = getActiveProject();
+  if (!activeProject || !state.projects.length) return;
+
+  const payload = {
+    v: 1,
+    savedAt: Date.now(),
+    activeProjectId: state.activeProjectId || null,
+    projects: state.projects.slice(0, 50).map((p) => ({
+      id: p.id,
+      name: p.name || "Untitled",
+      team_id: p.team_id || null,
+      owner_id: p.owner_id || null,
+      team_members: Array.isArray(p.team_members) ? p.team_members : [],
+      is_shared: !!p.is_shared,
+      project_role: p.project_role || null
+    })),
+    activeProjectData: compactProjectSnapshot(activeProject)
+  };
+
+  safeWriteLocalStorage(FAST_BOOT_CACHE_KEY, JSON.stringify(payload));
+}
+
+function hydrateFastBootCache() {
+  const raw = safeReadLocalStorage(FAST_BOOT_CACHE_KEY);
+  if (!raw) return false;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.projects)) return false;
+    if (!parsed.savedAt || (Date.now() - parsed.savedAt) > FAST_BOOT_TTL_MS) return false;
+
+    state.projects = parsed.projects.map(createProjectShell);
+    state.activeProjectId = parsed.activeProjectId || (state.projects[0] && state.projects[0].id) || null;
+
+    if (parsed.activeProjectData && parsed.activeProjectData.id) {
+      rememberProjectData(parsed.activeProjectData.id, parsed.activeProjectData);
+      const project = state.projects.find((p) => p.id === parsed.activeProjectData.id);
+      if (project) {
+        applyProjectSnapshot(project, parsed.activeProjectData, {
+          collapseCues: true,
+          commentsLoadedByDefault: false
+        });
+        primeProjectNotesCache(project.id, project.notes, project.cueNotes);
+      }
+    }
+
+    return state.projects.length > 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+function mapApiCommentRow(row) {
+  return {
+    id: row.id,
+    time: row.time_seconds !== undefined ? row.time_seconds : (row.time || 0),
+    author: row.author || "Client",
+    actorId: row.actor_id || null,
+    text: row.text || "",
+    audio_url: row.audio_url || null,
+    created_at: row.created_at
+  };
+}
+
+async function ensureVersionCommentsLoaded(projectId, version) {
+  if (!projectId || !version || !version.id) return;
+  if (version.commentsLoaded || commentsLoadInFlight.has(version.id)) return;
+
+  commentsLoadInFlight.add(version.id);
+  version.commentsLoading = true;
+  if (state.activeProjectId === projectId) {
+    const ctx = getActiveContext();
+    if (ctx && ctx.version && ctx.version.id === version.id) {
+      renderComments();
+    }
+  }
+
+  try {
+    const headers =
+      (window.flowAuth && typeof window.flowAuth.getAuthHeaders === "function")
+        ? window.flowAuth.getAuthHeaders()
+        : { "Content-Type": "application/json" };
+
+    const resp = await fetch(
+      `/api/comments?versionId=${encodeURIComponent(version.id)}&projectId=${encodeURIComponent(projectId)}`,
+      { headers, cache: "no-store" }
+    );
+    if (!resp.ok) throw new Error(`Comments load failed: ${resp.status}`);
+
+    const payload = await resp.json().catch(() => ({}));
+    const rows = Array.isArray(payload.comments) ? payload.comments : [];
+    const serverComments = rows.map(mapApiCommentRow);
+    const optimisticPending = (Array.isArray(version.comments) ? version.comments : [])
+      .filter(c => c && !c.created_at);
+    if (optimisticPending.length > 0) {
+      const merged = new Map(serverComments.map(c => [c.id, c]));
+      optimisticPending.forEach(c => {
+        if (c.id && !merged.has(c.id)) merged.set(c.id, c);
+      });
+      version.comments = Array.from(merged.values()).sort((a, b) => (a.time || 0) - (b.time || 0));
+    } else {
+      version.comments = serverComments;
+    }
+    version.commentsLoaded = true;
+  } catch (err) {
+    console.warn("[Flow] Failed to load comments lazily", version.id, err);
+  } finally {
+    version.commentsLoading = false;
+    commentsLoadInFlight.delete(version.id);
+    if (state.activeProjectId === projectId) {
+      const ctx = getActiveContext();
+      if (ctx && ctx.version && ctx.version.id === version.id) {
+        renderComments();
+      }
+    }
+  }
+}
 
 // Global fetch wrapper: automatically attach auth headers (Authorization / x-actor-id)
 // for same-origin API calls so the server can resolve the actor reliably.
@@ -1815,16 +2112,27 @@ async function selectProject(projectId) {
   if (!project) return;
 
   state.activeProjectId = projectId;
+  renderProjectList();
 
-  // If project cues are not loaded yet (shouldn't happen with /api/projects/full)
-  // load them now
-  if (!project.cues || project.cues.length === 0) {
-    await loadProjectCues(projectId, { skipRender: true });
+  // Render immediately, then hydrate data in background.
+  const cachedSnapshot = getCachedProjectSnapshot(projectId);
+  if (cachedSnapshot && (!project.cues || project.cues.length === 0)) {
+    applyProjectSnapshot(project, cachedSnapshot, {
+      collapseCues: true,
+      commentsLoadedByDefault: false
+    });
   }
 
-  renderProjectList();
   renderProjectDataOnly();
   refreshSharedWithPanel(false);
+  persistFastBootCache();
+
+  if (!project.cues || project.cues.length === 0) {
+    loadProjectCues(projectId).catch(err => {
+      console.warn('[Flow] Failed to load project cues on selectProject', err);
+    });
+  }
+
   loadProjectNotes(projectId).catch(err => {
     console.warn('[Flow] Failed to load notes for project selection', err);
   });
@@ -4293,7 +4601,13 @@ function renderComments() {
   }
 
   const { version } = ctx;
-  const arr = version.comments;
+  const arr = Array.isArray(version.comments) ? version.comments : [];
+
+  if (version.commentsLoading && !arr.length) {
+    if (commentsListEl) commentsListEl.replaceChildren();
+    commentsSummaryEl.textContent = "Loading comments...";
+    return;
+  }
 
   if (!arr.length) {
     if (commentsListEl) commentsListEl.replaceChildren();
@@ -4637,13 +4951,25 @@ function renderComments() {
 // =======================
 // LOAD PROJECT DATA FROM API
 // =======================
+let versionPreviewRenderRaf = 0;
+
+function scheduleRenderVersionPreviews() {
+  if (versionPreviewRenderRaf) {
+    cancelAnimationFrame(versionPreviewRenderRaf);
+  }
+  versionPreviewRenderRaf = requestAnimationFrame(() => {
+    versionPreviewRenderRaf = 0;
+    renderVersionPreviews();
+  });
+}
+
 function renderProjectDataOnly() {
   renderProjectHeader();
   updateVisibility();
   refreshAllNames();
   renderReferences();
   renderCueList();
-  renderVersionPreviews();
+  scheduleRenderVersionPreviews();
   renderPlayer();
   renderNotesPanel();
   updateProjectNotesButton();
@@ -4665,16 +4991,30 @@ async function loadProjectCues(projectId, options = {}) {
   const project = getProjectById(projectId);
   if (!project) return;
   const skipRender = options && options.skipRender === true;
+  const useCacheFirst = !options || options.useCacheFirst !== false;
 
   const headers =
     (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
       ? window.flowAuth.getAuthHeaders()
       : { 'Content-Type': 'application/json' };
 
-  let usedAggregated = false;
+  if (useCacheFirst) {
+    const cachedSnapshot = getCachedProjectSnapshot(projectId);
+    if (cachedSnapshot) {
+      applyProjectSnapshot(project, cachedSnapshot, {
+        collapseCues: true,
+        commentsLoadedByDefault: false
+      });
+      primeProjectNotesCache(projectId, project.notes, project.cueNotes);
+      if (!skipRender) {
+        renderProjectDataOnly();
+      }
+    }
+  }
+
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, {
+    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0`, {
       headers,
       cache: 'no-store'
     });
@@ -4683,12 +5023,25 @@ async function loadProjectCues(projectId, options = {}) {
     const payload = await response.json();
     const projectData = (payload.projects || []).find(p => p.id === projectId);
     if (!projectData) throw new Error('Project missing in aggregated response');
-    usedAggregated = true;
 
-    project.cues = projectData.cues || [];
-    if (projectData.project_role) {
-      project.project_role = projectData.project_role;
-    }
+    const snapshot = {
+      id: projectId,
+      cues: projectData.cues || [],
+      references: sanitizeProjectReferences(projectData.references),
+      cueNotes: projectData.cueNotes || {},
+      notes: projectData.notes || [],
+      cueSheetProject: projectData.cueSheetProject || project.cueSheetProject || null,
+      project_role: projectData.project_role || project.project_role || null,
+      activeCueId: project.activeCueId || null,
+      activeVersionId: project.activeVersionId || null,
+      activeReferenceId: project.activeReferenceId || null
+    };
+
+    applyProjectSnapshot(project, snapshot, {
+      collapseCues: true,
+      commentsLoadedByDefault: false
+    });
+
     project.cues.forEach(cue => {
       if (typeof cue.maxRevisions !== "number" || cue.maxRevisions <= 0) {
         const localMax = loadCueMaxRevisions(cue.id);
@@ -4709,24 +5062,10 @@ async function loadProjectCues(projectId, options = {}) {
         });
       }
     });
-    if (project.cues.length > 0) {
-      project.activeCueId = project.cues[0].id;
-      const firstVersion = project.cues[0].versions && project.cues[0].versions[0];
-      project.activeVersionId = firstVersion ? firstVersion.id : null;
-    } else {
-      project.activeCueId = null;
-      project.activeVersionId = null;
-    }
-
-    project.references = sanitizeProjectReferences(projectData.references);
-    project.cueNotes = projectData.cueNotes || {};
-    project.notes = projectData.notes || [];
-    project.cueSheetProject = projectData.cueSheetProject || project.cueSheetProject || null;
-    if (!project.activeReferenceId && project.references.length) {
-      project.activeReferenceId = project.references[0].id;
-    }
 
     primeProjectNotesCache(projectId, project.notes, project.cueNotes);
+    rememberProjectData(projectId, compactProjectSnapshot(project));
+    persistFastBootCache();
     if (!skipRender) {
       renderProjectDataOnly();
     }
@@ -4769,64 +5108,41 @@ async function loadProjectCuesLegacy(projectId, headers) {
         const versionData = versionResponse.ok ? await versionResponse.json() : { versions: [] };
         const versions = versionData.versions || [];
 
-        const versionsWithComments = await Promise.all(
-          versions.map(async (v) => {
-            const mediaOriginalName = v.media_original_name || v.media_filename || "Media";
-            const mediaDisplayName = v.media_display_name || mediaOriginalName;
-              const ver = {
-                id: v.id,
-                index: v.index_in_cue || 0,
-                media: v.media_type
-                  ? {
-                    type: v.media_type,
-                    url: v.media_url,
-                    originalName: mediaOriginalName,
-                    displayName: mediaDisplayName,
-                    manualName: mediaDisplayName && mediaDisplayName !== mediaOriginalName,
-                    duration: v.duration || v.media_duration || null,
-                    thumbnailUrl: v.thumbnail_url,
-                    waveform: v.waveform || v.media_waveform_data || null,
-                    waveformSaved: !!(v.waveform || v.media_waveform_data)
-                  }
-                : null,
-              referenceVideo: (v.reference_video_storage_path || v.reference_video_url) ? {
-                storagePath: v.reference_video_storage_path || null,
-                url: v.reference_video_url || null,
-                displayName: v.reference_video_display_name || null,
-                offsetMs: v.reference_video_offset_ms || 0,
-                startTimecode: v.reference_video_start_tc || null,
-                duration: v.reference_video_duration || null
-              } : null,
-              approval: v.approval || null,
-              delivery: v.delivery || null,
-                comments: [],
-                deliverables: [],
-                status: v.status || "in_review"
-              };
-            try {
-              const commentResp = await fetch(
-                `/api/comments?versionId=${encodeURIComponent(v.id)}&projectId=${encodeURIComponent(projectId)}`,
-                { headers }
-              );
-              if (commentResp.ok) {
-                const commentData = await commentResp.json();
-                const rows = commentData.comments || [];
-                ver.comments = rows.map(rc => ({
-                  id: rc.id,
-                  time: rc.time_seconds !== undefined ? rc.time_seconds : (rc.time || 0),
-                  author: rc.author || 'Client',
-                  actorId: rc.actor_id || null,
-                  text: rc.text || '',
-                  audio_url: rc.audio_url || null,
-                  created_at: rc.created_at
-                }));
-              }
-            } catch (e) {
-              console.warn('[Flow] Failed to load comments for version (legacy)', v.id, e);
-            }
-            return ver;
-          })
-        );
+        const versionsWithComments = versions.map((v) => {
+          const mediaOriginalName = v.media_original_name || v.media_filename || "Media";
+          const mediaDisplayName = v.media_display_name || mediaOriginalName;
+          return {
+            id: v.id,
+            index: v.index_in_cue || 0,
+            media: v.media_type
+              ? {
+                  type: v.media_type,
+                  url: v.media_url,
+                  originalName: mediaOriginalName,
+                  displayName: mediaDisplayName,
+                  manualName: mediaDisplayName && mediaDisplayName !== mediaOriginalName,
+                  duration: v.duration || v.media_duration || null,
+                  thumbnailUrl: v.thumbnail_url,
+                  waveform: v.waveform || v.media_waveform_data || null,
+                  waveformSaved: !!(v.waveform || v.media_waveform_data)
+                }
+              : null,
+            referenceVideo: (v.reference_video_storage_path || v.reference_video_url) ? {
+              storagePath: v.reference_video_storage_path || null,
+              url: v.reference_video_url || null,
+              displayName: v.reference_video_display_name || null,
+              offsetMs: v.reference_video_offset_ms || 0,
+              startTimecode: v.reference_video_start_tc || null,
+              duration: v.reference_video_duration || null
+            } : null,
+            approval: v.approval || null,
+            delivery: v.delivery || null,
+            comments: [],
+            commentsLoaded: false,
+            deliverables: [],
+            status: v.status || "in_review"
+          };
+        });
 
         return {
           id: dbCue.id,
@@ -4843,15 +5159,14 @@ async function loadProjectCuesLegacy(projectId, headers) {
     );
 
     project.cues = cuesWithVersions;
-    if (cuesWithVersions.length > 0) {
-      project.activeCueId = cuesWithVersions[0].id;
-      project.activeVersionId = cuesWithVersions[0].versions[0]?.id || null;
-    } else {
-      project.activeCueId = null;
-      project.activeVersionId = null;
-    }
+    normalizeProjectForFastRender(project, {
+      collapseCues: true,
+      commentsLoadedByDefault: false
+    });
 
     await loadProjectReferencesLegacy(projectId, headers);
+    rememberProjectData(projectId, compactProjectSnapshot(project));
+    persistFastBootCache();
     refreshAllNames();
     renderAll();
     loadProjectNotes(projectId).catch(err => {
@@ -7375,6 +7690,12 @@ function renderPlayer() {
     currentPlayerCueId = cue.id;
   }
 
+  if (!version.commentsLoaded) {
+    ensureVersionCommentsLoaded(project.id, version).catch(err => {
+      console.warn("[Flow] Lazy comments fetch failed", version.id, err);
+    });
+  }
+
   renderComments();
   updateReviewUI(project, version);
   renderFinalDeliverySection({ project, cue, version });
@@ -8605,6 +8926,14 @@ async function initializeFromSupabase() {
   }
   hasInitializedFromSupabase = true;
   console.log("[Flow] initializeFromSupabase() called");
+
+  // Warm boot from local cache so projects/files appear immediately.
+  const usedFastBootCache = hydrateFastBootCache();
+  if (usedFastBootCache) {
+    refreshAllNames();
+    renderAll();
+    console.log("[Flow] Fast boot cache hydrated");
+  }
   
   try {
     // Fetch projects from API (include auth headers when available)
@@ -8646,7 +8975,7 @@ async function initializeFromSupabase() {
     console.log("[Flow] Fetching project list via /api/projects...");
     const listStartTime = Date.now();
 
-    let response = await fetch("/api/projects", { headers: fetchHeaders });
+    let response = await fetch("/api/projects", { headers: fetchHeaders, cache: "no-store" });
     let didRetry = false;
     if (!response.ok) {
       console.error("[Flow] Failed to fetch projects:", response.statusText);
@@ -8681,7 +9010,7 @@ async function initializeFromSupabase() {
             } else {
               let newHeaders = { 'Content-Type': 'application/json' };
               if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
-              response = await fetch('/api/projects', { headers: newHeaders });
+              response = await fetch('/api/projects', { headers: newHeaders, cache: "no-store" });
               data = await response.json();
               didRetry = true;
               console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
@@ -8713,19 +9042,10 @@ async function initializeFromSupabase() {
         .forEach(p => sharedIds.add(p.id));
     }
 
-    state.projects = projects.map(p => ({
-      id: p.id,
-      name: p.name || "Untitled",
-      team_id: p.team_id,
-      owner_id: p.owner_id || null,
-      team_members: p.team_members || [],
+    state.projects = projects.map(p => createProjectShell({
+      ...p,
       is_shared: sharedIds.has(p.id),
-      project_role: p.project_role || p.share_role || null,
-      cues: [],
-      activeCueId: null,
-      activeVersionId: null,
-      references: [],
-      activeReferenceId: null
+      project_role: p.project_role || p.share_role || null
     }));
 
     // If a specific project was requested (open_project), prefer it
@@ -8745,20 +9065,42 @@ async function initializeFromSupabase() {
       console.warn('[Flow] Error reading open_project from localStorage', e);
     }
 
+    if (state.activeProjectId && !state.projects.some(p => p.id === state.activeProjectId)) {
+      state.activeProjectId = null;
+    }
+
     // Set first project as active if none selected
     if (!state.activeProjectId && state.projects.length > 0) {
       state.activeProjectId = state.projects[0].id;
       bootProjectId = state.projects[0].id;
+    }
+    if (!bootProjectId && state.activeProjectId) {
+      bootProjectId = state.activeProjectId;
+    }
+
+    if (bootProjectId) {
+      const bootProject = getProjectById(bootProjectId);
+      const cachedSnapshot = getCachedProjectSnapshot(bootProjectId);
+      if (bootProject && cachedSnapshot) {
+        applyProjectSnapshot(bootProject, cachedSnapshot, {
+          collapseCues: true,
+          commentsLoadedByDefault: false
+        });
+        primeProjectNotesCache(bootProject.id, bootProject.notes, bootProject.cueNotes);
+      }
     }
 
     // Refresh names and render immediately
     refreshAllNames();
     renderAll();
     console.log("[Flow] Project list ready. Active project:", state.activeProjectId);
+    persistFastBootCache();
 
-    // Immediately load cues/versions/comments for the active project
+    // Load active project data in background (non-blocking).
     if (bootProjectId) {
-      await loadProjectCues(bootProjectId);
+      loadProjectCues(bootProjectId, { useCacheFirst: false }).catch(err => {
+        console.warn("[Flow] Failed loading boot project", err);
+      });
     } else {
       console.log("[Flow] No projects found for this user.");
     }
@@ -8779,7 +9121,7 @@ function renderAll() {
   refreshAllNames();
   renderReferences();
   renderCueList();
-  renderVersionPreviews();
+  scheduleRenderVersionPreviews();
   renderPlayer();
   renderNotesPanel();
   refreshSharedWithPanel(false);

@@ -33,6 +33,10 @@ export async function GET(req: NextRequest) {
     const startTime = Date.now();
     const url = new URL(req.url);
     const projectIdFilter = url.searchParams.get('projectId') || null;
+    const includeCommentsParam = (url.searchParams.get('includeComments') || '').toLowerCase();
+    const includeComments = includeCommentsParam
+      ? (includeCommentsParam === '1' || includeCommentsParam === 'true' || includeCommentsParam === 'yes')
+      : true;
 
     const shareContext = await getShareLinkContext(req, projectIdFilter || undefined);
 
@@ -359,14 +363,14 @@ export async function GET(req: NextRequest) {
       ? supabaseAdmin.from('cue_sheet_entries').select('*').in('cue_id', cueIds)
       : Promise.resolve({ data: [] });
 
-    // Step 4: Load comments (only if we have versions)
+    // Step 4: Load comments only when explicitly requested.
     let allComments = [];
     let approvals: any[] = [];
     let deliveries: any[] = [];
     let cueSheetProjects: any[] = [];
     let cueSheetEntries: any[] = [];
 
-    if (versionIds.length > 0) {
+    if (versionIds.length > 0 && includeComments) {
       const [
         { data: commentsData },
         { data: approvalsData },
@@ -386,6 +390,22 @@ export async function GET(req: NextRequest) {
       ]);
 
       allComments = commentsData || [];
+      approvals = approvalsData || [];
+      deliveries = deliveriesData || [];
+      cueSheetProjects = cueSheetProjectsData || [];
+      cueSheetEntries = cueSheetEntriesData || [];
+    } else if (versionIds.length > 0) {
+      const [
+        { data: approvalsData },
+        { data: deliveriesData },
+        { data: cueSheetProjectsData },
+        { data: cueSheetEntriesData }
+      ] = await Promise.all([
+        approvalsPromise,
+        deliveriesPromise,
+        cueSheetProjectsPromise,
+        cueSheetEntriesPromise
+      ]);
       approvals = approvalsData || [];
       deliveries = deliveriesData || [];
       cueSheetProjects = cueSheetProjectsData || [];
@@ -510,6 +530,7 @@ export async function GET(req: NextRequest) {
         approval: approvalsByVersion[v.id] || null,
         delivery: deliveriesByVersion[v.id] || null,
         comments: commentsByVersion[v.id] || [],
+        commentsLoaded: includeComments,
         deliverables: versionFilesByVersion[v.id] || []
       });
       return acc;
@@ -642,7 +663,8 @@ export async function GET(req: NextRequest) {
         cue_count: allCues?.length || 0,
         version_count: allVersions.length,
         comment_count: allComments.length,
-        reference_count: allReferences.length
+        reference_count: allReferences.length,
+        include_comments: includeComments
       }
     }, 200);
 
