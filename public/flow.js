@@ -2492,7 +2492,9 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
         path: uploadPath,
         filename: file.name,
         contentType,
-        size: file.size
+        size: file.size,
+        uploadType: options.uploadType || 'unknown',
+        cueName: options.cueName || ''
       })
     });
 
@@ -2539,6 +2541,11 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
               markUploadJobError(jobId, tr("upload.error"));
             }
           } else if (version.media) {
+            // Save the blob URL BEFORE replacing with the proxied URL.
+            // The blob URL points to the file already in browser memory, so
+            // thumbnail and waveform generation from it is instantaneous
+            // (no network round-trip needed).
+            const localBlobUrl = version.media.url;
             version.media.url = getProxiedUrl(storedPath);
             version.media.storagePath = storedPath;
             version.isUploading = false;
@@ -2548,7 +2555,12 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
             if (saved) {
               markUploadJobComplete(jobId, tr("upload.completed"));
               if (version.media.type) {
-                generateAndUploadPreviews(project.id, cue.id, version.id, version.media.type, version.media.url)
+                // Prefer the local blob URL for instant preview; fall back to
+                // the proxied URL only if the blob was already revoked.
+                const previewSrc = (localBlobUrl && localBlobUrl.startsWith('blob:'))
+                  ? localBlobUrl
+                  : version.media.url;
+                generateAndUploadPreviews(project.id, cue.id, version.id, version.media.type, previewSrc)
                   .catch(err => console.warn("[Preview] Failed:", err));
               }
             } else {

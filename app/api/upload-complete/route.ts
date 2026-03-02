@@ -122,7 +122,8 @@ async function notifyCollaborators(
   projectId: string,
   uploaderId: string,
   fileName: string,
-  uploadType: UploadType
+  uploadType: UploadType,
+  cueName: string = ''
 ) {
   try {
     const { data: project, error: projectError } = await supabaseAdmin
@@ -181,7 +182,8 @@ async function notifyCollaborators(
           fileName,
           uploaderName,
           projectLink,
-          uploadType
+          uploadType,
+          cueName || undefined
         );
       } catch (err) {
         console.error("[Notification] Failed to send email to", email, ":", err);
@@ -207,6 +209,10 @@ export async function POST(req: NextRequest) {
     const filename = body?.filename;
     const contentType = body?.contentType;
     const size = body?.size;
+    const uploadType: UploadType = ['new_cue', 'new_version', 'deliverable'].includes(body?.uploadType)
+      ? body.uploadType
+      : 'unknown';
+    const cueName: string = typeof body?.cueName === 'string' ? body.cueName : '';
 
     if (!projectId || !isUuid(projectId)) {
       return NextResponse.json({ error: "Valid projectId required" }, { status: 400 });
@@ -270,9 +276,13 @@ export async function POST(req: NextRequest) {
       console.error("[POST /api/upload-complete] Audit log exception (non-fatal):", auditErr);
     }
 
-    notifyCollaborators(projectId, auth.userId, filename, "unknown").catch((err) => {
-      console.error("[POST /api/upload-complete] notify failed:", err);
-    });
+    // Await notifications before returning so the serverless function doesn't
+    // terminate before emails are sent (Vercel kills the Lambda after response).
+    try {
+      await notifyCollaborators(projectId, auth.userId, filename, uploadType, cueName);
+    } catch (notifyErr) {
+      console.warn("[POST /api/upload-complete] Notification failed (non-fatal):", notifyErr);
+    }
 
     return NextResponse.json({ success: true, path: normalizedPath }, { status: 201 });
   } catch (err: any) {
