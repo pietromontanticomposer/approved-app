@@ -53,6 +53,14 @@ export async function GET(req: NextRequest) {
     const includeWaveforms = includeWaveformsParam
       ? (includeWaveformsParam === '1' || includeWaveformsParam === 'true' || includeWaveformsParam === 'yes')
       : true;
+    const includeApprovalsParam = (url.searchParams.get('includeApprovals') || '').toLowerCase();
+    const includeApprovals = includeApprovalsParam
+      ? (includeApprovalsParam === '1' || includeApprovalsParam === 'true' || includeApprovalsParam === 'yes')
+      : true;
+    const includeDeliveriesParam = (url.searchParams.get('includeDeliveries') || '').toLowerCase();
+    const includeDeliveries = includeDeliveriesParam
+      ? (includeDeliveriesParam === '1' || includeDeliveriesParam === 'true' || includeDeliveriesParam === 'yes')
+      : true;
 
     const shareContext = await getShareLinkContext(req, projectIdFilter || undefined);
 
@@ -370,11 +378,11 @@ export async function GET(req: NextRequest) {
     const versionIds = allVersions.map(v => v.id);
 
     // Load approvals and delivery configs
-    const approvalsPromise = versionIds.length > 0
+    const approvalsPromise = includeApprovals && versionIds.length > 0
       ? supabaseAdmin.from('version_approvals').select('*').in('version_id', versionIds)
       : Promise.resolve({ data: [] });
 
-    const deliveriesPromise = versionIds.length > 0
+    const deliveriesPromise = includeDeliveries && versionIds.length > 0
       ? supabaseAdmin.from('version_deliveries').select('*').in('version_id', versionIds)
       : Promise.resolve({ data: [] });
 
@@ -691,7 +699,9 @@ export async function GET(req: NextRequest) {
         include_references: includeReferences,
         include_notes: includeNotes,
         include_cue_sheet: includeCueSheet,
-        include_waveforms: includeWaveforms
+        include_waveforms: includeWaveforms,
+        include_approvals: includeApprovals,
+        include_deliveries: includeDeliveries
       }
     }, 200);
 

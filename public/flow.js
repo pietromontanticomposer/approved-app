@@ -5016,7 +5016,7 @@ async function loadProjectCues(projectId, options = {}) {
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
     const response = await fetch(
-      `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0`,
+      `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0&includeApprovals=0&includeDeliveries=0`,
       {
       headers,
       cache: 'no-store'
