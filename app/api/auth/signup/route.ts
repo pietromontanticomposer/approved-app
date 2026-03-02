@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendConfirmationEmail, sendAdminApprovalRequest } from '@/lib/email';
+import { checkRateLimit, getClientIp, LIMITS } from '@/lib/rateLimit';
 import crypto from 'crypto';
 
 export async function POST(req: Request) {
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`signup:${ip}`, LIMITS.auth.max, LIMITS.auth.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Troppi tentativi. Riprova tra poco.' }, {
+      status: 429,
+      headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+
   try {
     const body = await req.json();
     const { email, password } = body || {};

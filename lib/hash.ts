@@ -7,7 +7,7 @@ export async function sha256FromUrl(url: string): Promise<string> {
   }
 
   const hash = crypto.createHash('sha256');
-  // @ts-ignore - Node/Undici body is async iterable
+  // @ts-expect-error - Node/Undici body is async iterable
   for await (const chunk of res.body) {
     hash.update(chunk);
   }

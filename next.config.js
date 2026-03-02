@@ -18,6 +18,24 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // ── Security headers applied to every response ──────────────────────
+      {
+        source: '/:path*',
+        headers: [
+          // Prevent clickjacking
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          // Prevent MIME-type sniffing
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // Reflected XSS filter (legacy browsers)
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          // Don't send Referer to cross-origin destinations
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // HSTS — enforce HTTPS for 1 year
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          // Disable unnecessary browser features
+          { key: 'Permissions-Policy', value: 'geolocation=(), microphone=(), camera=()' },
+        ],
+      },
       {
         source: '/flow.js',
         headers: [

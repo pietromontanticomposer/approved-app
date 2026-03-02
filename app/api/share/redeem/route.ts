@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth } from "@/lib/auth";
 import { isUuid } from "@/lib/validation";
+import { checkRateLimit, getClientIp, LIMITS } from "@/lib/rateLimit";
 import crypto from "crypto";
 
 /**
@@ -11,6 +12,15 @@ import crypto from "crypto";
  */
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`share-redeem:${ip}`, LIMITS.shareRedeem.max, LIMITS.shareRedeem.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Troppi tentativi. Riprova tra un\'ora.' }, {
+      status: 429,
+      headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+
   try {
     const auth = await verifyAuth(req);
     if (!auth || !isUuid(auth.userId)) {

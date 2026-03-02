@@ -57,8 +57,12 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     });
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      const allowPublic =
-        process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+      // SECURITY: demo/public access is NEVER allowed in production
+      const isProduction = process.env.NODE_ENV === 'production';
+      if (isProduction && process.env.APP_ALLOW_PUBLIC_USER === '1') {
+        console.error('[Auth] SECURITY: APP_ALLOW_PUBLIC_USER=1 must not be set in production. Denying access.');
+      }
+      const allowPublic = !isProduction && process.env.APP_ALLOW_PUBLIC_USER !== '0';
       if (isDev) console.log('[Auth] No auth header - allowPublic:', allowPublic);
       if (allowPublic) {
         return {
@@ -80,7 +84,7 @@ export async function verifyAuth(req: NextRequest): Promise<AuthContext | null> 
     // This allows local development without real Supabase auth
     // SECURITY: Never trust x-actor-id header - it can be spoofed
     if (token === 'demo') {
-      const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+      const allowPublic = process.env.NODE_ENV !== 'production' && process.env.APP_ALLOW_PUBLIC_USER !== '0';
 
       if (!allowPublic) {
         if (isDev) console.log('[Auth] Demo token not allowed in production');
@@ -133,7 +137,7 @@ export async function requireAuth(req: NextRequest): Promise<string> {
  */
 export async function canAccessProject(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode, allow access
-  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  const allowPublic = process.env.NODE_ENV !== 'production' && process.env.APP_ALLOW_PUBLIC_USER !== '0';
   if (allowPublic && userId === 'public-user') {
     return true;
   }
@@ -186,7 +190,7 @@ export async function canAccessProject(userId: string, projectId: string): Promi
  */
 export async function isProjectOwner(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode, allow access
-  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  const allowPublic = process.env.NODE_ENV !== 'production' && process.env.APP_ALLOW_PUBLIC_USER !== '0';
   if (allowPublic && userId === 'public-user') {
     return true;
   }
@@ -211,7 +215,7 @@ export async function isProjectOwner(userId: string, projectId: string): Promise
  */
 export async function canModifyProject(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode without real auth, allow modifications
-  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  const allowPublic = process.env.NODE_ENV !== 'production' && process.env.APP_ALLOW_PUBLIC_USER !== '0';
   if (allowPublic && userId === 'public-user') {
     return true;
   }
@@ -274,7 +278,7 @@ export async function canModifyProject(userId: string, projectId: string): Promi
  */
 export async function canReviewProject(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode without real auth, allow reviews
-  const allowPublic = process.env.APP_ALLOW_PUBLIC_USER === '1' || process.env.NODE_ENV !== 'production';
+  const allowPublic = process.env.NODE_ENV !== 'production' && process.env.APP_ALLOW_PUBLIC_USER !== '0';
   if (allowPublic && userId === 'public-user') {
     return true;
   }

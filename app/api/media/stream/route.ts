@@ -128,7 +128,8 @@ export async function GET(req: Request) {
       console.error("[GET /api/media/stream] upstream fetch failed", { status: res.status, statusText: res.statusText, bodySnippet: txt && txt.slice ? txt.slice(0, 200) : txt, targetUrl });
       const errHeaders = new Headers();
       errHeaders.set('Content-Type', 'application/json');
-      errHeaders.set('Access-Control-Allow-Origin', '*');
+      const appOrigin = process.env.NEXT_PUBLIC_APP_URL || '';
+      if (appOrigin) errHeaders.set('Access-Control-Allow-Origin', appOrigin);
       return new NextResponse(JSON.stringify({ error: 'upstream fetch failed', upstreamStatus: res.status, upstreamText: txt && txt.slice ? txt.slice(0,200) : txt }), { status: res.status, headers: errHeaders });
     }
 
@@ -146,7 +147,8 @@ export async function GET(req: Request) {
     const upstreamCache = res.headers.get('cache-control');
     // Media files are immutable - cache for 1 year with stale-while-revalidate
     headers.set('Cache-Control', upstreamCache || 'public, max-age=31536000, immutable, stale-while-revalidate=86400');
-    headers.set('Access-Control-Allow-Origin', '*');
+    const appOrigin = process.env.NEXT_PUBLIC_APP_URL || '';
+    if (appOrigin) headers.set('Access-Control-Allow-Origin', appOrigin);
     // Add ETag if available for conditional requests
     const etag = res.headers.get('etag');
     if (etag) headers.set('ETag', etag);

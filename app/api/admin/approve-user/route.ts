@@ -51,6 +51,18 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Check token age — links expire after 30 days
+    if (approvalRecord.created_at) {
+      const created = new Date(approvalRecord.created_at).getTime();
+      const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
+      if (Date.now() - created > maxAgeMs) {
+        return new NextResponse(renderHtml('error', 'Link scaduto', 'Il link di approvazione è scaduto (30 giorni). Genera un nuovo link.'), {
+          status: 410,
+          headers: { 'Content-Type': 'text/html' },
+        });
+      }
+    }
+
     // Update the approval status
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
     const { error: updateErr } = await supabaseAdmin

@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { verifyAuth, isProjectOwner } from '@/lib/auth';
 import { getShareLinkContext } from '@/lib/shareAccess';
-import { isUuid } from '@/lib/validation';
+import { isUuid, sanitizeString, MAX_LENGTHS } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -360,8 +360,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const name = typeof body.name === 'string' ? body.name.trim() : '';
-    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const name = sanitizeString(body.name, MAX_LENGTHS.projectName) ?? '';
+    const description = sanitizeString(body.description, MAX_LENGTHS.projectDescription) ?? '';
     let teamId = typeof body.team_id === 'string' ? body.team_id : 'auto';
 
     // Validate required fields
@@ -505,8 +505,8 @@ export async function PATCH(req: NextRequest) {
     }
 
     const projectId = typeof body.id === 'string' ? body.id.trim() : '';
-    const name = typeof body.name === 'string' ? body.name.trim() : null;
-    const description = typeof body.description === 'string' ? body.description.trim() : null;
+    const name = sanitizeString(body.name, MAX_LENGTHS.projectName);
+    const description = sanitizeString(body.description, MAX_LENGTHS.projectDescription);
 
     if (!projectId) {
       return NextResponse.json(

@@ -1,6 +1,16 @@
 import nodemailer from 'nodemailer';
 
 const isDev = process.env.NODE_ENV !== "production";
+
+function escapeHtml(text: string | null | undefined): string {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
 let transporter: any = null;
 
 function getTransporter() {
@@ -84,7 +94,9 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
     : role === 'owner' ? 'Proprietario (controllo totale)'
     : 'Viewer (può visualizzare)';
 
-  const projectText = projectName ? ` al progetto "<strong>${projectName}</strong>"` : '';
+  const safeProjectName = escapeHtml(projectName);
+  const safeInvitedBy = escapeHtml(invitedBy);
+  const projectText = safeProjectName ? ` al progetto "<strong>${safeProjectName}</strong>"` : '';
 
   const text = `Ciao!\n\nSei stato invitato${projectName ? ` al progetto "${projectName}"` : ''} su Approved come ${roleText}.\n\nApri questo link per accettare l'invito: ${inviteLink}\n\nSe non ti aspettavi questa email, puoi ignorarla.`;
 
@@ -93,15 +105,15 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
       <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
         <h2 style="color:#0b62ff; margin-top:0;">Approved</h2>
         <p style="font-size:16px; color:#333;">
-          ${invitedBy ? `<strong>${invitedBy}</strong> ti ha invitato` : 'Sei stato invitato'}${projectText} come <strong>${roleText}</strong>.
+          ${safeInvitedBy ? `<strong>${safeInvitedBy}</strong> ti ha invitato` : 'Sei stato invitato'}${projectText} come <strong>${escapeHtml(roleText)}</strong>.
         </p>
         <p style="margin:24px 0;">
-          <a href="${inviteLink}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+          <a href="${escapeHtml(inviteLink)}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
             Accetta invito
           </a>
         </p>
         <p style="color:#666;font-size:0.9rem;">Oppure copia questo link nel browser:<br/>
-          <a href="${inviteLink}" style="color:#0b62ff;word-break:break-all;">${inviteLink}</a>
+          <a href="${escapeHtml(inviteLink)}" style="color:#0b62ff;word-break:break-all;">${escapeHtml(inviteLink)}</a>
         </p>
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
         <p style="color:#999;font-size:0.85rem;margin-bottom:0;">Se non ti aspettavi questa email, puoi ignorarla in sicurezza.</p>
@@ -230,7 +242,7 @@ export async function sendApprovalStatusEmail(
           </p>
           ${reason ? `
           <div style="background:#fef2f2; border-left:4px solid #dc2626; padding:16px; margin:20px 0; border-radius:4px;">
-            <p style="margin:0; color:#7f1d1d; font-size:14px;">Motivo: ${reason}</p>
+            <p style="margin:0; color:#7f1d1d; font-size:14px;">Motivo: ${escapeHtml(reason)}</p>
           </div>
           ` : ''}
           <p style="color:#666;font-size:0.9rem;">
@@ -277,24 +289,30 @@ export async function sendNewVersionNotification(
   let typeIcon: string;
   let actionDescription: string;
 
+  const safeUploadedBy = escapeHtml(uploadedBy);
+  const safeProjectName2 = escapeHtml(projectName);
+  const safeFileName = escapeHtml(fileName);
+  const safeCueName = escapeHtml(cueName);
+  const safeProjectLink = escapeHtml(projectLink);
+
   switch (uploadType) {
     case 'new_cue':
       subject = `Nuova cue aggiunta su "${projectName}"`;
       typeLabel = 'Nuova Cue';
       typeIcon = '🎬';
-      actionDescription = `ha aggiunto una nuova cue${cueName ? ` "<strong>${cueName}</strong>"` : ''} su`;
+      actionDescription = `ha aggiunto una nuova cue${safeCueName ? ` "<strong>${safeCueName}</strong>"` : ''} su`;
       break;
     case 'new_version':
       subject = `Nuova versione caricata su "${projectName}"`;
       typeLabel = cueName ? `Nuova versione per "${cueName}"` : 'Nuova Versione';
       typeIcon = '🔄';
-      actionDescription = `ha caricato una nuova versione${cueName ? ` per la cue "<strong>${cueName}</strong>"` : ''} su`;
+      actionDescription = `ha caricato una nuova versione${safeCueName ? ` per la cue "<strong>${safeCueName}</strong>"` : ''} su`;
       break;
     case 'deliverable':
       subject = `Nuovo file tecnico su "${projectName}"`;
       typeLabel = cueName ? `File tecnico per "${cueName}"` : 'File Tecnico';
       typeIcon = '📦';
-      actionDescription = `ha caricato un file tecnico${cueName ? ` per la cue "<strong>${cueName}</strong>"` : ''} su`;
+      actionDescription = `ha caricato un file tecnico${safeCueName ? ` per la cue "<strong>${safeCueName}</strong>"` : ''} su`;
       break;
     default:
       subject = `Nuovo file caricato su "${projectName}"`;
@@ -310,14 +328,14 @@ export async function sendNewVersionNotification(
       <div style="background:#fff; border-radius:12px; padding:32px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
         <h2 style="color:#0b62ff; margin-top:0;">Approved</h2>
         <p style="font-size:16px; color:#333;">
-          <strong>${uploadedBy}</strong> ${actionDescription} <strong>"${projectName}"</strong>
+          <strong>${safeUploadedBy}</strong> ${actionDescription} <strong>"${safeProjectName2}"</strong>
         </p>
         <div style="background:#f5f5f5; border-left:4px solid #0b62ff; padding:16px; margin:20px 0; border-radius:4px;">
-          <p style="margin:0; color:#666; font-size:14px;">${typeIcon} ${typeLabel}:</p>
-          <p style="margin:8px 0 0 0; font-weight:600; color:#111; font-size:15px;">${fileName}</p>
+          <p style="margin:0; color:#666; font-size:14px;">${typeIcon} ${escapeHtml(typeLabel)}:</p>
+          <p style="margin:8px 0 0 0; font-weight:600; color:#111; font-size:15px;">${safeFileName}</p>
         </div>
         <p style="margin:24px 0;">
-          <a href="${projectLink}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
+          <a href="${safeProjectLink}" style="display:inline-block;padding:14px 28px;background:#0b62ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">
             Vai al progetto
           </a>
         </p>
@@ -326,7 +344,7 @@ export async function sendNewVersionNotification(
         </p>
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
         <p style="color:#999;font-size:0.85rem;margin-bottom:0;">
-          Ricevi questa email perché sei collaboratore del progetto "${projectName}".
+          Ricevi questa email perché sei collaboratore del progetto "${safeProjectName2}".
         </p>
       </div>
     </div>
