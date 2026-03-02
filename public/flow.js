@@ -304,6 +304,7 @@ const FAST_BOOT_CACHE_KEY = "approved-fast-boot-v1";
 const FAST_BOOT_TTL_MS = 1000 * 60 * 30; // 30 minutes
 const projectDataCache = new Map();
 const commentsLoadInFlight = new Set();
+const referencesLoadInFlight = new Set();
 
 function safeReadLocalStorage(key) {
   try {
@@ -5014,10 +5015,13 @@ async function loadProjectCues(projectId, options = {}) {
 
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0`, {
+    const response = await fetch(
+      `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0`,
+      {
       headers,
       cache: 'no-store'
-    });
+      }
+    );
     if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
     const payload = await response.json();
@@ -5069,6 +5073,12 @@ async function loadProjectCues(projectId, options = {}) {
     if (!skipRender) {
       renderProjectDataOnly();
     }
+    loadProjectReferencesLegacy(projectId, headers, { skipRender: !!skipRender }).catch(err => {
+      console.warn('[Flow] Failed to lazy-load references', err);
+    });
+    loadProjectNotes(projectId).catch(err => {
+      console.warn('[Flow] Failed to lazy-load notes', err);
+    });
     console.log("[Flow] Project cues loaded successfully via /api/projects/full");
     return;
   } catch (err) {
@@ -5079,9 +5089,6 @@ async function loadProjectCues(projectId, options = {}) {
   if (!skipRender) {
     renderProjectDataOnly();
   }
-  loadProjectNotes(projectId).catch(err => {
-    console.warn('[Flow] Failed to preload notes', err);
-  });
 }
 
 async function loadProjectCuesLegacy(projectId, headers) {
@@ -5178,16 +5185,22 @@ async function loadProjectCuesLegacy(projectId, headers) {
   }
 }
 
-async function loadProjectReferencesLegacy(projectId, headers) {
+async function loadProjectReferencesLegacy(projectId, headers, options = {}) {
   try {
     const project = getProjectById(projectId);
     if (!project) return;
+    if (project.references && project.references.length > 0 && !options.force) return;
+    if (referencesLoadInFlight.has(projectId)) return;
+    referencesLoadInFlight.add(projectId);
 
-    const res = await fetch(`/api/references?projectId=${encodeURIComponent(projectId)}`, { headers });
+    const res = await fetch(`/api/references?projectId=${encodeURIComponent(projectId)}`, {
+      headers,
+      cache: 'no-store'
+    });
     if (!res.ok) {
       console.error("[Flow] Failed to load references", res.statusText);
       project.references = [];
-      renderReferences();
+      if (!options.skipRender) renderReferences();
       return;
     }
 
@@ -5197,9 +5210,13 @@ async function loadProjectReferencesLegacy(projectId, headers) {
       project.activeReferenceId = project.references[0].id;
     }
 
-    renderReferences();
+    rememberProjectData(projectId, compactProjectSnapshot(project));
+    persistFastBootCache();
+    if (!options.skipRender) renderReferences();
   } catch (err) {
     console.error("[Flow] Error loading references", err);
+  } finally {
+    referencesLoadInFlight.delete(projectId);
   }
 }
 
@@ -8975,7 +8992,7 @@ async function initializeFromSupabase() {
     console.log("[Flow] Fetching project list via /api/projects...");
     const listStartTime = Date.now();
 
-    let response = await fetch("/api/projects", { headers: fetchHeaders, cache: "no-store" });
+    let response = await fetch("/api/projects?lite=1", { headers: fetchHeaders, cache: "no-store" });
     let didRetry = false;
     if (!response.ok) {
       console.error("[Flow] Failed to fetch projects:", response.statusText);
@@ -9010,7 +9027,7 @@ async function initializeFromSupabase() {
             } else {
               let newHeaders = { 'Content-Type': 'application/json' };
               if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
-              response = await fetch('/api/projects', { headers: newHeaders, cache: "no-store" });
+              response = await fetch('/api/projects?lite=1', { headers: newHeaders, cache: "no-store" });
               data = await response.json();
               didRetry = true;
               console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
@@ -9791,7 +9808,7 @@ async function loadAndRenderProjectNotes() {
 
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`/api/notes?projectId=${project.id}&type=general`, { headers });
+    const res = await fetch(`/api/notes?projectId=${project.id}&type=general`, { headers, cache: 'no-store' });
 
     if (!res.ok) {
       throw new Error('Errore caricamento note');
@@ -9805,6 +9822,8 @@ async function loadAndRenderProjectNotes() {
     } else {
       projectNotesStore[project.id].general = [...notes];
     }
+    rememberProjectData(project.id, compactProjectSnapshot(project));
+    persistFastBootCache();
     renderNotesPanel();
 
     if (notes.length === 0) {
@@ -9833,19 +9852,21 @@ async function loadAndRenderProjectNotes() {
 async function loadProjectNotes(projectId, options = {}) {
   const project = getProjectById(projectId);
   if (!project) return;
+  const shouldRender = options.render !== false;
   const cached = projectNotesStore[projectId];
   if (cached && !options.force) {
     project.notes = [...(cached.general || [])];
     project.cueNotes = cloneCueNotesMap(cached.cue || {});
-    renderCueList();
-    renderVersionPreviews();
-    renderNotesPanel();
+    if (shouldRender) {
+      renderNotesPanel();
+      updateProjectNotesButton();
+    }
     return;
   }
 
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`/api/notes?projectId=${projectId}`, { headers });
+    const res = await fetch(`/api/notes?projectId=${projectId}`, { headers, cache: 'no-store' });
     if (!res.ok) {
       throw new Error(`Failed to load project notes (${res.status})`);
     }
@@ -9868,9 +9889,12 @@ async function loadProjectNotes(projectId, options = {}) {
       cue: cloneCueNotesMap(cueMap),
       loadedAt: Date.now()
     };
-    renderCueList();
-    renderVersionPreviews();
-    renderNotesPanel();
+    rememberProjectData(projectId, compactProjectSnapshot(project));
+    persistFastBootCache();
+    if (shouldRender) {
+      renderNotesPanel();
+      updateProjectNotesButton();
+    }
   } catch (err) {
     console.error('[Notes] Error loading project notes:', err);
     throw err;

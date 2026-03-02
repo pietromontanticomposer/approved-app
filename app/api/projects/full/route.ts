@@ -37,6 +37,22 @@ export async function GET(req: NextRequest) {
     const includeComments = includeCommentsParam
       ? (includeCommentsParam === '1' || includeCommentsParam === 'true' || includeCommentsParam === 'yes')
       : true;
+    const includeReferencesParam = (url.searchParams.get('includeReferences') || '').toLowerCase();
+    const includeReferences = includeReferencesParam
+      ? (includeReferencesParam === '1' || includeReferencesParam === 'true' || includeReferencesParam === 'yes')
+      : true;
+    const includeNotesParam = (url.searchParams.get('includeNotes') || '').toLowerCase();
+    const includeNotes = includeNotesParam
+      ? (includeNotesParam === '1' || includeNotesParam === 'true' || includeNotesParam === 'yes')
+      : true;
+    const includeCueSheetParam = (url.searchParams.get('includeCueSheet') || '').toLowerCase();
+    const includeCueSheet = includeCueSheetParam
+      ? (includeCueSheetParam === '1' || includeCueSheetParam === 'true' || includeCueSheetParam === 'yes')
+      : true;
+    const includeWaveformsParam = (url.searchParams.get('includeWaveforms') || '').toLowerCase();
+    const includeWaveforms = includeWaveformsParam
+      ? (includeWaveformsParam === '1' || includeWaveformsParam === 'true' || includeWaveformsParam === 'yes')
+      : true;
 
     const shareContext = await getShareLinkContext(req, projectIdFilter || undefined);
 
@@ -180,23 +196,30 @@ export async function GET(req: NextRequest) {
         .select('*')
         .in('project_id', projectIds)
         .order('index_in_project', { ascending: true }),
-      supabaseAdmin
-        .from('reference_roots')
-        .select('*')
-        .in('project_id', projectIds),
-      supabaseAdmin
-        .from('project_notes')
-        .select('*')
-        .in('project_id', projectIds)
-        .order('pinned', { ascending: false })
-        .order('created_at', { ascending: false })
+      includeReferences
+        ? supabaseAdmin
+            .from('references_root')
+            .select('*')
+            .in('project_id', projectIds)
+        : Promise.resolve({ data: [] }),
+      includeNotes
+        ? supabaseAdmin
+            .from('project_notes')
+            .select('*')
+            .in('project_id', projectIds)
+            .order('pinned', { ascending: false })
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] })
     ]);
 
     const cueIds = (allCues || []).map(c => c.id);
 
     // Step 3: Load versions, comments, and reference versions in PARALLEL
+    const versionsSelect = includeWaveforms
+      ? '*'
+      : 'id,cue_id,index_in_cue,status,media_type,media_storage_path,media_url,media_original_name,media_display_name,media_duration,duration,media_thumbnail_url,media_thumbnail_path,media_waveform_image_url,reference_video_storage_path,reference_video_url,reference_video_display_name,reference_video_offset_ms,reference_video_start_tc,reference_video_duration';
     const versionsPromise = cueIds.length > 0
-      ? supabaseAdmin.from('versions').select('*').in('cue_id', cueIds).order('index_in_cue', { ascending: true })
+      ? supabaseAdmin.from('versions').select(versionsSelect).in('cue_id', cueIds).order('index_in_cue', { ascending: true })
       : Promise.resolve({ data: [] });
 
     const refVersionsPromise = (refRoots && refRoots.length > 0)
@@ -355,11 +378,11 @@ export async function GET(req: NextRequest) {
       ? supabaseAdmin.from('version_deliveries').select('*').in('version_id', versionIds)
       : Promise.resolve({ data: [] });
 
-    const cueSheetProjectsPromise = projectIds.length > 0
+    const cueSheetProjectsPromise = includeCueSheet && projectIds.length > 0
       ? supabaseAdmin.from('cue_sheet_projects').select('*').in('project_id', projectIds)
       : Promise.resolve({ data: [] });
 
-    const cueSheetEntriesPromise = cueIds.length > 0
+    const cueSheetEntriesPromise = includeCueSheet && cueIds.length > 0
       ? supabaseAdmin.from('cue_sheet_entries').select('*').in('cue_id', cueIds)
       : Promise.resolve({ data: [] });
 
@@ -664,7 +687,11 @@ export async function GET(req: NextRequest) {
         version_count: allVersions.length,
         comment_count: allComments.length,
         reference_count: allReferences.length,
-        include_comments: includeComments
+        include_comments: includeComments,
+        include_references: includeReferences,
+        include_notes: includeNotes,
+        include_cue_sheet: includeCueSheet,
+        include_waveforms: includeWaveforms
       }
     }, 200);
 

@@ -209,6 +209,9 @@ async function getSharedProjects(userId: string, ownedProjectIds: string[]): Pro
 export async function GET(req: NextRequest) {
   try {
     if (isDev) console.log('[GET /api/projects] Request started');
+    const url = new URL(req.url);
+    const liteParam = (url.searchParams.get('lite') || '').toLowerCase();
+    const lite = liteParam === '1' || liteParam === 'true' || liteParam === 'yes';
 
     // Allow share-link access without authentication (returns a single shared project)
     const shareContext = await getShareLinkContext(req);
@@ -223,7 +226,9 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ projects: [], my_projects: [], shared_with_me: [], public: true }, { status: 200 });
       }
 
-      const enriched = await hydrateProjectsWithTeamMembers([sharedProject]);
+      const enriched = lite
+        ? [{ ...sharedProject, team_members: [] }]
+        : await hydrateProjectsWithTeamMembers([sharedProject]);
       return NextResponse.json({
         my_projects: [],
         shared_with_me: enriched.map(p => ({ ...p, is_shared: true, share_role: shareContext.role, project_role: shareContext.role })),
@@ -265,8 +270,12 @@ export async function GET(req: NextRequest) {
     if (isDev) console.log('[GET /api/projects] Found', sharedProjects.length, 'shared projects');
 
     // Hydrate with team member info
-    const myProjectsHydrated = await hydrateProjectsWithTeamMembers(ownedProjects);
-    const sharedProjectsHydrated = await hydrateProjectsWithTeamMembers(sharedProjects);
+    const myProjectsHydrated = lite
+      ? ownedProjects.map(project => ({ ...project, team_members: [] }))
+      : await hydrateProjectsWithTeamMembers(ownedProjects);
+    const sharedProjectsHydrated = lite
+      ? sharedProjects.map(project => ({ ...project, team_members: [] }))
+      : await hydrateProjectsWithTeamMembers(sharedProjects);
 
     // Combine for backward compatibility
     const allProjects = [...myProjectsHydrated, ...sharedProjectsHydrated];
