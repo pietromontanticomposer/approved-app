@@ -4674,7 +4674,10 @@ async function loadProjectCues(projectId, options = {}) {
   let usedAggregated = false;
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, { headers });
+    const response = await fetch(`/api/projects/full?projectId=${encodeURIComponent(projectId)}`, {
+      headers,
+      cache: 'no-store'
+    });
     if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
     const payload = await response.json();

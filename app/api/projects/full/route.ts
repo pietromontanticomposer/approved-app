@@ -19,6 +19,13 @@ import { getShareLinkContext } from '@/lib/shareAccess';
 import { isUuid } from '@/lib/validation';
 
 const isDev = process.env.NODE_ENV !== "production";
+const NO_STORE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+};
+
+function jsonNoStore(body: any, status = 200) {
+  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -32,9 +39,9 @@ export async function GET(req: NextRequest) {
     // SECURITY: Verify authentication (share links can bypass auth)
     const auth = await verifyAuth(req);
     if (!auth && !shareContext) {
-      return NextResponse.json(
+      return jsonNoStore(
         { error: 'Unauthorized - authentication required' },
-        { status: 401 }
+        401
       );
     }
 
@@ -51,7 +58,7 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
 
       if (singleError || !singleProject) {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+        return jsonNoStore({ error: 'Project not found' }, 404);
       }
 
       let hasAccess = !!(userId && singleProject.owner_id === userId);
@@ -86,7 +93,7 @@ export async function GET(req: NextRequest) {
 
       if (!hasAccess) {
         if (isDev) console.log(`[GET /api/projects/full] User ${userId} denied for project ${projectIdFilter}`);
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+        return jsonNoStore({ error: 'Project not found' }, 404);
       }
 
       baseProjects = [singleProject];
@@ -155,7 +162,7 @@ export async function GET(req: NextRequest) {
     const projectIds = baseProjects.map(p => p.id);
     if (projectIds.length === 0) {
       if (isDev) console.log(`[GET /api/projects/full] No projects found (${Date.now() - startTime}ms)`);
-      return NextResponse.json({ projects: [] }, { status: 200 });
+      return jsonNoStore({ projects: [] }, 200);
     }
 
     // Step 2: Load ALL data in PARALLEL for maximum speed
@@ -627,7 +634,7 @@ export async function GET(req: NextRequest) {
       console.log(`  - Total cue notes: ${totalCueNotes}`);
     }
 
-    return NextResponse.json({
+    return jsonNoStore({
       projects: enrichedProjects,
       _meta: {
         elapsed_ms: elapsed,
@@ -637,13 +644,13 @@ export async function GET(req: NextRequest) {
         comment_count: allComments.length,
         reference_count: allReferences.length
       }
-    }, { status: 200 });
+    }, 200);
 
   } catch (err: any) {
     console.error('[GET /api/projects/full] Error:', err);
-    return NextResponse.json(
+    return jsonNoStore(
       { error: err?.message || 'Internal server error' },
-      { status: 500 }
+      500
     );
   }
 }
