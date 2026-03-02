@@ -20,7 +20,15 @@ export async function POST(request: Request) {
 
   // SECURITY: Require a secret key even in development to prevent unauthorized migration execution
   const authHeader = request.headers.get('authorization');
-  const expectedSecret = process.env.MIGRATION_SECRET || 'please-set-MIGRATION_SECRET-in-env';
+  const expectedSecret = process.env.MIGRATION_SECRET;
+
+  if (!expectedSecret) {
+    console.error('[Migration] MIGRATION_SECRET is not configured');
+    return NextResponse.json(
+      { error: 'Migration endpoint misconfigured - missing MIGRATION_SECRET' },
+      { status: 503 }
+    );
+  }
 
   if (!authHeader || authHeader !== `Bearer ${expectedSecret}`) {
     console.warn('[Migration] Unauthorized migration attempt blocked');
