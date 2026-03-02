@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
     // Step 3: Load versions, comments, and reference versions in PARALLEL
     const versionsSelect = includeWaveforms
       ? '*'
-      : 'id,cue_id,index_in_cue,status,media_type,media_storage_path,media_url,media_original_name,media_display_name,media_duration,duration,media_thumbnail_url,media_thumbnail_path,media_waveform_image_url,reference_video_storage_path,reference_video_url,reference_video_display_name,reference_video_offset_ms,reference_video_start_tc,reference_video_duration';
+      : 'id,cue_id,index_in_cue,status,media_type,media_storage_path,media_url,media_original_name,media_display_name,media_duration,media_thumbnail_url,media_thumbnail_path,media_waveform_image_url,created_at,updated_at';
     const versionsPromise = cueIds.length > 0
       ? supabaseAdmin.from('versions').select(versionsSelect).in('cue_id', cueIds).order('index_in_cue', { ascending: true })
       : Promise.resolve({ data: [] });
@@ -235,9 +235,16 @@ export async function GET(req: NextRequest) {
       : Promise.resolve({ data: [] });
 
     const [
-      { data: allVersionsRaw },
-      { data: refVersions }
+      { data: allVersionsRaw, error: versionsError },
+      { data: refVersions, error: refVersionsError }
     ] = await Promise.all([versionsPromise, refVersionsPromise]);
+
+    if (versionsError) {
+      throw versionsError;
+    }
+    if (refVersionsError) {
+      throw refVersionsError;
+    }
 
     let versionFiles: any[] = [];
     const versionIdsForFiles = (allVersionsRaw || []).map(v => v.id);

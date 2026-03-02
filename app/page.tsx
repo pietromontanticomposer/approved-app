@@ -111,8 +111,7 @@ export default function Page() {
       <div class="language-selector">
         <label for="languageSelect" class="language-label" data-i18n="lang.select">Language</label>
         <select id="languageSelect" class="language-select">
-          <option value="en" data-i18n="lang.en">English</option>
-          <option value="it" data-i18n="lang.it">Italiano</option>
+          <option value="bi" data-i18n="lang.bi">Italiano + English</option>
         </select>
       </div>
     </div>
@@ -159,10 +158,10 @@ export default function Page() {
             </label>
             <div class="naming-presets-container">
               <div class="preset-group">
-                <span class="level-label">Scenario:</span>
+                <span class="level-label" data-i18n="upload.scheme">Scheme:</span>
                 <div class="preset-pills">
-                  <button type="button" class="scheme-btn active" data-naming-scheme="media">Media</button>
-                  <button type="button" class="scheme-btn" data-naming-scheme="cinema">Cinema</button>
+                  <button type="button" class="scheme-btn active" data-naming-scheme="media" data-i18n="upload.media">Media</button>
+                  <button type="button" class="scheme-btn" data-naming-scheme="cinema" data-i18n="upload.cinema">Cinema</button>
               </div>
             </div>
           </div>
@@ -429,18 +428,18 @@ export default function Page() {
       <!-- ONBOARDING OVERLAY -->
       <div id="onboardingOverlay" class="onboarding-overlay" style="display: none;">
         <div class="onboarding-card">
-          <div id="onboardingStepTitle" class="onboarding-title">Welcome</div>
-          <div id="onboardingStepText" class="onboarding-text">Step content</div>
+          <div id="onboardingStepTitle" class="onboarding-title">Benvenuto / Welcome</div>
+          <div id="onboardingStepText" class="onboarding-text">Contenuto step / Step content</div>
           <div class="onboarding-actions">
-            <button id="onboardingPrevBtn" class="ghost-btn tiny">Back</button>
-            <button id="onboardingNextBtn" class="primary-btn tiny">Next</button>
-            <button id="onboardingDismissBtn" class="ghost-btn tiny">Skip</button>
+            <button id="onboardingPrevBtn" class="ghost-btn tiny">Indietro / Back</button>
+            <button id="onboardingNextBtn" class="primary-btn tiny">Avanti / Next</button>
+            <button id="onboardingDismissBtn" class="ghost-btn tiny">Salta / Skip</button>
           </div>
           <label class="onboarding-checkbox">
             <input id="onboardingDontShow" type="checkbox" />
-            <span>Non mostrare più</span>
+            <span>Non mostrare piu / Don't show again</span>
           </label>
-          <button id="onboardingShowAgainBtn" class="ghost-btn tiny">Mostra di nuovo</button>
+          <button id="onboardingShowAgainBtn" class="ghost-btn tiny">Mostra di nuovo / Show again</button>
         </div>
       </div>
 
@@ -700,11 +699,11 @@ export default function Page() {
         src="/vendor/wavesurfer.min.js?v=6.6.4"
         strategy="beforeInteractive"
       />
-      <Script src="/i18n.js?v=11" strategy="afterInteractive" />
+      <Script src="/i18n.js?v=12" strategy="afterInteractive" />
       <Script src="/flow-auth.js?v=9" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=10"
+        src="/flow.js?v=11"
         strategy="afterInteractive"
         onLoad={() => {
           console.log('[PageInit] Scripts loaded');

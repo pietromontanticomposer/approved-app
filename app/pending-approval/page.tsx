@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function PendingApprovalPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export default function PendingApprovalPage() {
                 marginBottom: 16,
               }}
             >
-              In attesa di approvazione
+              {bi("In attesa di approvazione", "Pending approval")}
             </h1>
             <p
               style={{
@@ -135,14 +137,14 @@ export default function PendingApprovalPage() {
                 marginBottom: 24,
               }}
             >
-              Il tuo account{" "}
+              {bi("Il tuo account", "Your account")}{" "}
               {userEmail && (
                 <strong style={{ color: colors.text }}>{userEmail}</strong>
               )}{" "}
-              è in attesa di approvazione da parte dell'amministratore.
+              {bi("è in attesa di approvazione da parte dell'amministratore.", "is pending admin approval.")}
             </p>
             <p style={{ color: colors.textWeak, fontSize: 14, marginBottom: 32 }}>
-              Riceverai un'email quando il tuo account sarà approvato.
+              {bi("Riceverai un'email quando il tuo account sarà approvato.", "You will receive an email when your account is approved.")}
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
               <button
@@ -160,7 +162,7 @@ export default function PendingApprovalPage() {
                   opacity: checking ? 0.7 : 1,
                 }}
               >
-                {checking ? "Verifico..." : "Verifica stato"}
+                {checking ? bi("Verifico...", "Checking...") : bi("Verifica stato", "Check status")}
               </button>
               <button
                 onClick={handleLogout}
@@ -174,7 +176,7 @@ export default function PendingApprovalPage() {
                   cursor: "pointer",
                 }}
               >
-                Logout
+                {bi("Esci", "Logout")}
               </button>
             </div>
           </>
@@ -189,7 +191,7 @@ export default function PendingApprovalPage() {
                 marginBottom: 16,
               }}
             >
-              Accesso negato
+              {bi("Accesso negato", "Access denied")}
             </h1>
             <p
               style={{
@@ -198,10 +200,10 @@ export default function PendingApprovalPage() {
                 marginBottom: 24,
               }}
             >
-              La tua richiesta di registrazione non è stata approvata.
+              {bi("La tua richiesta di registrazione non è stata approvata.", "Your registration request was not approved.")}
             </p>
             <p style={{ color: colors.textWeak, fontSize: 14, marginBottom: 32 }}>
-              Se ritieni sia un errore, contatta l'amministratore.
+              {bi("Se ritieni sia un errore, contatta l'amministratore.", "If you think this is a mistake, contact the administrator.")}
             </p>
             <button
               onClick={handleLogout}
@@ -216,7 +218,7 @@ export default function PendingApprovalPage() {
                 cursor: "pointer",
               }}
             >
-              Torna al login
+              {bi("Torna al login", "Back to login")}
             </button>
           </>
         )}

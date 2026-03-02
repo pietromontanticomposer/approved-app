@@ -4,6 +4,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function InvitePage() {
   const router = useRouter();
   const params = useParams();
@@ -21,7 +23,7 @@ export default function InvitePage() {
       // Prevent calling RPC when token is missing or string "null"
       if (!token || token === "null") {
         console.warn('[Invite] Missing or invalid token:', token);
-        setError("Invito non valido.");
+        setError(bi("Invito non valido.", "Invalid invite."));
         setLoading(false);
         return;
       }
@@ -44,14 +46,14 @@ export default function InvitePage() {
         // Prefer message if present
         const msg = inviteError.message || JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError));
         console.error("Error fetching invite (RPC):", msg, inviteError);
-        setError("Invito non trovato o non valido.");
+        setError(bi("Invito non trovato o non valido.", "Invite not found or invalid."));
         setLoading(false);
         return;
       }
 
       // Accept either an array result or a single object
       if (!inviteData || (Array.isArray(inviteData) && inviteData.length === 0)) {
-        setError("Invito non trovato, scaduto o già utilizzato.");
+        setError(bi("Invito non trovato, scaduto o già utilizzato.", "Invite not found, expired, or already used."));
         setLoading(false);
         return;
       }
@@ -61,7 +63,7 @@ export default function InvitePage() {
       setLoading(false);
     } catch (err) {
       console.error("Error initializing invite:", err);
-      setError("Errore durante il caricamento dell'invito.");
+      setError(bi("Errore durante il caricamento dell'invito.", "Error while loading invite."));
       setLoading(false);
     }
   }, [token]);
@@ -83,7 +85,7 @@ export default function InvitePage() {
 
     // Check if email matches (for non-link invites)
     if (invite.email && invite.email !== user.email) {
-      setError(`Questo invito è riservato a ${invite.email}. Hai effettuato l'accesso come ${user.email}.`);
+      setError(`${bi("Questo invito è riservato a", "This invite is reserved for")} ${invite.email}. ${bi("Hai effettuato l'accesso come", "You are signed in as")} ${user.email}.`);
       return;
     }
 
@@ -96,7 +98,7 @@ export default function InvitePage() {
       const sessionRes = await client.auth.getSession();
       const accessToken = sessionRes?.data?.session?.access_token;
       if (!accessToken) {
-        setError("Sessione scaduta. Effettua di nuovo l'accesso.");
+        setError(bi("Sessione scaduta. Effettua di nuovo l'accesso.", "Session expired. Please sign in again."));
         setAccepting(false);
         return;
       }
@@ -115,7 +117,7 @@ export default function InvitePage() {
       const data = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        setError(data.error || "Errore durante l'accettazione dell'invito.");
+        setError(data.error || bi("Errore durante l'accettazione dell'invito.", "Error while accepting invite."));
         setAccepting(false);
         return;
       }
@@ -137,7 +139,7 @@ export default function InvitePage() {
       }, 1200);
     } catch (err) {
       console.error("Error accepting invite:", err);
-      setError("Errore imprevisto.");
+      setError(bi("Errore imprevisto.", "Unexpected error."));
       setAccepting(false);
     }
   };
@@ -154,7 +156,7 @@ export default function InvitePage() {
       }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", marginBottom: "1rem" }}>⏳</div>
-          <div>Caricamento invito...</div>
+          <div>{bi("Caricamento invito...", "Loading invite...")}</div>
         </div>
       </div>
     );
@@ -180,7 +182,7 @@ export default function InvitePage() {
           textAlign: "center"
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>❌</div>
-          <h1 style={{ marginBottom: "1rem", color: "#ff4444" }}>Invito non valido</h1>
+          <h1 style={{ marginBottom: "1rem", color: "#ff4444" }}>{bi("Invito non valido", "Invalid invite")}</h1>
           <p style={{ color: "#999", marginBottom: "2rem" }}>{error}</p>
           <button
             onClick={() => router.push("/")}
@@ -193,7 +195,7 @@ export default function InvitePage() {
               cursor: "pointer"
             }}
           >
-            Torna alla home
+            {bi("Torna alla home", "Back to home")}
           </button>
         </div>
       </div>
@@ -220,21 +222,21 @@ export default function InvitePage() {
           textAlign: "center"
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>✅</div>
-          <h1 style={{ marginBottom: "1rem", color: "#44ff44" }}>Invito accettato!</h1>
+          <h1 style={{ marginBottom: "1rem", color: "#44ff44" }}>{bi("Invito accettato!", "Invite accepted!")}</h1>
           <p style={{ color: "#999", marginBottom: "1rem" }}>
-            Ora fai parte del team/progetto.
+            {bi("Ora fai parte del team/progetto.", "You are now part of the team/project.")}
           </p>
-          <p style={{ color: "#666" }}>Reindirizzamento in corso...</p>
+          <p style={{ color: "#666" }}>{bi("Reindirizzamento in corso...", "Redirecting...")}</p>
         </div>
       </div>
     );
   }
 
   const roleName: Record<string, string> = {
-    owner: "Proprietario",
+    owner: bi("Proprietario", "Owner"),
     editor: "Editor",
-    commenter: "Commentatore",
-    viewer: "Visualizzatore"
+    commenter: bi("Commentatore", "Commenter"),
+    viewer: bi("Visualizzatore", "Viewer")
   };
   
   const displayRole = roleName[invite.role] || invite.role;
@@ -258,10 +260,10 @@ export default function InvitePage() {
       }}>
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📧</div>
-          <h1 style={{ marginBottom: "0.5rem" }}>Sei stato invitato!</h1>
+          <h1 style={{ marginBottom: "0.5rem" }}>{bi("Sei stato invitato!", "You have been invited!")}</h1>
           {invite.invited_by_email && (
             <p style={{ color: "#999", fontSize: "0.9rem" }}>
-              da {invite.invited_by_email}
+              {bi("da", "by")} {invite.invited_by_email}
             </p>
           )}
         </div>
@@ -276,7 +278,7 @@ export default function InvitePage() {
           {invite.project_name && (
             <div style={{ marginBottom: "1rem" }}>
               <div style={{ color: "#999", fontSize: "0.85rem", marginBottom: "0.25rem" }}>
-                Progetto
+                {bi("Progetto", "Project")}
               </div>
               <div style={{ fontSize: "1.1rem", fontWeight: "600" }}>
                 {invite.project_name}
@@ -286,7 +288,7 @@ export default function InvitePage() {
           
           <div style={{ marginBottom: "1rem" }}>
             <div style={{ color: "#999", fontSize: "0.85rem", marginBottom: "0.25rem" }}>
-              Team
+              {bi("Team", "Team")}
             </div>
             <div style={{ fontSize: "1.1rem" }}>
               {invite.team_name}
@@ -295,7 +297,7 @@ export default function InvitePage() {
 
           <div>
             <div style={{ color: "#999", fontSize: "0.85rem", marginBottom: "0.25rem" }}>
-              Ruolo
+              {bi("Ruolo", "Role")}
             </div>
             <div style={{
               display: "inline-block",
@@ -313,7 +315,7 @@ export default function InvitePage() {
           {invite.email && (
             <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #333" }}>
               <div style={{ color: "#999", fontSize: "0.85rem" }}>
-                Invito riservato a: <span style={{ color: "#fff" }}>{invite.email}</span>
+                {bi("Invito riservato a", "Invite reserved for")}: <span style={{ color: "#fff" }}>{invite.email}</span>
               </div>
             </div>
           )}
@@ -322,7 +324,7 @@ export default function InvitePage() {
         {!user ? (
           <div>
             <p style={{ color: "#999", marginBottom: "1.5rem", textAlign: "center" }}>
-              Effettua l'accesso per accettare l'invito
+              {bi("Effettua l'accesso per accettare l'invito", "Sign in to accept the invite")}
             </p>
             <button
               onClick={handleAcceptInvite}
@@ -338,7 +340,7 @@ export default function InvitePage() {
                 fontWeight: "500"
               }}
             >
-              Accedi per continuare
+              {bi("Accedi per continuare", "Sign in to continue")}
             </button>
           </div>
         ) : (
@@ -372,7 +374,7 @@ export default function InvitePage() {
                 opacity: accepting ? 0.6 : 1
               }}
             >
-              {accepting ? "Accettazione in corso..." : "Accetta invito"}
+              {accepting ? bi("Accettazione in corso...", "Accepting...") : bi("Accetta invito", "Accept invite")}
             </button>
 
             <p style={{
@@ -381,7 +383,7 @@ export default function InvitePage() {
               fontSize: "0.85rem",
               marginTop: "1rem"
             }}>
-              Accesso effettuato come {user.email}
+              {bi("Accesso effettuato come", "Signed in as")} {user.email}
             </p>
           </div>
         )}

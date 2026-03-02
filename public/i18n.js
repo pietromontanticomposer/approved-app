@@ -1,6 +1,6 @@
 // ==========================================
 // INTERNATIONALIZATION (i18n) SYSTEM
-// Supports: English (en), Italian (it)
+// Supports: English (en), Italian (it), Bilingual (bi: it/en)
 // ==========================================
 
 (function() {
@@ -238,6 +238,7 @@
       'lang.select': 'Language',
       'lang.en': 'English',
       'lang.it': 'Italiano',
+      'lang.bi': 'Italiano + English',
 
       // Upload
       'upload.panelTitle': 'Uploads in progress',
@@ -486,6 +487,7 @@
       'lang.select': 'Lingua',
       'lang.en': 'English',
       'lang.it': 'Italiano',
+      'lang.bi': 'Italiano + English',
 
       // Upload
       'upload.panelTitle': 'Upload in corso',
@@ -504,19 +506,37 @@
     }
   };
 
+  const SUPPORTED_LANGS = {
+    en: true,
+    it: true,
+    bi: true
+  };
+
+  function applyParams(text, params) {
+    var resolved = text;
+    Object.keys(params).forEach(function(param) {
+      resolved = resolved.replace('{' + param + '}', params[param]);
+    });
+    return resolved;
+  }
+
+  function buildBilingualText(key, params) {
+    var itText = translations.it[key] || translations.en[key] || key;
+    var enText = translations.en[key] || translations.it[key] || key;
+    var left = applyParams(itText, params);
+    var right = applyParams(enText, params);
+    if (left === right) return left;
+    return left + ' / ' + right;
+  }
+
   // Get saved language or detect from browser
   function getSavedLanguage() {
     try {
       const saved = localStorage.getItem('app-language');
-      if (saved && translations[saved]) return saved;
+      if (saved === 'bi') return saved;
     } catch (e) {}
-
-    // Default to browser language
-    try {
-      if (navigator.language && navigator.language.startsWith('it')) return 'it';
-    } catch (e) {}
-
-    return 'en';
+    // Force bilingual mode by default.
+    return 'bi';
   }
 
   let currentLang = getSavedLanguage();
@@ -524,15 +544,12 @@
   // Get translation
   function t(key, params) {
     params = params || {};
+    if (currentLang === 'bi') {
+      return buildBilingualText(key, params);
+    }
     const langData = translations[currentLang] || translations['en'];
     let text = langData[key] || translations['en'][key] || key;
-
-    // Replace parameters like {n}
-    Object.keys(params).forEach(function(param) {
-      text = text.replace('{' + param + '}', params[param]);
-    });
-
-    return text;
+    return applyParams(text, params);
   }
 
   // Update ONLY static elements with data-i18n attribute
@@ -580,7 +597,7 @@
 
   // Set language
   function setLanguage(lang) {
-    if (!translations[lang]) {
+    if (!SUPPORTED_LANGS[lang]) {
       console.warn('[i18n] Language "' + lang + '" not supported');
       return;
     }

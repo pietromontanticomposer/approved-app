@@ -14,7 +14,7 @@ export default function RegisterRedirect() {
 
   return (
     <div style={{ padding: 24 }}>
-      Redirecting to registration…
+      Reindirizzamento alla registrazione... / Redirecting to registration...
     </div>
   );
 }

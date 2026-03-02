@@ -11,6 +11,8 @@ interface ShareModalProps {
   teamId: string;
 }
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function ShareModal({
   isOpen,
   onClose,
@@ -110,18 +112,18 @@ export default function ShareModal({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create invite");
+        throw new Error(data.error || bi("Errore nella creazione dell'invito", "Failed to create invite"));
       }
 
       if (data.email_sent === false) {
-        const err = data.email_error || "configura SMTP";
-        const smtpStatus = data.smtp_configured ? "SMTP configurato" : "SMTP NON configurato";
-        const link = data.invite_url ? ` Link: ${data.invite_url}` : "";
-        setMessage(`❌ Invito creato ma email non inviata (${err}). ${smtpStatus}.${link}`);
+        const err = data.email_error || bi("configura SMTP", "configure SMTP");
+        const smtpStatus = data.smtp_configured ? bi("SMTP configurato", "SMTP configured") : bi("SMTP NON configurato", "SMTP NOT configured");
+        const link = data.invite_url ? ` ${bi("Link", "Link")}: ${data.invite_url}` : "";
+        setMessage(`❌ ${bi("Invito creato ma email non inviata", "Invite created but email not sent")} (${err}). ${smtpStatus}.${link}`);
       } else if (data.email_sent === true) {
-        setMessage(`✅ Email inviata a ${email}`);
+        setMessage(`✅ ${bi("Email inviata a", "Email sent to")} ${email}`);
       } else {
-        setMessage(`✅ Invito creato per ${email}`);
+        setMessage(`✅ ${bi("Invito creato per", "Invite created for")} ${email}`);
       }
       setEmail("");
       loadInvites();
@@ -155,11 +157,11 @@ export default function ShareModal({
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to create guest link");
+          throw new Error(data.error || bi("Errore creazione link guest", "Failed to create guest link"));
         }
 
         setLinkInvite(data.link);
-        setMessage("✅ Link guest generato! Chi lo usa potrà commentare con un nickname.");
+        setMessage(`✅ ${bi("Link guest generato! Chi lo usa potrà commentare con un nickname.", "Guest link generated! Recipients can comment using a nickname.")}`);
       } else {
         // Standard invite link (requires account)
         const res = await fetch("/api/invites", {
@@ -176,11 +178,11 @@ export default function ShareModal({
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || "Failed to create invite link");
+          throw new Error(data.error || bi("Errore creazione link invito", "Failed to create invite link"));
         }
 
         setLinkInvite(data.invite_url);
-        setMessage("✅ Link generato!");
+        setMessage(`✅ ${bi("Link generato!", "Link generated!")}`);
         loadInvites();
       }
     } catch (error: any) {
@@ -194,7 +196,7 @@ export default function ShareModal({
     try {
       let toCopy = linkInvite || '';
       if (!toCopy) {
-        setMessage('❌ Nessun link disponibile');
+        setMessage(`❌ ${bi("Nessun link disponibile", "No link available")}`);
         return;
       }
 
@@ -226,11 +228,11 @@ export default function ShareModal({
         if (!ok) throw new Error('execCommand failed');
       }
 
-      setMessage('✅ Link copiato!');
+      setMessage(`✅ ${bi("Link copiato!", "Link copied!")}`);
       setTimeout(() => setMessage(''), 2000);
     } catch (e) {
       console.error('[ShareModal] copy failed', e);
-      setMessage('❌ Impossibile copiare — prova a tenere premuto il link e copiare manualmente');
+      setMessage(`❌ ${bi("Impossibile copiare — prova a tenere premuto il link e copiare manualmente", "Unable to copy — try long-pressing the link and copy manually")}`);
     }
   };
 
@@ -243,7 +245,7 @@ export default function ShareModal({
       });
 
       if (res.ok) {
-        setMessage("✅ Invito revocato");
+        setMessage(`✅ ${bi("Invito revocato", "Invite revoked")}`);
         loadInvites();
       }
     } catch (error) {
@@ -284,7 +286,7 @@ export default function ShareModal({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
           <h2 style={{ margin: 0, color: "#fff" }}>
-            Condividi: {projectName}
+            {bi("Condividi", "Share")}: {projectName}
           </h2>
           <button
             onClick={onClose}
@@ -315,7 +317,7 @@ export default function ShareModal({
               fontWeight: activeTab === "email" ? "600" : "400",
             }}
           >
-            📧 Via Email
+            📧 {bi("Via Email", "Via Email")}
           </button>
           <button
             onClick={() => setActiveTab("link")}
@@ -329,7 +331,7 @@ export default function ShareModal({
               fontWeight: activeTab === "link" ? "600" : "400",
             }}
           >
-            🔗 Link Condivisibile
+            🔗 {bi("Link Condivisibile", "Shareable Link")}
           </button>
         </div>
 
@@ -337,7 +339,7 @@ export default function ShareModal({
           <form onSubmit={handleInviteByEmail}>
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Email dell'utente da invitare
+                {bi("Email dell'utente da invitare", "Invitee email")}
               </label>
               <input
                 type="email"
@@ -359,7 +361,7 @@ export default function ShareModal({
 
             <div style={{ marginBottom: "1.5rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Ruolo
+                {bi("Ruolo", "Role")}
               </label>
               <select
                 value={role}
@@ -374,10 +376,10 @@ export default function ShareModal({
                   fontSize: "1rem",
                 }}
               >
-                <option value="viewer">👁️ Visualizzatore (solo lettura)</option>
-                <option value="commenter">💬 Commentatore (può commentare)</option>
-                <option value="editor">✏️ Editor (può modificare)</option>
-                <option value="owner">👑 Proprietario (controllo totale)</option>
+                <option value="viewer">👁️ {bi("Visualizzatore (solo lettura)", "Viewer (read only)")}</option>
+                <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
+                <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
+                <option value="owner">👑 {bi("Proprietario (controllo totale)", "Owner (full control)")}</option>
               </select>
             </div>
 
@@ -396,7 +398,7 @@ export default function ShareModal({
                 opacity: loading ? 0.6 : 1,
               }}
             >
-              {loading ? "Invio..." : "Invia invito"}
+              {loading ? bi("Invio...", "Sending...") : bi("Invia invito", "Send invite")}
             </button>
           </form>
         ) : (
@@ -404,7 +406,7 @@ export default function ShareModal({
             {/* Link Type Selection */}
             <div style={{ marginBottom: "1.5rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Tipo di link
+                {bi("Tipo di link", "Link type")}
               </label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button
@@ -421,7 +423,7 @@ export default function ShareModal({
                     fontSize: "0.9rem",
                   }}
                 >
-                  👤 Guest (solo nickname)
+                  👤 {bi("Guest (solo nickname)", "Guest (nickname only)")}
                 </button>
                 <button
                   type="button"
@@ -437,7 +439,7 @@ export default function ShareModal({
                     fontSize: "0.9rem",
                   }}
                 >
-                  🔐 Standard (richiede account)
+                  🔐 {bi("Standard (richiede account)", "Standard (requires account)")}
                 </button>
               </div>
             </div>
@@ -445,13 +447,13 @@ export default function ShareModal({
             {linkType === "guest" ? (
               <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#1a2a1a", borderRadius: "4px", border: "1px solid #2a4a2a" }}>
                 <p style={{ margin: 0, color: "#8f8", fontSize: "0.85rem" }}>
-                  <strong>Link monouso:</strong> Chi riceve il link potrà visualizzare e commentare il progetto inserendo solo un nickname. Non serve creare un account. Il link funziona una sola volta.
+                  <strong>{bi("Link monouso", "Single-use link")}:</strong> {bi("Chi riceve il link potrà visualizzare e commentare il progetto inserendo solo un nickname. Non serve creare un account. Il link funziona una sola volta.", "Recipients can view and comment on the project using only a nickname. No account is required. The link works once.")}
                 </p>
               </div>
             ) : (
               <div style={{ marginBottom: "1rem" }}>
                 <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                  Ruolo per il link
+                  {bi("Ruolo per il link", "Role for link")}
                 </label>
                 <select
                   value={inviteRole}
@@ -466,9 +468,9 @@ export default function ShareModal({
                     fontSize: "1rem",
                   }}
                 >
-                  <option value="viewer">👁️ Visualizzatore (solo lettura)</option>
-                  <option value="commenter">💬 Commentatore (può commentare)</option>
-                  <option value="editor">✏️ Editor (può modificare)</option>
+                  <option value="viewer">👁️ {bi("Visualizzatore (solo lettura)", "Viewer (read only)")}</option>
+                  <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
+                  <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
                 </select>
               </div>
             )}
@@ -489,7 +491,7 @@ export default function ShareModal({
                 marginBottom: "1rem",
               }}
             >
-              {loading ? "Generazione..." : linkType === "guest" ? "Genera link guest" : "Genera link di invito"}
+              {loading ? bi("Generazione...", "Generating...") : linkType === "guest" ? bi("Genera link guest", "Generate guest link") : bi("Genera link di invito", "Generate invite link")}
             </button>
 
             {linkInvite && (
@@ -502,7 +504,7 @@ export default function ShareModal({
                 }}
               >
                 <div style={{ marginBottom: "0.5rem", color: "#999", fontSize: "0.85rem" }}>
-                  Link generato:
+                  {bi("Link generato", "Generated link")}:
                 </div>
                 <div
                   style={{
@@ -537,7 +539,7 @@ export default function ShareModal({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    📋 Copia
+                    📋 {bi("Copia", "Copy")}
                   </button>
                 </div>
               </div>
@@ -564,7 +566,7 @@ export default function ShareModal({
         {invites.length > 0 && (
           <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid #333" }}>
             <h3 style={{ marginBottom: "1rem", color: "#ccc", fontSize: "0.9rem" }}>
-              Inviti attivi ({invites.length})
+              {bi("Inviti attivi", "Active invites")} ({invites.length})
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {invites.map((invite) => (
@@ -582,10 +584,10 @@ export default function ShareModal({
                 >
                   <div style={{ flex: 1 }}>
                     <div style={{ color: "#fff", marginBottom: "0.25rem" }}>
-                      {invite.email || "🔗 Link pubblico"}
+                      {invite.email || `🔗 ${bi("Link pubblico", "Public link")}`}
                     </div>
                     <div style={{ color: "#666", fontSize: "0.8rem" }}>
-                      {invite.role} · Scade il {new Date(invite.expires_at).toLocaleDateString()}
+                      {invite.role} · {bi("Scade il", "Expires on")} {new Date(invite.expires_at).toLocaleDateString()}
                     </div>
                   </div>
                   <button
@@ -600,7 +602,7 @@ export default function ShareModal({
                       fontSize: "0.85rem",
                     }}
                   >
-                    Revoca
+                    {bi("Revoca", "Revoke")}
                   </button>
                 </div>
               ))}

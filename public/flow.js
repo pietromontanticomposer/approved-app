@@ -1023,6 +1023,17 @@ function tr(key, params, fallback) {
   return key;
 }
 
+function biText(itText, enText) {
+  const lang =
+    window.i18n && typeof window.i18n.getLanguage === "function"
+      ? window.i18n.getLanguage()
+      : "bi";
+  if (lang === "it") return itText;
+  if (lang === "en") return enText;
+  if (itText === enText) return itText;
+  return itText + " / " + enText;
+}
+
 function showConfirmDialog(options = {}) {
   const {
     title = tr("action.confirmDefaultTitle", {}, "Sei sicuro?"),
@@ -1403,7 +1414,7 @@ async function promptForMaxRevisions() {
       localStorage.setItem("cue-max-revisions", String(value));
       return value;
     }
-    showAlert("Inserisci un numero valido (minimo 1).");
+    showAlert(biText("Inserisci un numero valido (minimo 1).", "Enter a valid number (minimum 1)."));
   }
 }
 
@@ -2043,7 +2054,7 @@ async function approveVersionWithRecord(ctx) {
     });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showAlert(payload?.error || 'Errore durante approvazione');
+      showAlert(payload?.error || biText('Errore durante approvazione', 'Error during approval'));
       return;
     }
     ctx.version.status = payload?.version?.status || 'approved';
@@ -2056,7 +2067,7 @@ async function approveVersionWithRecord(ctx) {
     pendingApprovalContext = null;
   } catch (err) {
     console.error('[Approve] Error', err);
-    showAlert('Errore durante approvazione');
+    showAlert(biText('Errore durante approvazione', 'Error during approval'));
   }
 }
 
@@ -2081,7 +2092,7 @@ async function setVersionStatus(project, cue, version, status) {
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      const msg = payload?.error || 'Errore nell\'aggiornare lo stato della versione';
+      const msg = payload?.error || biText('Errore nell\'aggiornare lo stato della versione', 'Error while updating version status');
       console.error('[FlowPreview] Failed to update version status', msg);
     showAlert(msg);
       return;
@@ -2093,7 +2104,7 @@ async function setVersionStatus(project, cue, version, status) {
     renderPlayer();
   } catch (err) {
     console.error('[FlowPreview] Exception updating version status', err);
-    showAlert('Errore nell\'aggiornare lo stato della versione');
+    showAlert(biText('Errore nell\'aggiornare lo stato della versione', 'Error while updating version status'));
   }
 }
 
@@ -2291,7 +2302,7 @@ async function createNewProject() {
       const text = await res.text().catch(() => '<non-text-response>');
       console.error('[FlowPreview] Failed to create project', res.status, text);
       try {
-        showAlert('Errore nella creazione del progetto:\n' + (text || 'unknown'));
+        showAlert(biText('Errore nella creazione del progetto', 'Error while creating project') + ':\n' + (text || 'unknown'));
       } catch (e) {
         // ignore alert failures
       }
@@ -2354,7 +2365,7 @@ async function createNewProject() {
     renderAll();
   } catch (err) {
     console.error('[FlowPreview] Exception creating project', err);
-    showAlert('Errore nella creazione del progetto');
+    showAlert(biText('Errore nella creazione del progetto', 'Error while creating project'));
   }
 }
 
@@ -2377,14 +2388,14 @@ async function renameProject(project) {
     });
     if (!res.ok) {
       console.error('[FlowPreview] Failed to rename project', await res.text());
-      showAlert('Errore nel rinominare il progetto');
+      showAlert(biText('Errore nel rinominare il progetto', 'Error while renaming project'));
       return;
     }
     project.name = newName;
     renderAll();
   } catch (err) {
     console.error('[FlowPreview] Exception renaming project', err);
-    showAlert('Errore nel rinominare il progetto');
+    showAlert(biText('Errore nel rinominare il progetto', 'Error while renaming project'));
   }
 }
 
@@ -2408,12 +2419,12 @@ async function deleteProject(id) {
     });
     if (!res.ok) {
       console.error('[FlowPreview] Failed to delete project', await res.text());
-      showAlert('Errore nella cancellazione del progetto');
+      showAlert(biText('Errore nella cancellazione del progetto', 'Error while deleting project'));
       return;
     }
   } catch (err) {
     console.error('[FlowPreview] Exception deleting project', err);
-    showAlert('Errore nella cancellazione del progetto');
+    showAlert(biText('Errore nella cancellazione del progetto', 'Error while deleting project'));
     return;
   }
 
@@ -2475,7 +2486,7 @@ async function createCueFromFile(file) {
     
     if (!res.ok) {
       console.error('[Flow] Failed to save cue to database', await res.text());
-      showAlert('Errore nel salvataggio della cue. Riprova.');
+      showAlert(biText('Errore nel salvataggio della cue. Riprova.', 'Error while saving cue. Please retry.'));
       project.cues = project.cues.filter(c => c.id !== cue.id);
       localStorage.removeItem(`cue-max-revisions:${cue.id}`);
       renderCueList();
@@ -2498,7 +2509,7 @@ async function createCueFromFile(file) {
     }
   } catch (err) {
     console.error('[Flow] Exception saving cue:', err);
-    showAlert('Errore nel salvataggio della cue. Riprova.');
+    showAlert(biText('Errore nel salvataggio della cue. Riprova.', 'Error while saving cue. Please retry.'));
     project.cues = project.cues.filter(c => c.id !== cue.id);
     localStorage.removeItem(`cue-max-revisions:${cue.id}`);
     renderCueList();
@@ -2723,7 +2734,8 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
 
   try {
     if (file.size > MAX_UPLOAD_SIZE) {
-      alert(`ERRORE UPLOAD: file troppo grande (max ${Math.round(MAX_UPLOAD_SIZE / 1024 / 1024)}MB)`);
+      const maxMb = Math.round(MAX_UPLOAD_SIZE / 1024 / 1024);
+      alert(biText(`ERRORE UPLOAD: file troppo grande (max ${maxMb}MB)`, `UPLOAD ERROR: file too large (max ${maxMb}MB)`));
       markUploadJobError(jobId, tr("upload.error"));
       return;
     }
@@ -2731,7 +2743,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     const resolved = resolveUploadContentType(file.type, file.name);
     const contentType = resolved.contentType;
     if (!contentType) {
-      alert("ERRORE UPLOAD: tipo file non consentito");
+      alert(biText("ERRORE UPLOAD: tipo file non consentito", "UPLOAD ERROR: file type not allowed"));
       markUploadJobError(jobId, tr("upload.error"));
       return;
     }
@@ -2739,8 +2751,8 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     const authHeaders = await getUploadAuthHeaders();
     const hasAuth = !!(authHeaders.Authorization || authHeaders.authorization);
     if (!hasAuth) {
-      alert("ERRORE: Non sei autenticato! Ricarica la pagina e fai login.");
-      markUploadJobError(jobId, "Non autenticato");
+      alert(biText("ERRORE: Non sei autenticato! Ricarica la pagina e fai login.", "ERROR: You are not authenticated. Reload and sign in."));
+      markUploadJobError(jobId, biText("Non autenticato", "Not authenticated"));
       return;
     }
 
@@ -2754,8 +2766,8 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
 
     if (!signRes.ok) {
       const errorDetail = await readUploadError(signRes);
-      alert(`ERRORE UPLOAD ${signRes.status}:\n${errorDetail}`);
-      markUploadJobError(jobId, `Errore ${signRes.status}`);
+      alert(biText(`ERRORE UPLOAD ${signRes.status}:\n${errorDetail}`, `UPLOAD ERROR ${signRes.status}:\n${errorDetail}`));
+      markUploadJobError(jobId, biText(`Errore ${signRes.status}`, `Error ${signRes.status}`));
       return;
     }
 
@@ -2765,7 +2777,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     const signedUrl = signData && signData.signedUrl;
 
     if (!uploadPath || !uploadToken || !signedUrl) {
-      alert("ERRORE UPLOAD: risposta upload-url non valida");
+      alert(biText("ERRORE UPLOAD: risposta upload-url non valida", "UPLOAD ERROR: invalid upload-url response"));
       markUploadJobError(jobId, tr("upload.invalidResponse"));
       return;
     }
@@ -2773,7 +2785,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     updateUploadJob(jobId, 20, tr("upload.uploading"));
 
     if (!window.supabaseClient || !window.supabaseClient.storage) {
-      alert("ERRORE UPLOAD: Supabase client non disponibile");
+      alert(biText("ERRORE UPLOAD: Supabase client non disponibile", "UPLOAD ERROR: Supabase client unavailable"));
       markUploadJobError(jobId, tr("upload.error"));
       return;
     }
@@ -2786,7 +2798,7 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     if (uploadRes.error) {
       stopProgress();
       console.error("[Upload] Storage error:", uploadRes.error);
-      alert(`ERRORE UPLOAD:\n${uploadRes.error.message || "Upload fallito"}`);
+      alert(biText(`ERRORE UPLOAD:\n${uploadRes.error.message || "Upload fallito"}`, `UPLOAD ERROR:\n${uploadRes.error.message || "Upload failed"}`));
       markUploadJobError(jobId, tr("upload.error"));
       return;
     }
@@ -2810,8 +2822,8 @@ async function uploadFileToSupabase(file, projectId, cueId, versionId, options =
     if (!completeRes.ok) {
       stopProgress();
       const errorDetail = await readUploadError(completeRes);
-      alert(`ERRORE UPLOAD ${completeRes.status}:\n${errorDetail}`);
-      markUploadJobError(jobId, `Errore ${completeRes.status}`);
+      alert(biText(`ERRORE UPLOAD ${completeRes.status}:\n${errorDetail}`, `UPLOAD ERROR ${completeRes.status}:\n${errorDetail}`));
+      markUploadJobError(jobId, biText(`Errore ${completeRes.status}`, `Error ${completeRes.status}`));
       return;
     }
     stopProgress();
@@ -4785,10 +4797,10 @@ function renderComments() {
           menu.style.zIndex = 10000;
 
           const mEdit = document.createElement('button');
-          mEdit.textContent = 'Edit';
+          mEdit.textContent = biText('Modifica', 'Edit');
 
           const mDelete = document.createElement('button');
-          mDelete.textContent = 'Delete';
+          mDelete.textContent = biText('Elimina', 'Delete');
 
           // Edit handler (reuse existing edit flow)
           const startEdit = () => {
@@ -4799,7 +4811,7 @@ function renderComments() {
             input.style.width = '60%';
             const save = document.createElement('button');
             save.className = 'primary-btn tiny';
-            save.textContent = 'Save';
+            save.textContent = biText('Salva', 'Save');
             const cancel = document.createElement('button');
             cancel.className = 'ghost-btn tiny';
             cancel.textContent = tr("action.cancel");
@@ -4837,7 +4849,7 @@ function renderComments() {
                 renderOwnerActions();
               } catch (err) {
                 console.error('Error updating comment', err);
-              showAlert('Eccezione durante aggiornamento commento');
+              showAlert(biText('Eccezione durante aggiornamento commento', 'Exception while updating comment'));
               }
             });
 
@@ -4851,7 +4863,7 @@ function renderComments() {
 
           // Delete handler
           const doDelete = async () => {
-            if (!await showConfirm('Delete this comment?')) return;
+            if (!await showConfirm(biText('Eliminare questo commento?', 'Delete this comment?'))) return;
             try {
               const headers = window.flowAuth ? window.flowAuth.getAuthHeaders() : { 'Content-Type': 'application/json' };
               const r = await fetch(`/api/comments?id=${encodeURIComponent(c.id)}&projectId=${state.activeProjectId}`, {
@@ -4869,7 +4881,7 @@ function renderComments() {
               renderComments();
             } catch (err) {
               console.error('Error deleting comment', err);
-            showAlert('Eccezione durante cancellazione commento');
+            showAlert(biText('Eccezione durante cancellazione commento', 'Exception while deleting comment'));
             }
           };
 
@@ -5309,7 +5321,7 @@ function addCommentFromInput() {
       console.log('[addComment] server response', resp);
       if (!resp || resp.error) {
         console.error('[addComment] failed to save', resp && resp.error);
-        try { showAlert('Errore salvataggio commento: ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
+        try { showAlert(biText('Errore salvataggio commento', 'Error while saving comment') + ': ' + (resp && resp.error ? resp.error : 'unknown')); } catch(e){}
         return;
       }
 
@@ -5330,7 +5342,7 @@ function addCommentFromInput() {
       }
     } catch (err) {
       console.error('[addComment] exception saving comment', err);
-      try { showAlert('Eccezione durante il salvataggio del commento: ' + String(err)); } catch(e){}
+      try { showAlert(biText('Eccezione durante il salvataggio del commento', 'Exception while saving comment') + ': ' + String(err)); } catch(e){}
     }
   })();
 }
@@ -5491,7 +5503,7 @@ if (voiceRecordBtn) {
         stream.getTracks().forEach(track => track.stop());
         voiceRecordBtn.classList.remove("recording");
         hideRecordingIndicator();
-        showAlert('Errore registrazione: ' + (e.error?.message || 'unknown'));
+        showAlert(biText('Errore registrazione', 'Recording error') + ': ' + (e.error?.message || 'unknown'));
       };
 
       // Start recording
@@ -5499,15 +5511,15 @@ if (voiceRecordBtn) {
       voiceRecordBtn.classList.add("recording");
       // Change icon to STOP square
       voiceRecordBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-      voiceRecordBtn.title = 'Stop recording';
+      voiceRecordBtn.title = biText('Ferma registrazione', 'Stop recording');
       showRecordingIndicator();
 
     } catch (err) {
       console.error('[VoiceRecord] Failed to start:', err);
       if (err.name === 'NotAllowedError') {
-        showAlert('Permesso microfono negato. Abilita il microfono nelle impostazioni del browser.');
+        showAlert(biText('Permesso microfono negato. Abilita il microfono nelle impostazioni del browser.', 'Microphone permission denied. Enable the microphone in browser settings.'));
       } else {
-        showAlert('Impossibile avviare la registrazione: ' + err.message);
+        showAlert(biText('Impossibile avviare la registrazione', 'Unable to start recording') + ': ' + err.message);
       }
     }
   });
@@ -5529,7 +5541,7 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
     id: localId,
     time: recordTime,
     author: displayName,
-    text: '[Uploading voice note...]',
+    text: biText('[Caricamento nota vocale...]', '[Uploading voice note...]'),
     isUploading: true,
     actorId: user ? user.id : null
   });
@@ -5605,7 +5617,7 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
     const idx = version.comments.findIndex(c => c.id === localId);
     if (idx >= 0) version.comments.splice(idx, 1);
     renderComments();
-    showAlert('Errore upload nota vocale: ' + err.message);
+    showAlert(biText('Errore upload nota vocale', 'Voice note upload error') + ': ' + err.message);
   }
 }
 
@@ -5804,7 +5816,7 @@ function renderCueList(options = {}) {
               });
               if (!res.ok) {
                 console.error('[FlowPreview] Failed to rename cue', await res.text());
-                showAlert('Errore nel rinominare la cue');
+                showAlert(biText('Errore nel rinominare la cue', 'Error while renaming cue'));
                 return;
               }
               cue.name = newName;
@@ -5812,7 +5824,7 @@ function renderCueList(options = {}) {
               renderAll();
             } catch (err) {
               console.error('[FlowPreview] Exception renaming cue', err);
-              showAlert('Errore nel rinominare la cue');
+              showAlert(biText('Errore nel rinominare la cue', 'Error while renaming cue'));
             }
           }
         }
@@ -5836,7 +5848,7 @@ function renderCueList(options = {}) {
             console.log("[FlowPreview] DELETE response status:", res.status);
             if (!res.ok) {
               console.error('[FlowPreview] Failed to delete cue', await res.text());
-              showAlert('Errore nella cancellazione della cue');
+              showAlert(biText('Errore nella cancellazione della cue', 'Error while deleting cue'));
               return;
             }
 
@@ -5886,7 +5898,7 @@ function renderCueList(options = {}) {
             }
           } catch (err) {
             console.error('[FlowPreview] Exception deleting cue', err);
-            showAlert('Errore nella cancellazione della cue');
+            showAlert(biText('Errore nella cancellazione della cue', 'Error while deleting cue'));
           }
         }
         if (action === "set-in-review" || action === "set-approved") {
@@ -6230,7 +6242,7 @@ function renderCueList(options = {}) {
               });
               if (!res.ok) {
                 console.error("[FlowPreview] Failed to rename version", await res.text());
-                showAlert("Errore nel rinominare la versione");
+                showAlert(biText("Errore nel rinominare la versione", "Error while renaming version"));
                 return;
               }
               version.media = version.media || {};
@@ -6239,7 +6251,7 @@ function renderCueList(options = {}) {
               renderAll();
             } catch (err) {
               console.error("[FlowPreview] Exception renaming version", err);
-              showAlert("Errore nel rinominare la versione");
+              showAlert(biText("Errore nel rinominare la versione", "Error while renaming version"));
             }
           }
           if (action === "delete-version") {
@@ -6274,7 +6286,7 @@ function renderCueList(options = {}) {
               console.log("[FlowPreview] DELETE version response status:", res.status);
               if (!res.ok) {
                 console.error("[FlowPreview] Failed to delete version", await res.text());
-                showAlert("Errore nella cancellazione della versione");
+                showAlert(biText("Errore nella cancellazione della versione", "Error while deleting version"));
                 return;
               }
               const projectNow = getActiveProject();
@@ -6320,7 +6332,7 @@ function renderCueList(options = {}) {
               }
             } catch (err) {
               console.error("[FlowPreview] Exception deleting version", err);
-              showAlert("Errore nella cancellazione della versione");
+              showAlert(biText("Errore nella cancellazione della versione", "Error while deleting version"));
             }
           }
         });
@@ -8085,11 +8097,13 @@ async function handleShareInvite() {
 
     // Check if email was actually sent
     if (data.email_sent === true) {
-      setShareInviteMessage("✅ Email inviata a " + email, false);
+      setShareInviteMessage("✅ " + biText("Email inviata a", "Email sent to") + " " + email, false);
     } else if (data.email_sent === false) {
-      const errMsg = data.email_error || "errore SMTP";
-      const smtpStatus = data.smtp_configured ? "SMTP configurato" : "SMTP NON configurato";
-      setShareInviteMessage("❌ Invito creato ma email non inviata (" + errMsg + "). " + smtpStatus + ". Link: " + (data.invite_url || ""), true);
+      const errMsg = data.email_error || biText("errore SMTP", "SMTP error");
+      const smtpStatus = data.smtp_configured
+        ? biText("SMTP configurato", "SMTP configured")
+        : biText("SMTP NON configurato", "SMTP NOT configured");
+      setShareInviteMessage("❌ " + biText("Invito creato ma email non inviata", "Invite created but email not sent") + " (" + errMsg + "). " + smtpStatus + ". " + biText("Link", "Link") + ": " + (data.invite_url || ""), true);
     } else {
       setShareInviteMessage(tr("share.inviteSuccess"), false);
     }
@@ -8739,7 +8753,7 @@ if (copyLinkBtn) {
   copyLinkBtn.addEventListener('click', async () => {
     const project = window.getActiveProject ? window.getActiveProject() : null;
     if (!project) {
-      showAlert('No project selected');
+      showAlert(biText('Nessun progetto selezionato', 'No project selected'));
       return;
     }
 
@@ -8790,7 +8804,7 @@ if (copyLinkBtn) {
             const body = await resp.json();
             if (body && body.link) {
               await navigator.clipboard.writeText(body.link);
-              showAlert('Link copiato negli appunti: ' + body.link);
+              showAlert(biText('Link copiato negli appunti', 'Link copied to clipboard') + ': ' + body.link);
               return;
             }
           } else {
@@ -8808,15 +8822,15 @@ if (copyLinkBtn) {
                 const invBody = await invResp.json().catch(() => ({}));
                 if (invResp.ok && invBody.invite_url) {
                   await navigator.clipboard.writeText(invBody.invite_url);
-                  showAlert('Link invito copiato negli appunti: ' + invBody.invite_url);
+                  showAlert(biText('Link invito copiato negli appunti', 'Invite link copied to clipboard') + ': ' + invBody.invite_url);
                   return;
                 }
 
                 console.warn('[FlowPreview] /api/invites failed or not allowed', invResp.status, invBody);
-                showAlert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+                showAlert(biText('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.', 'You are not authorized to create share links for this project. A temporary link will be copied.'));
               } catch (ie) {
                 console.warn('[FlowPreview] create invite fallback failed', ie);
-                showAlert('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.');
+                showAlert(biText('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.', 'You are not authorized to create share links for this project. A temporary link will be copied.'));
               }
             }
           }
@@ -8878,7 +8892,7 @@ if (copyLinkBtn) {
           }
 
           await navigator.clipboard.writeText(inviteUrl);
-          showAlert('Link copiato negli appunti: ' + inviteUrl);
+          showAlert(biText('Link copiato negli appunti', 'Link copied to clipboard') + ': ' + inviteUrl);
           return;
         }
       } catch (err) {
@@ -8887,10 +8901,10 @@ if (copyLinkBtn) {
         try {
           const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
           await navigator.clipboard.writeText(temp);
-          showAlert('Impossibile generare link definitivo. Link temporaneo copiato negli appunti: ' + temp);
+          showAlert(biText('Impossibile generare link definitivo. Link temporaneo copiato negli appunti', 'Unable to generate permanent link. Temporary link copied to clipboard') + ': ' + temp);
         } catch (clipErr) {
           console.error('[FlowPreview] Fallback clipboard write failed', clipErr);
-          showAlert('Errore creando il link di condivisione');
+          showAlert(biText('Errore creando il link di condivisione', 'Error while creating share link'));
         }
       } finally {
         copyLinkBtn.disabled = false;
@@ -8905,7 +8919,10 @@ if (copyLinkBtn) {
       message: tr(
         "share.registerPrompt",
         {},
-        "Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare."
+        biText(
+          "Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare.",
+          "You are not authenticated. Register now to create a shareable link. Press OK to register, Cancel to copy a temporary link."
+        )
       ),
       confirmLabel: tr("action.confirm"),
       cancelLabel: tr("action.cancel")
@@ -8919,10 +8936,10 @@ if (copyLinkBtn) {
     try {
       const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
       await navigator.clipboard.writeText(temp);
-      showAlert('Link temporaneo copiato negli appunti');
+      showAlert(biText('Link temporaneo copiato negli appunti', 'Temporary link copied to clipboard'));
     } catch (err) {
       console.error('[FlowPreview] Clipboard write failed', err);
-      showAlert('Impossibile copiare il link.');
+      showAlert(biText('Impossibile copiare il link.', 'Unable to copy link.'));
     }
   });
 }
@@ -9284,7 +9301,7 @@ function initMarkersExportUI() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          showAlert(err?.error || 'Errore export markers');
+          showAlert(err?.error || biText('Errore export markers', 'Error exporting markers'));
           return;
         }
         const blob = await res.blob();
@@ -9368,7 +9385,7 @@ function initApprovalPackUI() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          showAlert(err?.error || 'Errore download approval pack');
+          showAlert(err?.error || biText('Errore download approval pack', 'Error downloading approval pack'));
           return;
         }
         const blob = await res.blob();
@@ -9500,14 +9517,14 @@ function initCueSheetUI() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        showAlert(err?.error || 'Errore salvataggio cue sheet');
+        showAlert(err?.error || biText('Errore salvataggio cue sheet', 'Error while saving cue sheet'));
         return;
       }
       const data = await res.json().catch(() => ({}));
       project.cueSheetProject = data.project || project.cueSheetProject;
       const cue = project.cues.find(c => c.id === cueId);
       if (cue) cue.cueSheet = data.entry || cue.cueSheet;
-      showAlert('Cue sheet salvata');
+      showAlert(biText('Cue sheet salvata', 'Cue sheet saved'));
     });
   }
 
@@ -9642,7 +9659,7 @@ async function downloadFinalDeliveryPack(ctx) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    showAlert(err?.error || 'Errore download consegna finale');
+    showAlert(err?.error || biText('Errore download consegna finale', 'Error downloading final delivery'));
     return;
   }
   const blob = await res.blob();
@@ -9707,20 +9724,20 @@ function initFinalDeliveryUI() {
 
 const onboardingSteps = [
   {
-    title: 'Play',
-    text: 'Premi Play per ascoltare la versione sincronizzata.'
+    title: biText('Play', 'Play'),
+    text: biText('Premi Play per ascoltare la versione sincronizzata.', 'Press Play to listen to the synced version.')
   },
   {
-    title: 'Commenta',
-    text: 'Clicca sul player e scrivi un commento con timecode automatico.'
+    title: biText('Commenta', 'Comment'),
+    text: biText('Clicca sul player e scrivi un commento con timecode automatico.', 'Click on the player and add a comment with automatic timecode.')
   },
   {
-    title: 'Chiudi review',
-    text: 'Quando hai finito, chiudi la review per segnalare che hai completato i feedback.'
+    title: biText('Chiudi review', 'Close review'),
+    text: biText('Quando hai finito, chiudi la review per segnalare che hai completato i feedback.', 'When you are done, close the review to mark feedback as completed.')
   },
   {
-    title: 'Approva o richiedi modifiche',
-    text: 'Se è tutto ok, approva la versione. Altrimenti richiedi modifiche.'
+    title: biText('Approva o richiedi modifiche', 'Approve or request changes'),
+    text: biText('Se è tutto ok, approva la versione. Altrimenti richiedi modifiche.', 'If everything is fine, approve the version. Otherwise request changes.')
   }
 ];
 
@@ -9733,7 +9750,9 @@ function initOnboardingUI() {
     if (onboardingStepTitle) onboardingStepTitle.textContent = step.title;
     if (onboardingStepText) onboardingStepText.textContent = step.text;
     if (onboardingPrevBtn) onboardingPrevBtn.style.display = stepIndex === 0 ? 'none' : 'inline-flex';
-    if (onboardingNextBtn) onboardingNextBtn.textContent = stepIndex === onboardingSteps.length - 1 ? 'Finish' : 'Next';
+    if (onboardingNextBtn) onboardingNextBtn.textContent = stepIndex === onboardingSteps.length - 1
+      ? biText('Fine', 'Finish')
+      : biText('Avanti', 'Next');
   };
 
   const closeOverlay = async (completed) => {
@@ -9804,14 +9823,14 @@ async function loadAndRenderProjectNotes() {
   const listEl = document.getElementById('projectNotesList');
   if (!listEl) return;
 
-  listEl.innerHTML = '<div class="notes-empty-state">Caricamento...</div>';
+  listEl.innerHTML = `<div class="notes-empty-state">${biText('Caricamento...', 'Loading...')}</div>`;
 
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`/api/notes?projectId=${project.id}&type=general`, { headers, cache: 'no-store' });
 
     if (!res.ok) {
-      throw new Error('Errore caricamento note');
+      throw new Error(biText('Errore caricamento note', 'Error loading notes'));
     }
 
     const data = await res.json();
@@ -9827,7 +9846,7 @@ async function loadAndRenderProjectNotes() {
     renderNotesPanel();
 
     if (notes.length === 0) {
-      listEl.innerHTML = '<div class="notes-empty-state">Nessuna nota per questo progetto</div>';
+      listEl.innerHTML = `<div class="notes-empty-state">${biText('Nessuna nota per questo progetto', 'No notes for this project')}</div>`;
       return;
     }
 
@@ -9835,7 +9854,7 @@ async function loadAndRenderProjectNotes() {
       <div class="project-note-item" data-note-id="${note.id}">
         <div class="note-text">${escapeHtml(note.body)}</div>
         <div class="note-meta">
-          <span class="note-author">${escapeHtml(note.author_name || 'Utente')}</span>
+          <span class="note-author">${escapeHtml(note.author_name || biText('Utente', 'User'))}</span>
           <span>${formatNoteTimestamp(note.created_at)}</span>
         </div>
         ${noteActionsTemplate(note.id, '')}
@@ -9845,7 +9864,7 @@ async function loadAndRenderProjectNotes() {
 
   } catch (err) {
     console.error('[Notes] Error loading project notes:', err);
-    listEl.innerHTML = '<div class="notes-empty-state">Errore caricamento note</div>';
+    listEl.innerHTML = `<div class="notes-empty-state">${biText('Errore caricamento note', 'Error loading notes')}</div>`;
   }
 }
 
@@ -9921,7 +9940,7 @@ async function saveProjectNote(text) {
     });
 
     if (!res.ok) {
-      throw new Error('Errore salvataggio nota');
+      throw new Error(biText('Errore salvataggio nota', 'Error saving note'));
     }
 
     const data = await res.json().catch(() => null);
@@ -9941,7 +9960,7 @@ async function saveProjectNote(text) {
     console.log('[Notes] Project note saved');
   } catch (err) {
     console.error('[Notes] Error saving project note:', err);
-    showAlert('Errore durante il salvataggio della nota');
+    showAlert(biText('Errore durante il salvataggio della nota', 'Error while saving note'));
   }
 }
 
@@ -9967,7 +9986,7 @@ function renderCueNotesInline(cueId, container) {
     <div class="cue-note-item" data-note-id="${note.id}" data-cue-id="${cueId}">
       <div class="note-text">${escapeHtml(note.body || note.text)}</div>
       <div class="note-meta">
-        ${escapeHtml(note.author_name || 'Utente')} · ${formatNoteTimestamp(note.created_at)}
+        ${escapeHtml(note.author_name || biText('Utente', 'User'))} · ${formatNoteTimestamp(note.created_at)}
       </div>
       ${noteActionsTemplate(note.id, cueId)}
     </div>
@@ -9996,7 +10015,7 @@ async function saveCueNote(cueId, text) {
     });
 
     if (!res.ok) {
-      throw new Error('Errore salvataggio nota');
+      throw new Error(biText('Errore salvataggio nota', 'Error saving note'));
     }
 
     const data = await res.json();
@@ -10019,7 +10038,7 @@ async function saveCueNote(cueId, text) {
     console.log('[Notes] Cue note saved');
   } catch (err) {
     console.error('[Notes] Error saving cue note:', err);
-    showAlert('Errore durante il salvataggio della nota');
+    showAlert(biText('Errore durante il salvataggio della nota', 'Error while saving note'));
   }
 }
 
@@ -10202,7 +10221,7 @@ async function handleEditNote(noteId, cueId) {
     }
   } catch (err) {
     console.error('[Notes] Failed to edit note', err);
-    showAlert('Errore durante la modifica della nota');
+    showAlert(biText('Errore durante la modifica della nota', 'Error while editing note'));
   }
 }
 
@@ -10230,7 +10249,7 @@ async function handleDeleteNote(noteId, cueId) {
     }
   } catch (err) {
     console.error('[Notes] Failed to delete note', err);
-    showAlert('Errore durante la cancellazione della nota');
+    showAlert(biText('Errore durante la cancellazione della nota', 'Error while deleting note'));
   }
 }
 

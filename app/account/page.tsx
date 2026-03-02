@@ -9,6 +9,8 @@ interface ProviderInfo {
   email?: string | null;
 }
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function AccountPage() {
   const router = useRouter();
   const [supabase, setSupabase] = useState<any>(null);
@@ -21,14 +23,14 @@ export default function AccountPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [theme, setTheme] = useState("dark-01");
-  const [language, setLanguage] = useState("it");
+  const [language, setLanguage] = useState("bi");
   const [notifications, setNotifications] = useState(true);
   const themeOptions = [
-    { value: "dark-01", label: "Scuro 01" },
-    { value: "dark-02", label: "Scuro 02" },
-    { value: "azure-01", label: "Azzurro 01" },
-    { value: "dark", label: "Scuro" },
-    { value: "light", label: "Chiaro" },
+    { value: "dark-01", label: bi("Scuro 01", "Dark 01") },
+    { value: "dark-02", label: bi("Scuro 02", "Dark 02") },
+    { value: "azure-01", label: bi("Azzurro 01", "Azure 01") },
+    { value: "dark", label: bi("Scuro", "Dark") },
+    { value: "light", label: bi("Chiaro", "Light") },
   ];
 
   const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() ||
@@ -88,7 +90,7 @@ export default function AccountPage() {
     if (error) {
       setError(error.message);
     } else {
-      setMessage(global ? "Logout da tutti i dispositivi eseguito" : "Logout eseguito");
+      setMessage(global ? bi("Logout da tutti i dispositivi eseguito", "Logged out from all devices") : bi("Logout eseguito", "Logged out"));
       router.push("/login");
     }
   };
@@ -96,14 +98,14 @@ export default function AccountPage() {
   const handlePasswordChange = async () => {
     if (!supabase) return;
     if (newPassword.length < 6) {
-      setError("La password deve avere almeno 6 caratteri");
+      setError(bi("La password deve avere almeno 6 caratteri", "Password must be at least 6 characters"));
       return;
     }
     setError(null);
     setMessage(null);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) setError(error.message);
-    else setMessage("Password aggiornata");
+    else setMessage(bi("Password aggiornata", "Password updated"));
   };
 
   const handleSaveProfile = async () => {
@@ -120,16 +122,16 @@ export default function AccountPage() {
         },
       });
       if (updErr) {
-        setError(updErr.message || 'Errore aggiornamento profilo');
+        setError(updErr.message || bi('Errore aggiornamento profilo', 'Profile update error'));
         return;
       }
 
       // Refresh user
       const { data: refreshed } = await supabase.auth.getUser();
       setUser(refreshed?.user || null);
-      setMessage('Profilo aggiornato');
+      setMessage(bi('Profilo aggiornato', 'Profile updated'));
     } catch (e: any) {
-      setError(e?.message || 'Errore');
+      setError(e?.message || bi('Errore', 'Error'));
     }
   };
 
@@ -138,13 +140,13 @@ export default function AccountPage() {
   const providerLabel = (p: string) => {
     if (p === "google") return "Google";
     if (p === "apple") return "Apple";
-    if (p === "email") return "Email/Password";
+    if (p === "email") return bi("Email/Password", "Email/Password");
     return p;
   };
 
   if (loading) {
     return (
-      <div style={styles.page}>Caricamento account...</div>
+      <div style={styles.page}>{bi("Caricamento account...", "Loading account...")}</div>
     );
   }
 
@@ -152,9 +154,9 @@ export default function AccountPage() {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
-          <h1 style={styles.title}>Account</h1>
-          <p style={styles.muted}>Non sei autenticato.</p>
-          <button style={styles.primaryButton} onClick={() => router.push("/login")}>Vai al login</button>
+          <h1 style={styles.title}>{bi("Account", "Account")}</h1>
+          <p style={styles.muted}>{bi("Non sei autenticato.", "You are not authenticated.")}</p>
+          <button style={styles.primaryButton} onClick={() => router.push("/login")}>{bi("Vai al login", "Go to login")}</button>
         </div>
       </div>
     );
@@ -169,9 +171,9 @@ export default function AccountPage() {
       <div style={styles.shell}>
         <div style={styles.headerRow}>
           <div>
-            <div style={styles.eyebrow}>Account</div>
-            <h1 style={styles.title}>Il mio account</h1>
-            <p style={styles.subtitle}>Gestisci dati personali, sicurezza e preferenze.</p>
+            <div style={styles.eyebrow}>{bi("Account", "Account")}</div>
+            <h1 style={styles.title}>{bi("Il mio account", "My account")}</h1>
+            <p style={styles.subtitle}>{bi("Gestisci dati personali, sicurezza e preferenze.", "Manage personal data, security, and preferences.")}</p>
           </div>
           <button
             style={styles.ghostButton}
@@ -179,7 +181,7 @@ export default function AccountPage() {
               window.location.href = "/";
             }}
           >
-            ← Torna all'app
+            ← {bi("Torna all'app", "Back to app")}
           </button>
         </div>
 
@@ -187,67 +189,67 @@ export default function AccountPage() {
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <div>
-                <div style={styles.cardEyebrow}>Profilo</div>
-                <h2 style={styles.cardTitle}>Dati personali</h2>
-                <p style={styles.cardDesc}>Aggiorna nome e preferenze di profilo.</p>
+                <div style={styles.cardEyebrow}>{bi("Profilo", "Profile")}</div>
+                <h2 style={styles.cardTitle}>{bi("Dati personali", "Personal details")}</h2>
+                <p style={styles.cardDesc}>{bi("Aggiorna nome e preferenze di profilo.", "Update your name and profile preferences.")}</p>
               </div>
               <div style={styles.avatar}>{initials}</div>
             </div>
             <div style={styles.profileSummary}>
               <div style={styles.profileName}>
-                {user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || "Utente"}
+                {user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || bi("Utente", "User")}
               </div>
               <div style={styles.profileEmail}>{user.email || "—"}</div>
               <div style={styles.profileMeta}>
                 <span>ID {user.id?.slice(0, 8) || "—"}</span>
-                <span>Creato {createdAt}</span>
+                <span>{bi("Creato", "Created")} {createdAt}</span>
               </div>
             </div>
             <div style={styles.fieldStack}>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Nome</div>
+                <div style={styles.label}>{bi("Nome", "Name")}</div>
                 <div style={styles.inputRow}>
-                  <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Nome" style={styles.input} />
-                  <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Cognome" style={styles.input} />
+                  <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder={bi("Nome", "First name")} style={styles.input} />
+                  <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder={bi("Cognome", "Last name")} style={styles.input} />
                 </div>
               </div>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Email</div>
+                <div style={styles.label}>{bi("Email", "Email")}</div>
                 <div style={styles.value}>{user.email || "—"}</div>
               </div>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Foto profilo</div>
-                <div style={styles.value}>Gestita dal provider collegato</div>
+                <div style={styles.label}>{bi("Foto profilo", "Profile photo")}</div>
+                <div style={styles.value}>{bi("Gestita dal provider collegato", "Managed by linked provider")}</div>
               </div>
             </div>
             <div style={styles.actionsRow}>
-              <button style={styles.primaryButton} onClick={handleSaveProfile}>Salva modifiche</button>
+              <button style={styles.primaryButton} onClick={handleSaveProfile}>{bi("Salva modifiche", "Save changes")}</button>
             </div>
           </div>
 
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <div>
-                <div style={styles.cardEyebrow}>Sicurezza</div>
-                <h2 style={styles.cardTitle}>Accesso e sessioni</h2>
-                <p style={styles.cardDesc}>Controlla provider e password.</p>
+                <div style={styles.cardEyebrow}>{bi("Sicurezza", "Security")}</div>
+                <h2 style={styles.cardTitle}>{bi("Accesso e sessioni", "Access and sessions")}</h2>
+                <p style={styles.cardDesc}>{bi("Controlla provider e password.", "Check providers and password.")}</p>
               </div>
-              <div style={styles.securityBadge}>Sessione attiva</div>
+              <div style={styles.securityBadge}>{bi("Sessione attiva", "Active session")}</div>
             </div>
             <div style={styles.securityStats}>
               <div style={styles.statItem}>
-                <div style={styles.statLabel}>Ultimo accesso</div>
+                <div style={styles.statLabel}>{bi("Ultimo accesso", "Last sign-in")}</div>
                 <div style={styles.statValue}>{lastSignIn}</div>
               </div>
               <div style={styles.statItem}>
-                <div style={styles.statLabel}>Provider</div>
+                <div style={styles.statLabel}>{bi("Provider", "Providers")}</div>
                 <div style={styles.statValue}>{providers.length || 0}</div>
               </div>
             </div>
             <div style={styles.subsection}>
-              <div style={styles.subLabel}>Provider collegati</div>
+              <div style={styles.subLabel}>{bi("Provider collegati", "Linked providers")}</div>
               <div style={styles.providerList}>
-                {providers.length === 0 && <span style={styles.muted}>Nessun provider trovato</span>}
+                {providers.length === 0 && <span style={styles.muted}>{bi("Nessun provider trovato", "No providers found")}</span>}
                 {providers.map((p) => (
                   <span key={p.identityId || p.provider} style={styles.providerChip}>
                     {providerLabel(p.provider)} {p.email ? `· ${p.email}` : ""}
@@ -258,46 +260,46 @@ export default function AccountPage() {
 
             {showPasswordSection ? (
               <div style={styles.subsection}>
-                <div style={styles.subLabel}>Cambia password</div>
+                <div style={styles.subLabel}>{bi("Cambia password", "Change password")}</div>
                 <div style={styles.inputRow}>
                   <input
                     type="password"
-                    placeholder="Nuova password"
+                    placeholder={bi("Nuova password", "New password")}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     style={styles.input}
                   />
-                  <button style={styles.primaryButton} onClick={handlePasswordChange}>Aggiorna</button>
+                  <button style={styles.primaryButton} onClick={handlePasswordChange}>{bi("Aggiorna", "Update")}</button>
                 </div>
               </div>
             ) : (
               <div style={styles.subsection}>
-                <div style={styles.subLabel}>Cambia password</div>
-                <div style={styles.muted}>Non disponibile per i provider social (Google/Apple).</div>
+                <div style={styles.subLabel}>{bi("Cambia password", "Change password")}</div>
+                <div style={styles.muted}>{bi("Non disponibile per i provider social (Google/Apple).", "Not available for social providers (Google/Apple).")}</div>
               </div>
             )}
 
             <div style={styles.buttonsRow}>
-              <button style={styles.secondaryButton} onClick={() => signOut(false)}>Logout</button>
-              <button style={styles.ghostButton} onClick={() => signOut(true)}>Logout da tutti i dispositivi</button>
+              <button style={styles.secondaryButton} onClick={() => signOut(false)}>{bi("Logout", "Logout")}</button>
+              <button style={styles.ghostButton} onClick={() => signOut(true)}>{bi("Logout da tutti i dispositivi", "Logout from all devices")}</button>
             </div>
             <div style={styles.subsection}>
-              <div style={styles.subLabel}>Cancella account</div>
-              <div style={styles.muted}>Contatta il supporto per la cancellazione definitiva.</div>
+              <div style={styles.subLabel}>{bi("Cancella account", "Delete account")}</div>
+              <div style={styles.muted}>{bi("Contatta il supporto per la cancellazione definitiva.", "Contact support for permanent deletion.")}</div>
             </div>
           </div>
 
           <div style={styles.card}>
             <div style={styles.cardHeader}>
               <div>
-                <div style={styles.cardEyebrow}>Preferenze</div>
-                <h2 style={styles.cardTitle}>Esperienza</h2>
-                <p style={styles.cardDesc}>Personalizza l’interfaccia.</p>
+                <div style={styles.cardEyebrow}>{bi("Preferenze", "Preferences")}</div>
+                <h2 style={styles.cardTitle}>{bi("Esperienza", "Experience")}</h2>
+                <p style={styles.cardDesc}>{bi("Personalizza l'interfaccia.", "Customize the interface.")}</p>
               </div>
             </div>
             <div style={styles.fieldStack}>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Tema</div>
+                <div style={styles.label}>{bi("Tema", "Theme")}</div>
                 <select style={styles.select} value={theme} onChange={(e) => setTheme(e.target.value)}>
                   {themeOptions.map(option => (
                     <option key={option.value} value={option.value}>
@@ -307,21 +309,20 @@ export default function AccountPage() {
                 </select>
               </div>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Lingua</div>
+                <div style={styles.label}>{bi("Lingua", "Language")}</div>
                 <select style={styles.select} value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  <option value="it">Italiano</option>
-                  <option value="en">English</option>
+                  <option value="bi">{bi("Italiano + English", "Italian + English")}</option>
                 </select>
               </div>
               <div style={styles.fieldRow}>
-                <div style={styles.label}>Notifiche</div>
+                <div style={styles.label}>{bi("Notifiche", "Notifications")}</div>
                 <label style={styles.toggleRow}>
                   <input
                     type="checkbox"
                     checked={notifications}
                     onChange={(e) => setNotifications(e.target.checked)}
                   />
-                  <span style={styles.value}>Attive</span>
+                  <span style={styles.value}>{bi("Attive", "Enabled")}</span>
                 </label>
               </div>
             </div>

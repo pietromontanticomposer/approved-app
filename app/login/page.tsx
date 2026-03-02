@@ -4,6 +4,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,11 +63,11 @@ export default function LoginPage() {
       if (resp.ok && data.exists === false) {
         // Email doesn't exist, show signup form
         setIsSignUp(true);
-        setMessage("Crea un account per accettare l'invito");
+        setMessage(bi("Crea un account per accettare l'invito", "Create an account to accept the invite"));
       } else if (resp.ok && data.exists === true) {
         // Email exists, show login form
         setIsSignUp(false);
-        setMessage("Accedi per accettare l'invito");
+        setMessage(bi("Accedi per accettare l'invito", "Sign in to accept the invite"));
       }
     } catch (err) {
       console.error('[Login] Error checking email:', err);
@@ -87,7 +89,7 @@ export default function LoginPage() {
   const handleEmailPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) {
-      setMessage("Supabase not ready");
+      setMessage(bi("Supabase non pronto", "Supabase not ready"));
       return;
     }
 
@@ -105,7 +107,7 @@ export default function LoginPage() {
         });
 
         if (error) throw error;
-        setMessage("✉️ Controlla la tua email! Ti abbiamo inviato un link di accesso magico.");
+        setMessage("✉️ " + bi("Controlla la tua email! Ti abbiamo inviato un link di accesso magico.", "Check your email! We sent you a magic sign-in link."));
         setLoading(false);
         return;
       }
@@ -121,7 +123,7 @@ export default function LoginPage() {
         if (!resp.ok || data?.error) {
           throw new Error(data?.error || 'Signup failed');
         }
-        setMessage("✉️ Controlla la tua email! Ti abbiamo inviato una mail di conferma da Approved.");
+        setMessage("✉️ " + bi("Controlla la tua email! Ti abbiamo inviato una mail di conferma da Approved.", "Check your email! We sent you a confirmation email from Approved."));
         setLoading(false);
         return;
       } else {
@@ -175,7 +177,7 @@ export default function LoginPage() {
       }
     } catch (error: any) {
       console.error('[Login] Error:', error);
-      setMessage(error.message || "Authentication failed");
+      setMessage(error.message || bi("Autenticazione fallita", "Authentication failed"));
     } finally {
       setLoading(false);
     }
@@ -183,7 +185,7 @@ export default function LoginPage() {
 
   const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
     if (!supabase) {
-      setMessage("Supabase not ready");
+      setMessage(bi("Supabase non pronto", "Supabase not ready"));
       return;
     }
 
@@ -201,7 +203,7 @@ export default function LoginPage() {
       if (error) throw error;
     } catch (error: any) {
       console.error(`[Login] ${provider} OAuth error:`, error);
-      setMessage(error.message || `${provider} authentication failed`);
+      setMessage(error.message || bi(`Autenticazione ${provider} fallita`, `${provider} authentication failed`));
       setLoading(false);
     }
   };
@@ -219,9 +221,9 @@ export default function LoginPage() {
       });
 
       if (error) throw error;
-      setMessage("Check your email for the password reset link!");
+      setMessage(bi("Controlla la tua email per il link di reset password!", "Check your email for the password reset link!"));
     } catch (error: any) {
-      setMessage(error.message || "Error sending reset email");
+      setMessage(error.message || bi("Errore durante l'invio dell'email di reset", "Error sending reset email"));
     } finally {
       setLoading(false);
     }
@@ -231,12 +233,12 @@ export default function LoginPage() {
     e.preventDefault();
     
     if (newPassword !== confirmPassword) {
-      setMessage("Passwords do not match");
+      setMessage(bi("Le password non coincidono", "Passwords do not match"));
       return;
     }
 
     if (newPassword.length < 6) {
-      setMessage("Password must be at least 6 characters");
+      setMessage(bi("La password deve avere almeno 6 caratteri", "Password must be at least 6 characters"));
       return;
     }
 
@@ -249,10 +251,10 @@ export default function LoginPage() {
       });
 
       if (error) throw error;
-      setMessage("Password updated successfully! Redirecting...");
+      setMessage(bi("Password aggiornata con successo! Reindirizzamento...", "Password updated successfully! Redirecting..."));
       setTimeout(() => router.push("/"), 2000);
     } catch (error: any) {
-      setMessage(error.message || "Error updating password");
+      setMessage(error.message || bi("Errore durante l'aggiornamento della password", "Error updating password"));
     } finally {
       setLoading(false);
     }
@@ -275,14 +277,14 @@ export default function LoginPage() {
         border: "1px solid #333"
       }}>
         <h1 style={{ marginBottom: "1.5rem", color: "#fff" }}>
-          {isResetPassword ? "Set New Password" : isForgotPassword ? "Reset Password" : (isSignUp ? "Create Account" : "Sign in to Approved")}
+          {isResetPassword ? bi("Imposta nuova password", "Set New Password") : isForgotPassword ? bi("Reset password", "Reset Password") : (isSignUp ? bi("Crea account", "Create Account") : bi("Accedi ad Approved", "Sign in to Approved"))}
         </h1>
         
         {isResetPassword ? (
           <form onSubmit={handleUpdatePassword}>
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                New Password
+                {bi("Nuova password", "New Password")}
               </label>
               <input
                 type="password"
@@ -305,7 +307,7 @@ export default function LoginPage() {
 
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Confirm Password
+                {bi("Conferma password", "Confirm Password")}
               </label>
               <input
                 type="password"
@@ -340,14 +342,14 @@ export default function LoginPage() {
                 opacity: loading ? 0.6 : 1
               }}
             >
-              {loading ? "Updating..." : "Update Password"}
+              {loading ? bi("Aggiornamento...", "Updating...") : bi("Aggiorna password", "Update Password")}
             </button>
           </form>
         ) : isForgotPassword ? (
           <form onSubmit={handleResetPassword}>
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                Email
+                {bi("Email", "Email")}
               </label>
               <input
                 type="email"
@@ -383,7 +385,7 @@ export default function LoginPage() {
                 marginBottom: "1rem"
               }}
             >
-              {loading ? "Sending..." : "Send reset link"}
+              {loading ? bi("Invio...", "Sending...") : bi("Invia link di reset", "Send reset link")}
             </button>
 
             <button
@@ -398,7 +400,7 @@ export default function LoginPage() {
                 cursor: "pointer"
               }}
             >
-              ← Back to sign in
+              ← {bi("Torna al login", "Back to sign in")}
             </button>
           </form>
         ) : (
@@ -427,7 +429,7 @@ export default function LoginPage() {
               />
               {emailLocked && (
                 <p style={{ color: "#0066ff", fontSize: "0.8rem", marginTop: "0.25rem" }}>
-                  Email dell'invito - non modificabile
+                  {bi("Email dell'invito - non modificabile", "Invite email - cannot be changed")}
                 </p>
               )}
             </div>
@@ -435,7 +437,7 @@ export default function LoginPage() {
             {!useMagicLink && (
               <div style={{ marginBottom: "1rem" }}>
                 <label style={{ display: "block", marginBottom: "0.5rem", color: "#ccc" }}>
-                  Password
+                  {bi("Password", "Password")}
                 </label>
                 <input
                   type="password"
@@ -471,7 +473,7 @@ export default function LoginPage() {
                     padding: 0
                   }}
                 >
-                  Forgot password?
+                  {bi("Password dimenticata?", "Forgot password?")}
                 </button>
               </div>
             )}
@@ -492,7 +494,7 @@ export default function LoginPage() {
                 marginBottom: "1rem"
               }}
             >
-              {loading ? "Loading..." : (useMagicLink ? "Invia link magico 📧" : (isSignUp ? "Sign up" : "Sign in"))}
+              {loading ? bi("Caricamento...", "Loading...") : (useMagicLink ? bi("Invia link magico 📧", "Send magic link 📧") : (isSignUp ? bi("Registrati", "Sign up") : bi("Accedi", "Sign in")))}
             </button>
 
             {/* OAuth Buttons */}
@@ -505,7 +507,7 @@ export default function LoginPage() {
                   margin: "1.5rem 0"
                 }}>
                   <div style={{ flex: 1, height: "1px", background: "#333" }}></div>
-                  <span style={{ color: "#666", fontSize: "0.85rem" }}>oppure</span>
+                  <span style={{ color: "#666", fontSize: "0.85rem" }}>{bi("oppure", "or")}</span>
                   <div style={{ flex: 1, height: "1px", background: "#333" }}></div>
                 </div>
 
@@ -530,7 +532,7 @@ export default function LoginPage() {
                     fontWeight: "500"
                   }}
                 >
-                  <span>🔍</span> Continua con Google
+                  <span>🔍</span> {bi("Continua con Google", "Continue with Google")}
                 </button>
 
                 <button
@@ -554,7 +556,7 @@ export default function LoginPage() {
                     fontWeight: "500"
                   }}
                 >
-                  <span></span> Continua con Apple
+                  <span></span> {bi("Continua con Apple", "Continue with Apple")}
                 </button>
               </>
             )}
@@ -576,7 +578,7 @@ export default function LoginPage() {
                   marginBottom: "0.75rem"
                 }}
               >
-                {useMagicLink ? "← Usa password invece" : "✨ Accedi senza password (Magic Link)"}
+                {useMagicLink ? `← ${bi("Usa password invece", "Use password instead")}` : `✨ ${bi("Accedi senza password (Magic Link)", "Sign in without password (Magic Link)")}`}
               </button>
             )}
 
@@ -597,7 +599,7 @@ export default function LoginPage() {
                   cursor: "pointer"
                 }}
               >
-                {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
+                {isSignUp ? bi("Hai già un account? Accedi", "Already have an account? Sign in") : bi("Ti serve un account? Registrati", "Need an account? Sign up")}
               </button>
             )}
           </form>

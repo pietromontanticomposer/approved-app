@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function CompleteProfile() {
   const [supabase, setSupabase] = useState<any>(null);
   const [firstName, setFirstName] = useState("");
@@ -37,7 +39,7 @@ export default function CompleteProfile() {
       // Ensure user is signed in
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setMessage("You must be signed in to complete your profile.");
+        setMessage(bi("Devi effettuare l'accesso per completare il profilo.", "You must be signed in to complete your profile."));
         setLoading(false);
         router.push('/login');
         return;
@@ -54,11 +56,11 @@ export default function CompleteProfile() {
 
       if (error) throw error;
 
-      setMessage("Profile saved. Redirecting…");
+      setMessage(bi("Profilo salvato. Reindirizzamento...", "Profile saved. Redirecting..."));
       setTimeout(() => router.push('/'), 900);
     } catch (err: any) {
       console.error('[CompleteProfile] Error saving profile', err);
-      setMessage(err?.message || 'Error saving profile');
+      setMessage(err?.message || bi('Errore nel salvataggio del profilo', 'Error saving profile'));
     } finally {
       setLoading(false);
     }
@@ -66,28 +68,34 @@ export default function CompleteProfile() {
 
   return (
     <div style={{ padding: 20, maxWidth: 600, margin: '40px auto' }}>
-      <h2>Complete your profile</h2>
-      <p>Please enter your name and choose your professional role.</p>
+      <h2>{bi("Completa il tuo profilo", "Complete your profile")}</h2>
+      <p>{bi("Inserisci nome e cognome e scegli il tuo ruolo professionale.", "Please enter your name and choose your professional role.")}</p>
 
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 12 }}>
-          <label>First name</label>
+          <label>{bi("Nome", "First name")}</label>
           <input value={firstName} onChange={e => setFirstName(e.target.value)} required style={{ width: '100%', padding: 8 }} />
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label>Last name</label>
+          <label>{bi("Cognome", "Last name")}</label>
           <input value={lastName} onChange={e => setLastName(e.target.value)} required style={{ width: '100%', padding: 8 }} />
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label>Role</label>
+          <label>{bi("Ruolo", "Role")}</label>
           <select value={role} onChange={e => setRole(e.target.value)} style={{ width: '100%', padding: 8 }}>
-            {roles.map(r => <option key={r} value={r}>{r}</option>)}
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {r === "Producer" ? bi("Produttore", "Producer") : r === "Director" ? bi("Regista", "Director") : r === "Other" ? bi("Altro", "Other") : r}
+              </option>
+            ))}
           </select>
         </div>
 
-        <button type="submit" disabled={loading} style={{ padding: '10px 16px' }}>{loading ? 'Saving…' : 'Save profile'}</button>
+        <button type="submit" disabled={loading} style={{ padding: '10px 16px' }}>
+          {loading ? bi('Salvataggio...', 'Saving...') : bi('Salva profilo', 'Save profile')}
+        </button>
       </form>
 
       {message && <div style={{ marginTop: 12 }}>{message}</div>}

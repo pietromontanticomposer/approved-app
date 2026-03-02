@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
+const bi = (it: string, en: string) => `${it} / ${en}`;
+
 export default function SharePage() {
   const router = useRouter();
   const params = useParams();
@@ -45,7 +47,7 @@ export default function SharePage() {
       }
 
       if (!shareId || !tokenQuery) {
-        setError('Link non valido');
+        setError(bi('Link non valido', 'Invalid link'));
         setLoading(false);
         return;
       }
@@ -55,7 +57,7 @@ export default function SharePage() {
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
         console.error('[Share] details API failed', resp.status, body);
-        setError(body?.error || 'Link non trovato o non valido.');
+        setError(body?.error || bi('Link non trovato o non valido.', 'Link not found or invalid.'));
         setLoading(false);
         return;
       }
@@ -66,7 +68,7 @@ export default function SharePage() {
       setLoading(false);
     } catch (err) {
       console.error('[Share] initialize error', err);
-      setError('Errore durante il caricamento del link.');
+      setError(bi('Errore durante il caricamento del link.', 'Error while loading link.'));
       setLoading(false);
     }
   }, [token]);
@@ -111,7 +113,7 @@ export default function SharePage() {
 
   const sendMagicLink = useCallback(async (addr: string) => {
     if (!supabase) {
-      setError('Impossibile inizializzare l\'autenticazione');
+      setError(bi('Impossibile inizializzare l\'autenticazione', 'Unable to initialize authentication'));
       return;
     }
     setSending(true);
@@ -119,13 +121,13 @@ export default function SharePage() {
       const redirectTo = window.location.href.split('#')[0];
       const res = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: redirectTo } });
       if (res.error) {
-        setError(res.error.message || 'Errore durante l\'invio del link');
+        setError(res.error.message || bi('Errore durante l\'invio del link', 'Error while sending link'));
       } else {
         setSuccess(true);
       }
     } catch (e: any) {
       console.error('[Share] sendMagicLink error', e);
-      setError(e?.message || 'Errore durante l\'invio del link');
+      setError(e?.message || bi('Errore durante l\'invio del link', 'Error while sending link'));
     } finally {
       setSending(false);
     }
@@ -153,16 +155,16 @@ export default function SharePage() {
       return;
     }
 
-    // Redeem via server API
+      // Redeem via server API
     try {
       if (!supabase) {
-        setError("Sessione non disponibile. Ricarica la pagina.");
+        setError(bi("Sessione non disponibile. Ricarica la pagina.", "Session unavailable. Reload the page."));
         return;
       }
       const sessionRes = await supabase.auth.getSession();
       const accessToken = sessionRes?.data?.session?.access_token;
       if (!accessToken) {
-        setError("Sessione scaduta. Effettua di nuovo l'accesso.");
+        setError(bi("Sessione scaduta. Effettua di nuovo l'accesso.", "Session expired. Please sign in again."));
         return;
       }
 
@@ -178,7 +180,7 @@ export default function SharePage() {
 
       if (!resp.ok) {
         const b = await resp.json().catch(() => ({}));
-        setError(b?.error || 'Impossibile aprire il progetto');
+        setError(b?.error || bi('Impossibile aprire il progetto', 'Unable to open project'));
         return;
       }
 
@@ -195,7 +197,7 @@ export default function SharePage() {
       setTimeout(() => router.push('/'), 400);
     } catch (err) {
       console.error('[Share] redeem error', err);
-      setError('Errore durante l\'apertura del progetto');
+      setError(bi('Errore durante l\'apertura del progetto', 'Error while opening project'));
     }
   }, [email, router, sendMagicLink, supabase, token, user]);
 
@@ -204,7 +206,7 @@ export default function SharePage() {
       const params = new URLSearchParams(window.location.search);
       const tokenQuery = params.get('token') || '';
       if (!share || !tokenQuery) {
-        setError('Link non valido');
+        setError(bi('Link non valido', 'Invalid link'));
         return;
       }
       localStorage.setItem('approved_share_link', JSON.stringify({
@@ -217,7 +219,7 @@ export default function SharePage() {
       router.push(`/?shared_project=${encodeURIComponent(share.project_id || '')}`);
     } catch (e) {
       console.warn('[Share] Unable to open without account', e);
-      setError('Impossibile aprire il progetto senza account.');
+      setError(bi('Impossibile aprire il progetto senza account.', 'Unable to open project without account.'));
     }
   }, [router, share, token]);
 
@@ -227,7 +229,7 @@ export default function SharePage() {
     const tokenQuery = params.get('token') || '';
 
     if (!nickname || nickname.trim().length < 2) {
-      setError('Il nickname deve avere almeno 2 caratteri');
+      setError(bi('Il nickname deve avere almeno 2 caratteri', 'Nickname must be at least 2 characters'));
       return;
     }
 
@@ -248,7 +250,7 @@ export default function SharePage() {
       const data = await resp.json();
 
       if (!resp.ok) {
-        setError(data.error || 'Impossibile accedere come guest');
+        setError(data.error || bi('Impossibile accedere come guest', 'Unable to access as guest'));
         return;
       }
 
@@ -274,7 +276,7 @@ export default function SharePage() {
 
     } catch (err: any) {
       console.error('[Share] guest access error', err);
-      setError(err?.message || 'Errore durante l\'accesso');
+      setError(err?.message || bi('Errore durante l\'accesso', 'Error while accessing project'));
     } finally {
       setSending(false);
     }
@@ -293,15 +295,15 @@ export default function SharePage() {
   }, [user, loading, share, success, handleOpen, isGuestLink]);
 
   if (loading) {
-    return <div style={{ padding: 40 }}>Caricamento link…</div>;
+    return <div style={{ padding: 40 }}>{bi('Caricamento link...', 'Loading link...')}</div>;
   }
 
   if (error) {
     return (
       <div style={{ padding: 40 }}>
-        <h2>Link non valido</h2>
+        <h2>{bi('Link non valido', 'Invalid link')}</h2>
         <p>{error}</p>
-        <button onClick={() => router.push('/')}>Torna alla home</button>
+        <button onClick={() => router.push('/')}>{bi('Torna alla home', 'Back to home')}</button>
       </div>
     );
   }
@@ -309,34 +311,34 @@ export default function SharePage() {
   if (success) {
     return (
       <div style={{ padding: 40 }}>
-        <h2>Aprendo il progetto…</h2>
+        <h2>{bi('Apertura progetto...', 'Opening project...')}</h2>
       </div>
     );
   }
 
   return (
     <div style={{ padding: 24, maxWidth: 680, margin: '40px auto' }}>
-      <h2>Progetto condiviso</h2>
-      <p style={{ color: '#999' }}>Progetto: <strong>{share.project_name}</strong></p>
-      <p style={{ color: '#999' }}>Ruolo consentito: <strong>{share.role === 'commenter' ? 'Commentatore' : share.role === 'viewer' ? 'Visualizzatore' : share.role}</strong></p>
+      <h2>{bi('Progetto condiviso', 'Shared project')}</h2>
+      <p style={{ color: '#999' }}>{bi('Progetto', 'Project')}: <strong>{share.project_name}</strong></p>
+      <p style={{ color: '#999' }}>{bi('Ruolo consentito', 'Allowed role')}: <strong>{share.role === 'commenter' ? bi('Commentatore', 'Commenter') : share.role === 'viewer' ? bi('Visualizzatore', 'Viewer') : share.role}</strong></p>
       <div style={{ marginTop: 20 }}>
         {user ? (
           <button onClick={handleOpen} style={{ padding: '10px 14px' }}>
-            Apri progetto
+            {bi('Apri progetto', 'Open project')}
           </button>
         ) : isGuestLink ? (
           /* Guest link: only nickname required */
           <div style={{ display: 'flex', gap: 12, flexDirection: 'column', maxWidth: 420 }}>
             <div style={{ padding: '12px 16px', background: '#1a2a1a', borderRadius: '6px', border: '1px solid #2a4a2a' }}>
               <p style={{ margin: 0, color: '#8f8', fontSize: '0.9rem' }}>
-                Questo link ti permette di accedere al progetto senza creare un account. Inserisci un nickname per continuare.
+                {bi('Questo link ti permette di accedere al progetto senza creare un account. Inserisci un nickname per continuare.', 'This link lets you access the project without creating an account. Enter a nickname to continue.')}
               </p>
             </div>
             <input
               type="text"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              placeholder="Il tuo nickname"
+              placeholder={bi("Il tuo nickname", "Your nickname")}
               maxLength={50}
               style={{ padding: '10px 12px', fontSize: 16, borderRadius: '4px', border: '1px solid #333', background: '#0a0a0a', color: '#fff' }}
             />
@@ -353,32 +355,32 @@ export default function SharePage() {
                 cursor: sending || nickname.trim().length < 2 ? 'not-allowed' : 'pointer',
               }}
             >
-              {sending ? 'Accesso in corso...' : 'Accedi come Guest'}
+              {sending ? bi('Accesso in corso...', 'Access in progress...') : bi('Accedi come Guest', 'Access as Guest')}
             </button>
             <p style={{ color: '#666', fontSize: '0.85rem', margin: 0 }}>
-              Oppure <a href="/register" style={{ color: '#0066ff' }}>crea un account</a> per salvare i tuoi progetti.
+              {bi('Oppure', 'Or')} <a href="/register" style={{ color: '#0066ff' }}>{bi('crea un account', 'create an account')}</a> {bi('per salvare i tuoi progetti.', 'to save your projects.')}
             </p>
           </div>
         ) : (
           /* Standard link: requires account */
           <div style={{ display: 'flex', gap: 8, flexDirection: 'column', maxWidth: 420 }}>
-            <p style={{ color: '#555' }}>Per aprire il progetto devi avere un account. Puoi crearne uno rapidamente inserendo la tua email qui sotto; ti invieremo un link magico per accedere e completare l'apertura.</p>
+            <p style={{ color: '#555' }}>{bi('Per aprire il progetto devi avere un account. Puoi crearne uno rapidamente inserendo la tua email qui sotto; ti invieremo un link magico per accedere e completare l\'apertura.', 'To open the project you need an account. You can create one quickly by entering your email below; we will send a magic link to sign in and complete access.')}</p>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="La tua email"
+              placeholder={bi("La tua email", "Your email")}
               style={{ padding: '8px 10px', fontSize: 16 }}
             />
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => sendMagicLink(email)} disabled={sending || !email} style={{ padding: '10px 14px' }}>
-                {sending ? 'Invio…' : 'Ricevi link magico'}
+                {sending ? bi('Invio...', 'Sending...') : bi('Ricevi link magico', 'Receive magic link')}
               </button>
               <button onClick={() => { localStorage.setItem('pending_share', JSON.stringify({ share_id: token, token: (new URLSearchParams(window.location.search)).get('token') || '' })); router.push('/login'); }} style={{ padding: '10px 14px' }}>
-                Ho già un account (Accedi)
+                {bi('Ho già un account (Accedi)', 'I already have an account (Sign in)')}
               </button>
               <button onClick={handleOpenWithoutAccount} style={{ padding: '10px 14px' }}>
-                Continua senza account
+                {bi('Continua senza account', 'Continue without account')}
               </button>
             </div>
           </div>
