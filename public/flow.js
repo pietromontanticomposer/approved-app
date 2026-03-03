@@ -53,7 +53,7 @@ const referenceThumbPromises = new Map();
 const derivedPosterCache = new Map();
 const thumbnailTaskQueue = [];
 let thumbnailTasksRunning = 0;
-const MAX_CONCURRENT_THUMBNAIL_JOBS = 2;
+const MAX_CONCURRENT_THUMBNAIL_JOBS = 4;
 
 function ensureWaveSurferReady() {
   if (typeof window === "undefined") return Promise.resolve(false);
@@ -3625,17 +3625,6 @@ function createFileBackedVideoPreview(url, opts = {}) {
   const explicitPoster = opts.posterUrl ? getDirectUrl(opts.posterUrl) : null;
   if (explicitPoster) {
     video.poster = explicitPoster;
-  } else if (!loadFrame) {
-    // Only use derived poster when NOT loading a real frame (avoids showing colored placeholder)
-    const sourceLabel =
-      opts.fileLabel ||
-      extractFileNameFromSource(opts.storagePath || url) ||
-      "video";
-    const derivedPoster = buildDerivedPosterDataUrl(sourceLabel, "video");
-    if (derivedPoster) {
-      video.poster = derivedPoster;
-      video.dataset.derivedPoster = "1";
-    }
   }
 
   const clearDerivedPoster = () => {
@@ -6972,19 +6961,24 @@ function renderVersionPreviews() {
             prev.classList.add("has-thumbnail");
           }
         } else if (mediaUrl) {
-          // No saved thumbnail: show actual video frame by loading metadata.
-          const immediate = makeVideoEl(mediaUrl, null, true);
+          // No saved thumbnail yet: show dark background, generate in background and save to DB.
+          const immediate = makeVideoEl(mediaUrl, null);
           if (immediate) {
             prev.appendChild(immediate);
             prev.classList.add("has-thumbnail");
           }
 
-          generateVersionThumbnailOnce(version).then(th => {
+          generateVersionThumbnailOnce(version).then(async th => {
             if (!th) return;
+            // Upload thumbnail to storage so it loads instantly on next page load
+            const savedPath = await uploadPreviewImage(project.id, version.id, 'thumbnail', th);
+            const finalUrl = savedPath || th;
+            if (version.media) version.media.thumbnailUrl = finalUrl;
+            // Update the visible poster
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
-            // Save thumbnail for next render cycle; the visible video already shows a frame
-            if (version.media) version.media.thumbnailUrl = th;
+            const liveVideo = el.querySelector("video");
+            if (liveVideo) liveVideo.poster = getDirectUrl(finalUrl);
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
           });
