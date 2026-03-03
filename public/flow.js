@@ -3428,9 +3428,11 @@ function generateVideoThumbnailRaw(url) {
     console.log("[generateVideoThumbnailRaw] Starting with URL:", url);
 
     const video = document.createElement("video");
-    // Prefer anonymous CORS for canvas extraction; Supabase buckets should allow CORS for this to work.
+    // Use redirect URL → 302 to Supabase CDN directly (parallel, no proxy bottleneck).
+    // crossOrigin="anonymous" needed for canvas drawImage; Supabase storage allows CORS by default.
     video.crossOrigin = "anonymous";
-    video.src = getProxiedUrl(url);
+    const proxied = getProxiedUrl(url);
+    video.src = proxied.includes("?") ? proxied + "&redirect=1" : proxied + "?redirect=1";
     video.muted = true;
     // Preload only metadata to avoid downloading full video when generating a frame
     video.preload = "metadata";
@@ -4426,6 +4428,15 @@ function loadVideoPlayer(project, cue, version) {
 
   if (version.media.thumbnailUrl) {
     thumb.style.backgroundImage = `url(${getProxiedUrl(version.media.thumbnailUrl)})`;
+  } else {
+    // No saved thumbnail: generate in background and show it when ready
+    generateVersionThumbnailOnce(version).then(async th => {
+      if (!th) return;
+      const savedPath = await uploadPreviewImage(project.id, version.id, 'thumbnail', th);
+      const finalUrl = savedPath || th;
+      if (version.media) version.media.thumbnailUrl = finalUrl;
+      thumb.style.backgroundImage = `url(${getProxiedUrl(finalUrl)})`;
+    }).catch(() => {});
   }
 
   const playBtn = document.createElement("button");

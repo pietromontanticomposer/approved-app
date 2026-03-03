@@ -98,6 +98,12 @@ export async function GET(req: Request) {
 
     if (!targetUrl) return NextResponse.json({ error: "no target url" }, { status: 404 });
 
+    // ?redirect=1 → return 302 to signed URL so the browser hits Supabase CDN directly.
+    // Used for thumbnail generation (parallel, no proxy bottleneck).
+    if (url.searchParams.get("redirect") === "1") {
+      return NextResponse.redirect(targetUrl, { status: 302 });
+    }
+
     // Fetch the media server-side and stream it back with permissive CORS so the browser
     // can use it from our domain (avoids bucket CORS issues when using signed URLs).
     // Forward Range and related headers so the browser can request partial content
