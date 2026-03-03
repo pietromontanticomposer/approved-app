@@ -3625,7 +3625,8 @@ function createFileBackedVideoPreview(url, opts = {}) {
   const explicitPoster = opts.posterUrl ? getDirectUrl(opts.posterUrl) : null;
   if (explicitPoster) {
     video.poster = explicitPoster;
-  } else {
+  } else if (!loadFrame) {
+    // Only use derived poster when NOT loading a real frame (avoids showing colored placeholder)
     const sourceLabel =
       opts.fileLabel ||
       extractFileNameFromSource(opts.storagePath || url) ||
@@ -6318,23 +6319,7 @@ function renderCueList(options = {}) {
           prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
         }
       } else if (version.media?.type === "video") {
-        const mediaUrl = resolveVersionMediaUrl(version);
-        const mediaLabel =
-          version.media.displayName ||
-          version.media.originalName ||
-          extractFileNameFromSource(version.media.storagePath || mediaUrl) ||
-          `Version ${(version.index || 0) + 1}`;
-        const placeholder = buildDerivedPosterDataUrl(mediaLabel, "video");
-        if (placeholder) {
-          const img = document.createElement("img");
-          img.src = placeholder;
-          img.className = "version-thumb";
-          img.alt = mediaLabel;
-          prev.appendChild(img);
-          prev.classList.add("is-placeholder");
-        } else {
-          prev.innerHTML = `<span class="preview-label placeholder">Video</span>`;
-        }
+        // No placeholder — renderVersionPreviews caricherà il frame reale via loadFrame:true
       } else if (version.media?.type === "audio") {
         createMiniWave(version, prev);
       } else {
