@@ -111,7 +111,8 @@ export default function Page() {
       <div class="language-selector">
         <label for="languageSelect" class="language-label" data-i18n="lang.select">Language</label>
         <select id="languageSelect" class="language-select">
-          <option value="bi" data-i18n="lang.bi">Italiano + English</option>
+          <option value="en" data-i18n="lang.en">English</option>
+          <option value="it" data-i18n="lang.it">Italiano</option>
         </select>
       </div>
     </div>

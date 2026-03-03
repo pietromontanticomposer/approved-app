@@ -11,7 +11,18 @@ interface ShareModalProps {
   teamId: string;
 }
 
-const bi = (it: string, en: string) => `${it} / ${en}`;
+const bi = (it: string, en: string) => {
+  if (typeof window === "undefined") return it;
+  try {
+    const lang =
+      ((window as any).i18n && typeof (window as any).i18n.getLanguage === "function"
+        ? (window as any).i18n.getLanguage()
+        : localStorage.getItem("app-language")) || "it";
+    return lang === "en" ? en : it;
+  } catch {
+    return it;
+  }
+};
 
 export default function ShareModal({
   isOpen,

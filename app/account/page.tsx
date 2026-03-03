@@ -9,7 +9,18 @@ interface ProviderInfo {
   email?: string | null;
 }
 
-const bi = (it: string, en: string) => `${it} / ${en}`;
+const bi = (it: string, en: string) => {
+  if (typeof window === "undefined") return it;
+  try {
+    const lang =
+      ((window as any).i18n && typeof (window as any).i18n.getLanguage === "function"
+        ? (window as any).i18n.getLanguage()
+        : localStorage.getItem("app-language")) || "it";
+    return lang === "en" ? en : it;
+  } catch {
+    return it;
+  }
+};
 
 export default function AccountPage() {
   const router = useRouter();
@@ -23,7 +34,7 @@ export default function AccountPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [theme, setTheme] = useState("dark-01");
-  const [language, setLanguage] = useState("bi");
+  const [language, setLanguage] = useState("it");
   const [notifications, setNotifications] = useState(true);
   const themeOptions = [
     { value: "dark-01", label: bi("Scuro 01", "Dark 01") },
@@ -311,7 +322,8 @@ export default function AccountPage() {
               <div style={styles.fieldRow}>
                 <div style={styles.label}>{bi("Lingua", "Language")}</div>
                 <select style={styles.select} value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  <option value="bi">{bi("Italiano + English", "Italian + English")}</option>
+                  <option value="it">Italiano</option>
+                  <option value="en">English</option>
                 </select>
               </div>
               <div style={styles.fieldRow}>

@@ -1,6 +1,6 @@
 // ==========================================
 // INTERNATIONALIZATION (i18n) SYSTEM
-// Supports: English (en), Italian (it), Bilingual (bi: it/en)
+// Supports: English (en), Italian (it)
 // ==========================================
 
 (function() {
@@ -238,7 +238,6 @@
       'lang.select': 'Language',
       'lang.en': 'English',
       'lang.it': 'Italiano',
-      'lang.bi': 'Italiano + English',
 
       // Upload
       'upload.panelTitle': 'Uploads in progress',
@@ -487,7 +486,6 @@
       'lang.select': 'Lingua',
       'lang.en': 'English',
       'lang.it': 'Italiano',
-      'lang.bi': 'Italiano + English',
 
       // Upload
       'upload.panelTitle': 'Upload in corso',
@@ -508,8 +506,7 @@
 
   const SUPPORTED_LANGS = {
     en: true,
-    it: true,
-    bi: true
+    it: true
   };
 
   function applyParams(text, params) {
@@ -520,23 +517,19 @@
     return resolved;
   }
 
-  function buildBilingualText(key, params) {
-    var itText = translations.it[key] || translations.en[key] || key;
-    var enText = translations.en[key] || translations.it[key] || key;
-    var left = applyParams(itText, params);
-    var right = applyParams(enText, params);
-    if (left === right) return left;
-    return left + ' / ' + right;
-  }
-
   // Get saved language or detect from browser
   function getSavedLanguage() {
     try {
       const saved = localStorage.getItem('app-language');
-      if (saved === 'bi') return saved;
+      if (saved && SUPPORTED_LANGS[saved]) return saved;
     } catch (e) {}
-    // Force bilingual mode by default.
-    return 'bi';
+
+    // Default to browser language
+    try {
+      if (navigator.language && navigator.language.startsWith('it')) return 'it';
+    } catch (e) {}
+
+    return 'en';
   }
 
   let currentLang = getSavedLanguage();
@@ -544,9 +537,6 @@
   // Get translation
   function t(key, params) {
     params = params || {};
-    if (currentLang === 'bi') {
-      return buildBilingualText(key, params);
-    }
     const langData = translations[currentLang] || translations['en'];
     let text = langData[key] || translations['en'][key] || key;
     return applyParams(text, params);

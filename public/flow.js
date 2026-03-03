@@ -1027,11 +1027,8 @@ function biText(itText, enText) {
   const lang =
     window.i18n && typeof window.i18n.getLanguage === "function"
       ? window.i18n.getLanguage()
-      : "bi";
-  if (lang === "it") return itText;
-  if (lang === "en") return enText;
-  if (itText === enText) return itText;
-  return itText + " / " + enText;
+      : "it";
+  return lang === "en" ? enText : itText;
 }
 
 function showConfirmDialog(options = {}) {
@@ -3487,6 +3484,42 @@ function generateVideoThumbnailRaw(url) {
       resolve_once(null);
     }, 4000);
   });
+}
+
+function createFileBackedVideoPreview(url, opts = {}) {
+  if (!url) return null;
+  const video = document.createElement("video");
+  video.className = opts.className || "";
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  video.setAttribute("webkit-playsinline", "true");
+  video.src = getDirectUrl(url);
+
+  // Show an actual frame from the real file as soon as metadata is available.
+  video.addEventListener("loadedmetadata", () => {
+    try {
+      if (!isFinite(video.duration) || video.duration <= 0) return;
+      const frameAt = Math.min(0.08, Math.max(0.01, video.duration * 0.03));
+      video.currentTime = frameAt;
+    } catch {
+      // ignore seek failures on odd codecs/containers
+    }
+  });
+
+  video.addEventListener("seeked", () => {
+    try {
+      video.pause();
+    } catch {}
+  });
+
+  video.addEventListener("canplay", () => {
+    try {
+      video.pause();
+    } catch {}
+  }, { once: true });
+
+  return video;
 }
 
 // Existing version video thumbs
@@ -6704,39 +6737,44 @@ function renderVersionPreviews() {
             prev.classList.add("has-thumbnail");
           }
         } else if (mediaUrl) {
-          // No thumbnail: attempt to generate one asynchronously, show placeholder meanwhile
-          prev.style.background = "radial-gradient(circle, #374151, #111827 70%)";
-          const spinner = document.createElement("span");
-          spinner.textContent = "↻";
-          spinner.style.fontSize = "12px";
-          spinner.style.opacity = "0.5";
-          prev.appendChild(spinner);
+          // No saved thumbnail: render an immediate real-file preview while thumbnail is generated in background.
+          const immediate = makeVideoEl(mediaUrl, null);
+          prev.appendChild(immediate);
+          prev.classList.add("has-thumbnail");
 
           generateVideoThumbnailFromUrl(version).then(th => {
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
-            el.innerHTML = "";
-            el.classList.add("video");
+            const liveVideo = el.querySelector("video");
+            if (liveVideo) {
+              if (th) {
+                liveVideo.poster = getDirectUrl(th);
+                version.media.thumbnailUrl = th;
+              }
+              return;
+            }
 
             if (!th) {
-              // If thumbnail generation failed, render a lightweight video element with no poster
+              // Keep file-backed preview even if thumbnail generation fails.
               const fallback = makeVideoEl(mediaUrl, null);
+              el.innerHTML = "";
               el.appendChild(fallback);
               return;
             }
 
             version.media.thumbnailUrl = th;
             const wrapped = makeVideoEl(mediaUrl || null, th);
+            el.innerHTML = "";
             el.appendChild(wrapped);
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
-            el.innerHTML = "";
-            const fallback = document.createElement("span");
-            fallback.className = "preview-label placeholder";
-            fallback.textContent = "Video";
-            el.appendChild(fallback);
+            if (!el.querySelector("video")) {
+              const fallback = makeVideoEl(mediaUrl || null, null);
+              el.innerHTML = "";
+              el.appendChild(fallback);
+            }
           });
         } else {
           // No media url nor thumbnail: show fallback icon
@@ -6999,16 +7037,15 @@ function renderReferences() {
         img.alt = active.name;
         preview.appendChild(img);
       } else {
+        const v = createFileBackedVideoPreview(active.url);
+        if (v) preview.appendChild(v);
         generateVideoThumbnailRaw(active.url).then(th => {
           const el = document.getElementById(
             `ref-preview-${refRoot.id}`
           );
           if (!el) return;
+          if (!th) return;
           el.innerHTML = "";
-          if (!th) {
-            el.textContent = "Preview non disponibile";
-            return;
-          }
           active.thumbnailUrl = th;
           const img = document.createElement("img");
           img.src = getDirectUrl(th);
@@ -7016,10 +7053,6 @@ function renderReferences() {
           el.appendChild(img);
         }).catch(err => {
           console.error('renderReferences: failed to build video thumbnail', err, active.id);
-          const el = document.getElementById(`ref-preview-${refRoot.id}`);
-          if (!el) return;
-          el.innerHTML = "";
-          el.textContent = getReferenceLabel(active.type);
         });
       }
     } else {
@@ -7116,16 +7149,15 @@ function renderReferences() {
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
+          const v = createFileBackedVideoPreview(ver.url);
+          if (v) vPrev.appendChild(v);
           generateVideoThumbnailRaw(ver.url).then(th => {
             const el = document.getElementById(
               `ref-version-preview-${ver.id}`
             );
             if (!el) return;
+            if (!th) return;
             el.innerHTML = "";
-            if (!th) {
-              el.textContent = "Preview non disponibile";
-              return;
-            }
             ver.thumbnailUrl = th;
             const img = document.createElement("img");
             img.src = getDirectUrl(th);
@@ -7133,10 +7165,6 @@ function renderReferences() {
             el.appendChild(img);
           }).catch(err => {
             console.error('renderReferences: failed to build version thumbnail', err, ver.id);
-            const el = document.getElementById(`ref-version-preview-${ver.id}`);
-            if (!el) return;
-            el.innerHTML = "";
-            el.textContent = getReferenceLabel(ver.type);
           });
         }
       } else {

@@ -1268,6 +1268,37 @@ body.resizing {
   display: block;
 }
 
+.version-thumb-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.version-thumb-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: var(--surface-2);
+}
+
+.version-thumb-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.65);
+  color: #f8fafc;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
 /* Force mini waveform to fill box */
 
 .version-preview wave {
