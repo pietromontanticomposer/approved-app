@@ -1567,6 +1567,12 @@ function extractStoragePathFromUrl(raw) {
  */
 function getPublicStorageUrl(storagePath) {
   if (!storagePath) return null;
+  // Only handle relative storage paths — reject full URLs, proxy paths, data/blob URLs
+  if (storagePath.startsWith('/') ||
+      storagePath.startsWith('http://') ||
+      storagePath.startsWith('https://') ||
+      storagePath.startsWith('data:') ||
+      storagePath.startsWith('blob:')) return null;
   const base = window.SUPABASE_PUBLIC_STORAGE_URL;
   if (!base) return null;
   const clean = storagePath.replace(/^\/+/, '');
@@ -3443,8 +3449,14 @@ function generateVideoThumbnailRaw(url) {
     const video = document.createElement("video");
     // Bucket is public → use direct CDN URL (no proxy, fully parallel, CORS allowed by default).
     video.crossOrigin = "anonymous";
-    const publicUrl = getPublicStorageUrl(url) || getProxiedUrl(url);
-    video.src = publicUrl;
+    // If caller already passed a full URL, use it directly; otherwise build CDN/proxy URL
+    let srcUrl;
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      srcUrl = url;
+    } else {
+      srcUrl = getPublicStorageUrl(url) || getProxiedUrl(url);
+    }
+    video.src = srcUrl;
     video.muted = true;
     // Preload only metadata to avoid downloading full video when generating a frame
     video.preload = "metadata";
@@ -3636,7 +3648,7 @@ function createFileBackedVideoPreview(url, opts = {}) {
   video.preload = loadFrame ? "metadata" : "none";
   video.setAttribute("webkit-playsinline", "true");
 
-  const explicitPoster = opts.posterUrl ? getDirectUrl(opts.posterUrl) : null;
+  const explicitPoster = opts.posterUrl ? (getPublicStorageUrl(opts.posterUrl) || getDirectUrl(opts.posterUrl)) : null;
   if (explicitPoster) {
     video.poster = explicitPoster;
   }
@@ -3682,7 +3694,9 @@ function createFileBackedVideoPreview(url, opts = {}) {
 
 // Existing version video thumbs
 function generateVideoThumbnailFromUrl(version) {
-  const url = resolveVersionMediaUrl(version);
+  const storagePath = version.media?.storagePath;
+  // Prefer direct CDN URL (public bucket, no proxy needed, CORS allowed)
+  const url = (storagePath && getPublicStorageUrl(storagePath)) || resolveVersionMediaUrl(version);
   return generateVideoThumbnailRaw(url);
 }
 
