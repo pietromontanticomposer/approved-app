@@ -1560,6 +1560,19 @@ function extractStoragePathFromUrl(raw) {
  * Returns Supabase signed URLs directly without proxy for faster loading.
  * Use this for <audio src>, <video src>, <img src> - these don't need CORS.
  */
+
+/**
+ * Build a direct public CDN URL for a storage path.
+ * The bucket is public → no signing needed → fastest possible load, fully parallel.
+ */
+function getPublicStorageUrl(storagePath) {
+  if (!storagePath) return null;
+  const base = window.SUPABASE_PUBLIC_STORAGE_URL;
+  if (!base) return null;
+  const clean = storagePath.replace(/^\/+/, '');
+  return `${base}/${clean}`;
+}
+
 function getDirectUrl(raw) {
   if (!raw) return raw;
   // Already a proxy URL - extract and return the underlying URL if signed
@@ -3235,7 +3248,7 @@ function createMiniWave(version, container) {
   if (version.media.waveformImageUrl) {
     container.innerHTML = "";
     const img = document.createElement("img");
-    img.src = getDirectUrl(version.media.waveformImageUrl);
+    img.src = getPublicStorageUrl(version.media.waveformImageUrl) || getDirectUrl(version.media.waveformImageUrl);
     img.style.width = "100%";
     img.style.height = "36px";
     img.style.objectFit = "cover";
@@ -3428,11 +3441,10 @@ function generateVideoThumbnailRaw(url) {
     console.log("[generateVideoThumbnailRaw] Starting with URL:", url);
 
     const video = document.createElement("video");
-    // Use redirect URL → 302 to Supabase CDN directly (parallel, no proxy bottleneck).
-    // crossOrigin="anonymous" needed for canvas drawImage; Supabase storage allows CORS by default.
+    // Bucket is public → use direct CDN URL (no proxy, fully parallel, CORS allowed by default).
     video.crossOrigin = "anonymous";
-    const proxied = getProxiedUrl(url);
-    video.src = proxied.includes("?") ? proxied + "&redirect=1" : proxied + "?redirect=1";
+    const publicUrl = getPublicStorageUrl(url) || getProxiedUrl(url);
+    video.src = publicUrl;
     video.muted = true;
     // Preload only metadata to avoid downloading full video when generating a frame
     video.preload = "metadata";
@@ -4427,7 +4439,7 @@ function loadVideoPlayer(project, cue, version) {
   thumb.className = "video-thumb";
 
   if (version.media.thumbnailUrl) {
-    thumb.style.backgroundImage = `url(${getProxiedUrl(version.media.thumbnailUrl)})`;
+    thumb.style.backgroundImage = `url(${getPublicStorageUrl(version.media.thumbnailUrl) || getProxiedUrl(version.media.thumbnailUrl)})`;
   } else {
     // No saved thumbnail: generate in background and show it when ready
     generateVersionThumbnailOnce(version).then(async th => {
@@ -4435,7 +4447,7 @@ function loadVideoPlayer(project, cue, version) {
       const savedPath = await uploadPreviewImage(project.id, version.id, 'thumbnail', th);
       const finalUrl = savedPath || th;
       if (version.media) version.media.thumbnailUrl = finalUrl;
-      thumb.style.backgroundImage = `url(${getProxiedUrl(finalUrl)})`;
+      thumb.style.backgroundImage = `url(${getPublicStorageUrl(finalUrl) || getProxiedUrl(finalUrl)})`;
     }).catch(() => {});
   }
 
@@ -4632,7 +4644,7 @@ function renderReferencePlayer(project) {
     thumb.style.backgroundRepeat = "no-repeat";
 
     if (active.thumbnailUrl) {
-      thumb.style.backgroundImage = `url(${getProxiedUrl(active.thumbnailUrl)})`;
+      thumb.style.backgroundImage = `url(${getPublicStorageUrl(active.thumbnailUrl) || getProxiedUrl(active.thumbnailUrl)})`;
     } else if (active.url) {
       generateVideoThumbnailRaw(active.url).then(th => {
         if (!th || !thumb.isConnected) return;
@@ -6304,7 +6316,7 @@ function renderCueList(options = {}) {
       prev.className = "version-preview";
       prev.id = `preview-${version.id}`;
       if (version.media?.thumbnailUrl) {
-        const thumbUrl = getDirectUrl(version.media.thumbnailUrl);
+        const thumbUrl = getPublicStorageUrl(version.media.thumbnailUrl) || getDirectUrl(version.media.thumbnailUrl);
         if (thumbUrl) {
           const img = document.createElement("img");
           img.src = thumbUrl;
@@ -6955,7 +6967,7 @@ function renderVersionPreviews() {
               }
             } else {
               const img = document.createElement("img");
-              img.src = getDirectUrl(version.media.thumbnailUrl);
+              img.src = getPublicStorageUrl(version.media.thumbnailUrl) || getDirectUrl(version.media.thumbnailUrl);
               img.className = "version-thumb";
               img.onerror = () => { img.style.display = 'none'; };
               prev.appendChild(img);
@@ -6965,7 +6977,7 @@ function renderVersionPreviews() {
             console.error("renderVersionPreviews: failed to render poster video", err, version.id);
             // fallback to img
             const img = document.createElement("img");
-            img.src = getDirectUrl(version.media.thumbnailUrl);
+            img.src = getPublicStorageUrl(version.media.thumbnailUrl) || getDirectUrl(version.media.thumbnailUrl);
             img.className = "version-thumb";
             img.onerror = () => { img.style.display = 'none'; };
             prev.appendChild(img);
@@ -6989,7 +7001,7 @@ function renderVersionPreviews() {
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
             const liveVideo = el.querySelector("video");
-            if (liveVideo) liveVideo.poster = getDirectUrl(finalUrl);
+            if (liveVideo) liveVideo.poster = getPublicStorageUrl(finalUrl) || getDirectUrl(finalUrl);
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
           });

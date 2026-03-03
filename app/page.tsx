@@ -50,6 +50,11 @@ export default function Page() {
     // Reset sign-out flag on fresh page load to allow bootstrap
     (window as any).__isSigningOut = false;
 
+    // Expose public storage base URL so flow.js can build direct CDN URLs (bucket is public)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const storageBucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'media';
+    (window as any).SUPABASE_PUBLIC_STORAGE_URL = `${supabaseUrl}/storage/v1/object/public/${storageBucket}`;
+
     // Initialize supabase client immediately
     const initSupabase = async () => {
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
