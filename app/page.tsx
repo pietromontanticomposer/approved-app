@@ -704,7 +704,7 @@ export default function Page() {
       <Script src="/flow-auth.js?v=9" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=12"
+        src="/flow.js?v=13"
         strategy="afterInteractive"
         onLoad={() => {
           console.log('[PageInit] Scripts loaded');
