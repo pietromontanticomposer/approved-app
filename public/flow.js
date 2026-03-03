@@ -1575,7 +1575,11 @@ function getPublicStorageUrl(storagePath) {
       storagePath.startsWith('blob:')) return null;
   const base = window.SUPABASE_PUBLIC_STORAGE_URL;
   if (!base) return null;
-  const clean = storagePath.replace(/^\/+/, '');
+  let clean = storagePath.replace(/^\/+/, '');
+  // Strip bucket prefix if present (e.g. "media/projects/..." → "projects/...")
+  // extractStoragePathFromUrl includes the bucket name in the returned path
+  const bucketName = (base.split('/').pop() || 'media') + '/';
+  if (clean.startsWith(bucketName)) clean = clean.slice(bucketName.length);
   return `${base}/${clean}`;
 }
 
@@ -1806,7 +1810,7 @@ function renderWaveImagePlaceholder(container, imageUrl, opts = {}) {
   const height = opts.height || 36;
   container.innerHTML = "";
   const img = document.createElement("img");
-  img.src = getDirectUrl(imageUrl);
+  img.src = getPublicStorageUrl(imageUrl) || getDirectUrl(imageUrl);
   img.alt = "";
   img.style.width = "100%";
   img.style.height = `${height}px`;
@@ -3447,14 +3451,13 @@ function generateVideoThumbnailRaw(url) {
     console.log("[generateVideoThumbnailRaw] Starting with URL:", url);
 
     const video = document.createElement("video");
-    // Bucket is public → use direct CDN URL (no proxy, fully parallel, CORS allowed by default).
-    video.crossOrigin = "anonymous";
-    // If caller already passed a full URL, use it directly; otherwise build CDN/proxy URL
+    // Use proxy (same-origin) for thumbnail generation: guarantees canvas.drawImage works
+    // regardless of browser CORS cache state. This is a one-time operation per video.
     let srcUrl;
-    if (url.startsWith('https://') || url.startsWith('http://')) {
-      srcUrl = url;
+    if (url.startsWith('/')) {
+      srcUrl = url; // already a proxy or relative URL
     } else {
-      srcUrl = getPublicStorageUrl(url) || getProxiedUrl(url);
+      srcUrl = getProxiedUrl(url); // full URL or storage path → route through proxy
     }
     video.src = srcUrl;
     video.muted = true;
