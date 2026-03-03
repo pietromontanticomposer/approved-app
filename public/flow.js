@@ -6335,8 +6335,10 @@ function renderCueList(options = {}) {
         } else {
           prev.innerHTML = `<span class="preview-label placeholder">Video</span>`;
         }
+      } else if (version.media?.type === "audio") {
+        createMiniWave(version, prev);
       } else {
-        prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
+        prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "video" ? "Video" : "File"}</span>`;
       }
 
       const main = document.createElement("div");
@@ -6909,13 +6911,13 @@ function renderVersionPreviews() {
 
         // Preferred: show a lightweight <video> element with poster (thumbnail) so
         // the browser displays the thumbnail without loading full video data.
-        const makeVideoEl = (videoUrl, posterUrl) => {
+        const makeVideoEl = (videoUrl, posterUrl, loadFrame = false) => {
           const v = createFileBackedVideoPreview(videoUrl, {
             className: "version-thumb-video",
             posterUrl,
             fileLabel: mediaLabel,
             storagePath: version.media.storagePath || null,
-            loadFrame: false
+            loadFrame
           });
           if (!v) return null;
 
@@ -6985,50 +6987,21 @@ function renderVersionPreviews() {
             prev.classList.add("has-thumbnail");
           }
         } else if (mediaUrl) {
-          // No saved thumbnail: render an immediate real-file preview while thumbnail is generated in background.
-          const immediate = makeVideoEl(mediaUrl, null);
+          // No saved thumbnail: show actual video frame by loading metadata.
+          const immediate = makeVideoEl(mediaUrl, null, true);
           if (immediate) {
             prev.appendChild(immediate);
             prev.classList.add("has-thumbnail");
           }
 
           generateVersionThumbnailOnce(version).then(th => {
+            if (!th) return;
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
-            const liveVideo = el.querySelector("video");
-            if (liveVideo) {
-              if (th) {
-                liveVideo.poster = getDirectUrl(th);
-              }
-              return;
-            }
-
-            if (!th) {
-              // Keep file-backed preview even if thumbnail generation fails.
-              const fallback = makeVideoEl(mediaUrl, null);
-              if (fallback) {
-                el.innerHTML = "";
-                el.appendChild(fallback);
-              }
-              return;
-            }
-
-            const wrapped = makeVideoEl(mediaUrl, th);
-            if (wrapped) {
-              el.innerHTML = "";
-              el.appendChild(wrapped);
-            }
+            // Save thumbnail for next render cycle; the visible video already shows a frame
+            if (version.media) version.media.thumbnailUrl = th;
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
-            const el = document.getElementById(`preview-${version.id}`);
-            if (!el) return;
-            if (!el.querySelector("video")) {
-              const fallback = makeVideoEl(mediaUrl, null);
-              if (fallback) {
-                el.innerHTML = "";
-                el.appendChild(fallback);
-              }
-            }
           });
         } else {
           // No media url nor thumbnail: show deterministic file-derived placeholder.
