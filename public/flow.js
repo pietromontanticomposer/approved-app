@@ -46,6 +46,11 @@ const waveformRetryState = new Map();
 const MAX_WAVEFORM_RETRIES = 2;
 const WAVEFORM_RETRY_DELAY_MS = 1200;
 let waveSurferLoadPromise = null;
+const versionThumbInFlight = new Set();
+const referenceThumbInFlight = new Set();
+const versionThumbPromises = new Map();
+const referenceThumbPromises = new Map();
+const derivedPosterCache = new Map();
 
 function ensureWaveSurferReady() {
   if (typeof window === "undefined") return Promise.resolve(false);
@@ -357,7 +362,7 @@ function createProjectShell(raw) {
 }
 
 function normalizeProjectForFastRender(project, options = {}) {
-  const collapseCues = options.collapseCues !== false;
+  const collapseCues = options.collapseCues === true;
   const commentsLoadedByDefault = options.commentsLoadedByDefault === true;
 
   project.cues = Array.isArray(project.cues) ? project.cues : [];
@@ -369,7 +374,7 @@ function normalizeProjectForFastRender(project, options = {}) {
 
   project.cues.forEach((cue) => {
     cue.versions = Array.isArray(cue.versions) ? cue.versions : [];
-    cue.isOpen = collapseCues ? cue.id === fallbackActiveCueId : cue.isOpen !== false;
+    cue.isOpen = collapseCues ? cue.id === fallbackActiveCueId : true;
     cue.versions.forEach((version) => {
       version.comments = Array.isArray(version.comments) ? version.comments : [];
       version.deliverables = Array.isArray(version.deliverables) ? version.deliverables : [];
@@ -520,7 +525,7 @@ function hydrateFastBootCache() {
       const project = state.projects.find((p) => p.id === parsed.activeProjectData.id);
       if (project) {
         applyProjectSnapshot(project, parsed.activeProjectData, {
-          collapseCues: true,
+          collapseCues: false,
           commentsLoadedByDefault: false
         });
         primeProjectNotesCache(project.id, project.notes, project.cueNotes);
@@ -2127,7 +2132,7 @@ async function selectProject(projectId) {
   const cachedSnapshot = getCachedProjectSnapshot(projectId);
   if (cachedSnapshot && (!project.cues || project.cues.length === 0)) {
     applyProjectSnapshot(project, cachedSnapshot, {
-      collapseCues: true,
+      collapseCues: false,
       commentsLoadedByDefault: false
     });
   }
@@ -3486,6 +3491,95 @@ function generateVideoThumbnailRaw(url) {
   });
 }
 
+function extractFileNameFromSource(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  let candidate = raw.trim();
+  if (!candidate) return "";
+
+  const storagePath = extractStoragePathFromUrl(candidate);
+  if (storagePath) {
+    candidate = storagePath;
+  } else {
+    try {
+      const u = new URL(candidate, window.location.origin);
+      candidate = u.pathname || candidate;
+    } catch (e) {
+      candidate = candidate.split("?")[0].split("#")[0];
+    }
+  }
+
+  const parts = candidate.split("/").filter(Boolean);
+  const last = parts.length ? parts[parts.length - 1] : candidate;
+  try {
+    return decodeURIComponent(last || "").trim();
+  } catch (e) {
+    return (last || "").trim();
+  }
+}
+
+function hashStringForPoster(input) {
+  const text = (input || "").toLowerCase();
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function buildDerivedPosterDataUrl(fileLabel, mediaKind = "video") {
+  const safeLabel = (fileLabel || mediaKind || "media").trim();
+  if (!safeLabel) return null;
+
+  const cacheKey = `${mediaKind}:${safeLabel.toLowerCase()}`;
+  const cached = derivedPosterCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 180;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const hash = hashStringForPoster(cacheKey);
+    const h1 = hash % 360;
+    const h2 = (h1 + 42 + ((hash >> 8) % 90)) % 360;
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, `hsl(${h1} 55% 18%)`);
+    gradient.addColorStop(1, `hsl(${h2} 55% 12%)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "rgba(248,250,252,0.9)";
+    ctx.font = "700 42px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const clean = safeLabel.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
+    const initials = clean
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase() || (mediaKind === "video" ? "VD" : "MD");
+
+    ctx.fillText(initials, canvas.width / 2, canvas.height / 2 - 6);
+
+    const ext = (safeLabel.split(".").pop() || mediaKind).toUpperCase().slice(0, 6);
+    ctx.fillStyle = "rgba(226,232,240,0.85)";
+    ctx.font = "600 14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText(ext, canvas.width / 2, canvas.height - 20);
+
+    const dataUrl = canvas.toDataURL("image/png");
+    cacheSet(derivedPosterCache, cacheKey, dataUrl);
+    return dataUrl;
+  } catch (err) {
+    return null;
+  }
+}
+
 function createFileBackedVideoPreview(url, opts = {}) {
   if (!url) return null;
   const video = document.createElement("video");
@@ -3494,6 +3588,29 @@ function createFileBackedVideoPreview(url, opts = {}) {
   video.playsInline = true;
   video.preload = "metadata";
   video.setAttribute("webkit-playsinline", "true");
+
+  const explicitPoster = opts.posterUrl ? getDirectUrl(opts.posterUrl) : null;
+  if (explicitPoster) {
+    video.poster = explicitPoster;
+  } else {
+    const sourceLabel =
+      opts.fileLabel ||
+      extractFileNameFromSource(opts.storagePath || url) ||
+      "video";
+    const derivedPoster = buildDerivedPosterDataUrl(sourceLabel, "video");
+    if (derivedPoster) {
+      video.poster = derivedPoster;
+      video.dataset.derivedPoster = "1";
+    }
+  }
+
+  const clearDerivedPoster = () => {
+    if (video.dataset.derivedPoster === "1") {
+      video.removeAttribute("poster");
+      delete video.dataset.derivedPoster;
+    }
+  };
+
   video.src = getDirectUrl(url);
 
   // Show an actual frame from the real file as soon as metadata is available.
@@ -3507,10 +3624,12 @@ function createFileBackedVideoPreview(url, opts = {}) {
     }
   });
 
+  video.addEventListener("loadeddata", clearDerivedPoster, { once: true });
   video.addEventListener("seeked", () => {
     try {
       video.pause();
     } catch {}
+    clearDerivedPoster();
   });
 
   video.addEventListener("canplay", () => {
@@ -3526,6 +3645,62 @@ function createFileBackedVideoPreview(url, opts = {}) {
 function generateVideoThumbnailFromUrl(version) {
   const url = resolveVersionMediaUrl(version);
   return generateVideoThumbnailRaw(url);
+}
+
+function generateVersionThumbnailOnce(version) {
+  if (!version || !version.id || !version.media) return Promise.resolve(null);
+  if (version.media.thumbnailUrl) return Promise.resolve(version.media.thumbnailUrl);
+
+  const existing = versionThumbPromises.get(version.id);
+  if (existing) return existing;
+
+  versionThumbInFlight.add(version.id);
+  const promise = generateVideoThumbnailFromUrl(version)
+    .then(th => {
+      if (th && version.media) {
+        version.media.thumbnailUrl = th;
+      }
+      return th || null;
+    })
+    .catch(err => {
+      console.warn("generateVersionThumbnailOnce failed", err, version.id);
+      return null;
+    })
+    .finally(() => {
+      versionThumbInFlight.delete(version.id);
+      versionThumbPromises.delete(version.id);
+    });
+
+  versionThumbPromises.set(version.id, promise);
+  return promise;
+}
+
+function generateReferenceThumbnailOnce(refVersion) {
+  if (!refVersion || !refVersion.id || !refVersion.url) return Promise.resolve(null);
+  if (refVersion.thumbnailUrl) return Promise.resolve(refVersion.thumbnailUrl);
+
+  const existing = referenceThumbPromises.get(refVersion.id);
+  if (existing) return existing;
+
+  referenceThumbInFlight.add(refVersion.id);
+  const promise = generateVideoThumbnailRaw(refVersion.url)
+    .then(th => {
+      if (th) {
+        refVersion.thumbnailUrl = th;
+      }
+      return th || null;
+    })
+    .catch(err => {
+      console.warn("generateReferenceThumbnailOnce failed", err, refVersion.id);
+      return null;
+    })
+    .finally(() => {
+      referenceThumbInFlight.delete(refVersion.id);
+      referenceThumbPromises.delete(refVersion.id);
+    });
+
+  referenceThumbPromises.set(refVersion.id, promise);
+  return promise;
 }
 
 // =======================
@@ -5048,7 +5223,7 @@ async function loadProjectCues(projectId, options = {}) {
     const cachedSnapshot = getCachedProjectSnapshot(projectId);
     if (cachedSnapshot) {
       applyProjectSnapshot(project, cachedSnapshot, {
-        collapseCues: true,
+        collapseCues: false,
         commentsLoadedByDefault: false
       });
       primeProjectNotesCache(projectId, project.notes, project.cueNotes);
@@ -5087,7 +5262,7 @@ async function loadProjectCues(projectId, options = {}) {
     };
 
     applyProjectSnapshot(project, snapshot, {
-      collapseCues: true,
+      collapseCues: false,
       commentsLoadedByDefault: false
     });
 
@@ -5212,7 +5387,7 @@ async function loadProjectCuesLegacy(projectId, headers) {
 
     project.cues = cuesWithVersions;
     normalizeProjectForFastRender(project, {
-      collapseCues: true,
+      collapseCues: false,
       commentsLoadedByDefault: false
     });
 
@@ -6666,21 +6841,22 @@ function renderVersionPreviews() {
       if (version.media.type === "video") {
         prev.classList.add("video");
         const mediaUrl = resolveVersionMediaUrl(version);
+        const mediaLabel =
+          version.media.displayName ||
+          version.media.originalName ||
+          extractFileNameFromSource(version.media.storagePath || mediaUrl) ||
+          `Version ${(version.index || 0) + 1}`;
 
         // Preferred: show a lightweight <video> element with poster (thumbnail) so
         // the browser displays the thumbnail without loading full video data.
         const makeVideoEl = (videoUrl, posterUrl) => {
-          const v = document.createElement("video");
-          v.className = "version-thumb-video";
-          v.muted = true;
-          v.playsInline = true;
-          v.preload = "metadata";
-          if (posterUrl) v.poster = getDirectUrl(posterUrl);
-          if (videoUrl) {
-            // set src but avoid forcing download of large files; browsers will
-            // usually fetch only metadata until play is requested.
-            v.src = getDirectUrl(videoUrl);
-          }
+          const v = createFileBackedVideoPreview(videoUrl, {
+            className: "version-thumb-video",
+            posterUrl,
+            fileLabel: mediaLabel,
+            storagePath: version.media.storagePath || null
+          });
+          if (!v) return null;
 
           // When metadata is loaded, update version duration and the meta text
           v.addEventListener('loadedmetadata', () => {
@@ -6723,9 +6899,20 @@ function renderVersionPreviews() {
         // If we have a thumbnail URL, use it as poster on a video element.
         if (version.media.thumbnailUrl) {
           try {
-            const el = makeVideoEl(mediaUrl || null, version.media.thumbnailUrl);
-            prev.appendChild(el);
-            prev.classList.add("has-thumbnail");
+            if (mediaUrl) {
+              const el = makeVideoEl(mediaUrl, version.media.thumbnailUrl);
+              if (el) {
+                prev.appendChild(el);
+                prev.classList.add("has-thumbnail");
+              }
+            } else {
+              const img = document.createElement("img");
+              img.src = getDirectUrl(version.media.thumbnailUrl);
+              img.className = "version-thumb";
+              img.onerror = () => { img.style.display = 'none'; };
+              prev.appendChild(img);
+              prev.classList.add("has-thumbnail");
+            }
           } catch (err) {
             console.error("renderVersionPreviews: failed to render poster video", err, version.id);
             // fallback to img
@@ -6739,17 +6926,18 @@ function renderVersionPreviews() {
         } else if (mediaUrl) {
           // No saved thumbnail: render an immediate real-file preview while thumbnail is generated in background.
           const immediate = makeVideoEl(mediaUrl, null);
-          prev.appendChild(immediate);
-          prev.classList.add("has-thumbnail");
+          if (immediate) {
+            prev.appendChild(immediate);
+            prev.classList.add("has-thumbnail");
+          }
 
-          generateVideoThumbnailFromUrl(version).then(th => {
+          generateVersionThumbnailOnce(version).then(th => {
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
             const liveVideo = el.querySelector("video");
             if (liveVideo) {
               if (th) {
                 liveVideo.poster = getDirectUrl(th);
-                version.media.thumbnailUrl = th;
               }
               return;
             }
@@ -6757,32 +6945,46 @@ function renderVersionPreviews() {
             if (!th) {
               // Keep file-backed preview even if thumbnail generation fails.
               const fallback = makeVideoEl(mediaUrl, null);
-              el.innerHTML = "";
-              el.appendChild(fallback);
+              if (fallback) {
+                el.innerHTML = "";
+                el.appendChild(fallback);
+              }
               return;
             }
 
-            version.media.thumbnailUrl = th;
-            const wrapped = makeVideoEl(mediaUrl || null, th);
-            el.innerHTML = "";
-            el.appendChild(wrapped);
+            const wrapped = makeVideoEl(mediaUrl, th);
+            if (wrapped) {
+              el.innerHTML = "";
+              el.appendChild(wrapped);
+            }
           }).catch(err => {
             console.error('renderVersionPreviews: thumbnail generation error', err, version.id);
             const el = document.getElementById(`preview-${version.id}`);
             if (!el) return;
             if (!el.querySelector("video")) {
-              const fallback = makeVideoEl(mediaUrl || null, null);
-              el.innerHTML = "";
-              el.appendChild(fallback);
+              const fallback = makeVideoEl(mediaUrl, null);
+              if (fallback) {
+                el.innerHTML = "";
+                el.appendChild(fallback);
+              }
             }
           });
         } else {
-          // No media url nor thumbnail: show fallback icon
-          const fallback = document.createElement("span");
-          fallback.textContent = "▶";
-          fallback.style.fontSize = "18px";
-          fallback.style.opacity = "0.5";
-          prev.appendChild(fallback);
+          // No media url nor thumbnail: show deterministic file-derived placeholder.
+          const placeholder = buildDerivedPosterDataUrl(mediaLabel, "video");
+          if (placeholder) {
+            const img = document.createElement("img");
+            img.src = placeholder;
+            img.className = "version-thumb";
+            prev.appendChild(img);
+            prev.classList.add("is-placeholder");
+          } else {
+            const fallback = document.createElement("span");
+            fallback.textContent = "▶";
+            fallback.style.fontSize = "18px";
+            fallback.style.opacity = "0.5";
+            prev.appendChild(fallback);
+          }
         }
       }
     });
@@ -7031,29 +7233,46 @@ function renderReferences() {
       img.alt = active.name;
       preview.appendChild(img);
     } else if (active.type === "video") {
+      const activeLabel = active.name || extractFileNameFromSource(active.url) || "Video";
       if (active.thumbnailUrl) {
         const img = document.createElement("img");
         img.src = getDirectUrl(active.thumbnailUrl);
         img.alt = active.name;
         preview.appendChild(img);
       } else {
-        const v = createFileBackedVideoPreview(active.url);
-        if (v) preview.appendChild(v);
-        generateVideoThumbnailRaw(active.url).then(th => {
-          const el = document.getElementById(
-            `ref-preview-${refRoot.id}`
-          );
-          if (!el) return;
-          if (!th) return;
-          el.innerHTML = "";
-          active.thumbnailUrl = th;
-          const img = document.createElement("img");
-          img.src = getDirectUrl(th);
-          img.alt = active.name;
-          el.appendChild(img);
-        }).catch(err => {
-          console.error('renderReferences: failed to build video thumbnail', err, active.id);
-        });
+        const v = createFileBackedVideoPreview(active.url, { fileLabel: activeLabel });
+        if (v) {
+          preview.appendChild(v);
+        } else {
+          const placeholder = buildDerivedPosterDataUrl(activeLabel, "video");
+          if (placeholder) {
+            const img = document.createElement("img");
+            img.src = placeholder;
+            img.alt = active.name;
+            preview.appendChild(img);
+          }
+        }
+
+        if (active.url) {
+          generateReferenceThumbnailOnce(active).then(th => {
+            const el = document.getElementById(`ref-preview-${refRoot.id}`);
+            if (!el || !th) return;
+
+            const liveVideo = el.querySelector("video");
+            if (liveVideo) {
+              liveVideo.poster = getDirectUrl(th);
+              return;
+            }
+
+            el.innerHTML = "";
+            const img = document.createElement("img");
+            img.src = getDirectUrl(th);
+            img.alt = active.name;
+            el.appendChild(img);
+          }).catch(err => {
+            console.error('renderReferences: failed to build video thumbnail', err, active.id);
+          });
+        }
       }
     } else {
       preview.textContent = getReferenceLabel(active.type);
@@ -7143,29 +7362,46 @@ function renderReferences() {
         img.alt = ver.name;
         vPrev.appendChild(img);
       } else if (ver.type === "video") {
+        const versionLabel = ver.name || extractFileNameFromSource(ver.url) || `v${idx + 1}`;
         if (ver.thumbnailUrl) {
           const img = document.createElement("img");
           img.src = getDirectUrl(ver.thumbnailUrl);
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
-          const v = createFileBackedVideoPreview(ver.url);
-          if (v) vPrev.appendChild(v);
-          generateVideoThumbnailRaw(ver.url).then(th => {
-            const el = document.getElementById(
-              `ref-version-preview-${ver.id}`
-            );
-            if (!el) return;
-            if (!th) return;
-            el.innerHTML = "";
-            ver.thumbnailUrl = th;
-            const img = document.createElement("img");
-            img.src = getDirectUrl(th);
-            img.alt = ver.name;
-            el.appendChild(img);
-          }).catch(err => {
-            console.error('renderReferences: failed to build version thumbnail', err, ver.id);
-          });
+          const v = createFileBackedVideoPreview(ver.url, { fileLabel: versionLabel });
+          if (v) {
+            vPrev.appendChild(v);
+          } else {
+            const placeholder = buildDerivedPosterDataUrl(versionLabel, "video");
+            if (placeholder) {
+              const img = document.createElement("img");
+              img.src = placeholder;
+              img.alt = ver.name;
+              vPrev.appendChild(img);
+            }
+          }
+
+          if (ver.url) {
+            generateReferenceThumbnailOnce(ver).then(th => {
+              const el = document.getElementById(`ref-version-preview-${ver.id}`);
+              if (!el || !th) return;
+
+              const liveVideo = el.querySelector("video");
+              if (liveVideo) {
+                liveVideo.poster = getDirectUrl(th);
+                return;
+              }
+
+              el.innerHTML = "";
+              const img = document.createElement("img");
+              img.src = getDirectUrl(th);
+              img.alt = ver.name;
+              el.appendChild(img);
+            }).catch(err => {
+              console.error('renderReferences: failed to build version thumbnail', err, ver.id);
+            });
+          }
         }
       } else {
         vPrev.textContent = getReferenceLabel(ver.type);
@@ -9145,7 +9381,7 @@ async function initializeFromSupabase() {
       const cachedSnapshot = getCachedProjectSnapshot(bootProjectId);
       if (bootProject && cachedSnapshot) {
         applyProjectSnapshot(bootProject, cachedSnapshot, {
-          collapseCues: true,
+          collapseCues: false,
           commentsLoadedByDefault: false
         });
         primeProjectNotesCache(bootProject.id, bootProject.notes, bootProject.cueNotes);
