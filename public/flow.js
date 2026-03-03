@@ -51,6 +51,9 @@ const referenceThumbInFlight = new Set();
 const versionThumbPromises = new Map();
 const referenceThumbPromises = new Map();
 const derivedPosterCache = new Map();
+const thumbnailTaskQueue = [];
+let thumbnailTasksRunning = 0;
+const MAX_CONCURRENT_THUMBNAIL_JOBS = 2;
 
 function ensureWaveSurferReady() {
   if (typeof window === "undefined") return Promise.resolve(false);
@@ -165,6 +168,35 @@ function queueWaveformDecode(task) {
   return new Promise(resolve => {
     waveformDecodeQueue.push({ task, resolve });
     processWaveformDecodeQueue();
+  });
+}
+
+function processThumbnailTaskQueue() {
+  while (
+    thumbnailTaskQueue.length > 0 &&
+    thumbnailTasksRunning < MAX_CONCURRENT_THUMBNAIL_JOBS
+  ) {
+    const next = thumbnailTaskQueue.shift();
+    if (!next || typeof next.task !== "function") continue;
+    thumbnailTasksRunning++;
+    Promise.resolve()
+      .then(next.task)
+      .then(result => next.resolve(result || null))
+      .catch(err => {
+        console.warn("[ThumbnailQueue] Task failed", err);
+        next.resolve(null);
+      })
+      .finally(() => {
+        thumbnailTasksRunning--;
+        processThumbnailTaskQueue();
+      });
+  }
+}
+
+function enqueueThumbnailTask(task) {
+  return new Promise(resolve => {
+    thumbnailTaskQueue.push({ task, resolve });
+    processThumbnailTaskQueue();
   });
 }
 
@@ -3586,7 +3618,8 @@ function createFileBackedVideoPreview(url, opts = {}) {
   video.className = opts.className || "";
   video.muted = true;
   video.playsInline = true;
-  video.preload = "metadata";
+  const loadFrame = opts.loadFrame === true;
+  video.preload = loadFrame ? "metadata" : "none";
   video.setAttribute("webkit-playsinline", "true");
 
   const explicitPoster = opts.posterUrl ? getDirectUrl(opts.posterUrl) : null;
@@ -3613,24 +3646,26 @@ function createFileBackedVideoPreview(url, opts = {}) {
 
   video.src = getDirectUrl(url);
 
-  // Show an actual frame from the real file as soon as metadata is available.
-  video.addEventListener("loadedmetadata", () => {
-    try {
-      if (!isFinite(video.duration) || video.duration <= 0) return;
-      const frameAt = Math.min(0.08, Math.max(0.01, video.duration * 0.03));
-      video.currentTime = frameAt;
-    } catch {
-      // ignore seek failures on odd codecs/containers
-    }
-  });
+  if (loadFrame) {
+    // Show an actual frame from the real file as soon as metadata is available.
+    video.addEventListener("loadedmetadata", () => {
+      try {
+        if (!isFinite(video.duration) || video.duration <= 0) return;
+        const frameAt = Math.min(0.08, Math.max(0.01, video.duration * 0.03));
+        video.currentTime = frameAt;
+      } catch {
+        // ignore seek failures on odd codecs/containers
+      }
+    });
 
-  video.addEventListener("loadeddata", clearDerivedPoster, { once: true });
-  video.addEventListener("seeked", () => {
-    try {
-      video.pause();
-    } catch {}
-    clearDerivedPoster();
-  });
+    video.addEventListener("loadeddata", clearDerivedPoster, { once: true });
+    video.addEventListener("seeked", () => {
+      try {
+        video.pause();
+      } catch {}
+      clearDerivedPoster();
+    });
+  }
 
   video.addEventListener("canplay", () => {
     try {
@@ -3655,7 +3690,7 @@ function generateVersionThumbnailOnce(version) {
   if (existing) return existing;
 
   versionThumbInFlight.add(version.id);
-  const promise = generateVideoThumbnailFromUrl(version)
+  const promise = enqueueThumbnailTask(() => generateVideoThumbnailFromUrl(version))
     .then(th => {
       if (th && version.media) {
         version.media.thumbnailUrl = th;
@@ -3683,7 +3718,7 @@ function generateReferenceThumbnailOnce(refVersion) {
   if (existing) return existing;
 
   referenceThumbInFlight.add(refVersion.id);
-  const promise = generateVideoThumbnailRaw(refVersion.url)
+  const promise = enqueueThumbnailTask(() => generateVideoThumbnailRaw(refVersion.url))
     .then(th => {
       if (th) {
         refVersion.thumbnailUrl = th;
@@ -6268,12 +6303,37 @@ function renderCueList(options = {}) {
       prev.className = "version-preview";
       prev.id = `preview-${version.id}`;
       if (version.media?.thumbnailUrl) {
-        const thumbUrl = getProxiedUrl(version.media.thumbnailUrl);
+        const thumbUrl = getDirectUrl(version.media.thumbnailUrl);
         if (thumbUrl) {
-          prev.style.backgroundImage = `url(${thumbUrl})`;
+          const img = document.createElement("img");
+          img.src = thumbUrl;
+          img.className = "version-thumb";
+          img.alt =
+            version.media?.displayName ||
+            version.media?.originalName ||
+            `Version ${(version.index || 0) + 1}`;
+          prev.appendChild(img);
           prev.classList.add("has-thumbnail");
         } else {
           prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
+        }
+      } else if (version.media?.type === "video") {
+        const mediaUrl = resolveVersionMediaUrl(version);
+        const mediaLabel =
+          version.media.displayName ||
+          version.media.originalName ||
+          extractFileNameFromSource(version.media.storagePath || mediaUrl) ||
+          `Version ${(version.index || 0) + 1}`;
+        const placeholder = buildDerivedPosterDataUrl(mediaLabel, "video");
+        if (placeholder) {
+          const img = document.createElement("img");
+          img.src = placeholder;
+          img.className = "version-thumb";
+          img.alt = mediaLabel;
+          prev.appendChild(img);
+          prev.classList.add("is-placeholder");
+        } else {
+          prev.innerHTML = `<span class="preview-label placeholder">Video</span>`;
         }
       } else {
         prev.innerHTML = `<span class="preview-label placeholder">${version.media?.type === "audio" ? "Audio" : version.media?.type === "video" ? "Video" : "File"}</span>`;
@@ -6854,7 +6914,8 @@ function renderVersionPreviews() {
             className: "version-thumb-video",
             posterUrl,
             fileLabel: mediaLabel,
-            storagePath: version.media.storagePath || null
+            storagePath: version.media.storagePath || null,
+            loadFrame: false
           });
           if (!v) return null;
 
@@ -7240,7 +7301,10 @@ function renderReferences() {
         img.alt = active.name;
         preview.appendChild(img);
       } else {
-        const v = createFileBackedVideoPreview(active.url, { fileLabel: activeLabel });
+        const v = createFileBackedVideoPreview(active.url, {
+          fileLabel: activeLabel,
+          loadFrame: false
+        });
         if (v) {
           preview.appendChild(v);
         } else {
@@ -7369,7 +7433,10 @@ function renderReferences() {
           img.alt = ver.name;
           vPrev.appendChild(img);
         } else {
-          const v = createFileBackedVideoPreview(ver.url, { fileLabel: versionLabel });
+          const v = createFileBackedVideoPreview(ver.url, {
+            fileLabel: versionLabel,
+            loadFrame: false
+          });
           if (v) {
             vPrev.appendChild(v);
           } else {
