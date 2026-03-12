@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
     // Step 3: Load versions, comments, and reference versions in PARALLEL
     const versionsSelect = includeWaveforms
       ? '*'
-      : 'id,cue_id,index_in_cue,status,media_type,media_storage_path,media_url,media_original_name,media_display_name,media_duration,media_thumbnail_url,media_thumbnail_path,media_waveform_image_url,created_at,updated_at';
+      : 'id,cue_id,index_in_cue,status,media_type,media_storage_path,media_url,media_original_name,media_display_name,media_duration,media_thumbnail_url,media_thumbnail_path,media_waveform_image_url,media_waveform_data,created_at,updated_at';
     const versionsPromise = cueIds.length > 0
       ? supabaseAdmin.from('versions').select(versionsSelect).in('cue_id', cueIds).order('index_in_cue', { ascending: true })
       : Promise.resolve({ data: [] });

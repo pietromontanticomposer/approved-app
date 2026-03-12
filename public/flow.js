@@ -4244,15 +4244,9 @@ function loadAudioPlayer(project, cue, version) {
 
   waveformEl.classList.add("is-loading");
 
-  // Get peaks if available, otherwise use placeholder peaks for instant display
-  let peaks = getWaveformPeaks(version.media.waveform);
-  if (!peaks || !peaks.length) {
-    // Generate instant placeholder peaks (simple sine-like pattern)
-    peaks = new Array(256).fill(0).map((_, i) => {
-      const x = i / 256;
-      return 0.3 + 0.4 * Math.sin(x * Math.PI * 8) * Math.sin(x * Math.PI);
-    });
-  }
+  // Use real peaks from DB; pass undefined if not available so WaveSurfer
+  // renders as flat until the backend provides actual data
+  const peaks = getWaveformPeaks(version.media.waveform) || undefined;
 
   // Clear container and create single layer for WaveSurfer
   waveformEl.innerHTML = "";
@@ -4359,14 +4353,6 @@ function loadAudioPlayer(project, cue, version) {
     finalizeSwap();
     syncPlayState();
 
-    // Extract real peaks via AudioContext decode (MediaElement backend has no getPeaks)
-    if (!version.media.waveformSaved) {
-      ensureWaveformPeaksForVersion(version).then(realPeaks => {
-        if (!realPeaks || !realPeaks.length) return;
-        if (mainWave !== ws || playerWaveLoadToken !== loadToken) return;
-        try { ws.drawBuffer(); } catch (e) {}
-      }).catch(() => {});
-    }
   });
 
   ws.on("audioprocess", () => {
