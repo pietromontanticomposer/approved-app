@@ -25,11 +25,12 @@ export default function Page() {
         const { getSupabaseClient } = await import("@/lib/supabaseClient");
         const client = getSupabaseClient();
 
-        // Timeout di sicurezza: se getSession() non risponde entro 6s mostra la landing
+        // Timeout di sicurezza: se getSession() non risponde entro 5s, sessione corrotta
+        let timedOut = false;
         const { data } = await Promise.race([
           client.auth.getSession(),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Auth check timeout')), 6000)
+            setTimeout(() => { timedOut = true; reject(new Error('Auth check timeout')); }, 5000)
           ),
         ]) as any;
 
@@ -38,8 +39,16 @@ export default function Page() {
         } else {
           setIsLoggedIn(false);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('[HomePage] Auth check failed', e);
+        // Se è un timeout, pulisci la sessione corrotta dal localStorage
+        // così al prossimo caricamento la pagina parte pulita
+        if (e?.message === 'Auth check timeout') {
+          try {
+            const { getSupabaseClient } = await import("@/lib/supabaseClient");
+            await getSupabaseClient().auth.signOut();
+          } catch {}
+        }
         setIsLoggedIn(false);
       } finally {
         setCheckingAuth(false);
