@@ -33,33 +33,36 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Get supabase instance when component mounts
-    import("@/lib/supabaseClient").then(mod => {
-      const client = mod.getSupabaseClient();
-      setSupabase(client);
-      console.log('[Login] Supabase client ready');
-    });
-
-    // Check if this is a password reset callback
+    // Handle URL params synchronously (no async needed)
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     const searchParams = new URLSearchParams(window.location.search);
-    const hashType = hashParams.get('type');
-    const searchType = searchParams.get('type');
-    if (hashType === 'recovery' || searchType === 'recovery') {
+    if (hashParams.get('type') === 'recovery' || searchParams.get('type') === 'recovery') {
       setIsResetPassword(true);
     }
-
-    // Check for pending invite email
-    const pendingInviteEmail = localStorage.getItem("pending_invite_email");
-    if (pendingInviteEmail) {
-      setEmail(pendingInviteEmail);
-      setEmailLocked(true);
-      // Check if this email exists in the system
-      checkEmailExists(pendingInviteEmail);
+    if (searchParams.get('signup') === '1') {
+      setIsSignUp(true);
     }
 
-    // Check if already logged in
-    checkExistingSession();
+    // Init supabase, check session, then handle pending invite
+    import("@/lib/supabaseClient").then(async (mod) => {
+      const client = mod.getSupabaseClient();
+      setSupabase(client);
+
+      // Use Supabase's own session check (handles expiry + refresh correctly)
+      const { data } = await client.auth.getSession();
+      if (data?.session?.user) {
+        router.push('/');
+        return;
+      }
+
+      // Only process pending invite if user is NOT already logged in
+      const pendingInviteEmail = localStorage.getItem("pending_invite_email");
+      if (pendingInviteEmail) {
+        setEmail(pendingInviteEmail);
+        setEmailLocked(true);
+        checkEmailExists(pendingInviteEmail);
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -82,18 +85,6 @@ export default function LoginPage() {
       }
     } catch (err) {
       console.error('[Login] Error checking email:', err);
-    }
-  };
-
-  const checkExistingSession = async () => {
-    try {
-      const stored = localStorage.getItem('approved-auth');
-      if (stored) {
-        console.log('[Login] Found existing auth in localStorage');
-        router.push('/');
-      }
-    } catch (err) {
-      console.error('[Login] Error checking session:', err);
     }
   };
 
@@ -485,7 +476,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !supabase}
               style={{
                 width: "100%",
                 padding: "0.75rem",
@@ -494,8 +485,8 @@ export default function LoginPage() {
                 border: "none",
                 borderRadius: "4px",
                 fontSize: "1rem",
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.6 : 1,
+                cursor: (loading || !supabase) ? "not-allowed" : "pointer",
+                opacity: (loading || !supabase) ? 0.6 : 1,
                 marginBottom: "1rem"
               }}
             >
