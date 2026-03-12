@@ -4376,10 +4376,8 @@ function loadAudioPlayer(project, cue, version) {
           version.media.waveformSaved = true;
           cacheSet(waveformParseCache, version.id, realPeaks);
           persistWaveformPeaks(version);
-          // Redraw with real peaks
-          if (ws.drawer && typeof ws.drawer.drawPeaks === 'function') {
-            ws.drawer.drawPeaks(realPeaks, ws.getDuration(), 0, ws.getDuration());
-          }
+          // Redraw with real peaks using correct canvas width
+          try { ws.drawBuffer(); } catch (e) {}
         }
       } catch (e) {
         // Ignore peak extraction errors
