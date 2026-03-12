@@ -48,11 +48,26 @@ export default function LoginPage() {
       const client = mod.getSupabaseClient();
       setSupabase(client);
 
-      // Use Supabase's own session check (handles expiry + refresh correctly)
-      const { data } = await client.auth.getSession();
-      if (data?.session?.user) {
-        router.push('/');
-        return;
+      // Timeout su getSession() per evitare lock su sessione scaduta
+      try {
+        const { data } = await Promise.race([
+          client.auth.getSession(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('session timeout')), 4000)
+          ),
+        ]) as any;
+        if (data?.session?.user) {
+          router.push('/');
+          return;
+        }
+      } catch {
+        // Timeout o errore: mostra semplicemente il form di login
+        // Pulisci localStorage solo direttamente, senza signOut()
+        try {
+          Object.keys(localStorage).forEach(key => {
+            if (key === 'approved-auth' || key.startsWith('sb-')) localStorage.removeItem(key);
+          });
+        } catch {}
       }
 
       // Only process pending invite if user is NOT already logged in
@@ -173,7 +188,9 @@ export default function LoginPage() {
       }
     } catch (error: any) {
       console.error('[Login] Error:', error);
-      setMessage(error.message || bi("Autenticazione fallita", "Authentication failed"));
+      const errMsg = error.message || bi("Autenticazione fallita", "Authentication failed");
+      const errDetail = error.status ? ` (${error.status})` : error.__isAuthError ? ' [AuthError]' : error.name && error.name !== 'Error' ? ` [${error.name}]` : '';
+      setMessage(errMsg + errDetail);
     } finally {
       setLoading(false);
     }
