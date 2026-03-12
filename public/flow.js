@@ -6006,8 +6006,8 @@ function renderCueList(options = {}) {
     const canOwnerActions = roleCanModify(getProjectRole(project));
     const canClientApprove = false;
     menu.innerHTML = `
-      <button data-action="rename">${tr("action.rename")}</button>
-      <button data-action="delete">${tr("action.delete")}</button>
+      ${canOwnerActions ? `<button data-action="rename">${tr("action.rename")}</button>
+      <button data-action="delete">${tr("action.delete")}</button>` : ""}
       ${
         canClientApprove
           ? `<div class="menu-sep"></div>
@@ -6016,8 +6016,10 @@ function renderCueList(options = {}) {
       }
     `;
 
-    dd.appendChild(btn);
-    dd.appendChild(menu);
+    if (canOwnerActions || canClientApprove) {
+      dd.appendChild(btn);
+      dd.appendChild(menu);
+    }
 
     // IMPORTANT: Add event listeners immediately while dd, btn, menu are in scope for this cue
     btn.addEventListener("click", e => {
@@ -6392,11 +6394,12 @@ function renderCueList(options = {}) {
       manageMenuBtn.className = "icon-btn tiny download-toggle";
       manageMenuBtn.textContent = "⋯";
 
+      const canModifyVersion = roleCanModify(getProjectRole(project));
       const manageMenu = document.createElement("div");
       manageMenu.className = "download-menu";
       manageMenu.innerHTML = `
-        <button data-action="rename-version">${tr("action.rename")}</button>
-        <button data-action="delete-version">${tr("action.delete")}</button>
+        ${canModifyVersion ? `<button data-action="rename-version">${tr("action.rename")}</button>
+        <button data-action="delete-version">${tr("action.delete")}</button>` : ""}
       `;
 
       manageMenuWrap.appendChild(manageMenuBtn);
@@ -6593,7 +6596,7 @@ function renderCueList(options = {}) {
       console.log("[FlowPreview] Event listeners added for version menu:", version.id, "manageMenuBtn:", manageMenuBtn);
 
       top.appendChild(dd2);
-      top.appendChild(manageMenuWrap);
+      if (canModifyVersion) top.appendChild(manageMenuWrap);
       actions.appendChild(top);
 
       row.appendChild(lab);
@@ -7337,16 +7340,19 @@ function renderReferences() {
     ddBtn.className = "ghost-btn tiny download-toggle";
     ddBtn.textContent = "⋯";
 
+    const canModifyRefs = roleCanModify(getProjectRole(project));
     const ddMenu = document.createElement("div");
     ddMenu.className = "download-menu";
     ddMenu.innerHTML = `
-      <button data-action="rename-active-version">${tr("refs.menuRenameActive")}</button>
+      ${canModifyRefs ? `<button data-action="rename-active-version">${tr("refs.menuRenameActive")}</button>
       <button data-action="delete-active-version">${tr("refs.menuDeleteActive")}</button>
-      <button data-action="delete-group">${tr("refs.menuDeleteGroup")}</button>
+      <button data-action="delete-group">${tr("refs.menuDeleteGroup")}</button>` : ""}
     `;
 
-    dd.appendChild(ddBtn);
-    dd.appendChild(ddMenu);
+    if (canModifyRefs) {
+      dd.appendChild(ddBtn);
+      dd.appendChild(ddMenu);
+    }
 
     actions.appendChild(chip);
     actions.appendChild(dd);
@@ -7463,12 +7469,13 @@ function renderReferences() {
       vMenuBtn.className = "icon-btn tiny download-toggle";
       vMenuBtn.textContent = "⋯";
 
+      const canModifyRefVersion = roleCanModify(getProjectRole(project));
       const vMenu = document.createElement("div");
       vMenu.className = "download-menu";
       vMenu.innerHTML = `
         <button data-action="set-active">${tr("refs.menuSetActive")}</button>
-        <button data-action="rename-version">${tr("action.renameVersion")}</button>
-        <button data-action="delete-version">${tr("action.deleteVersion")}</button>
+        ${canModifyRefVersion ? `<button data-action="rename-version">${tr("action.renameVersion")}</button>
+        <button data-action="delete-version">${tr("action.deleteVersion")}</button>` : ""}
         <button data-action="download-version">${tr("action.download")}</button>
       `;
 
@@ -8193,48 +8200,7 @@ function renderProjectList() {
       li.addEventListener('click', clickHandler);
       label.addEventListener('click', clickHandler);
 
-      // For shared projects show the same dropdown markup/behavior as owned projects
-      const ddShared = document.createElement('div');
-      ddShared.className = 'download-dropdown project-dropdown';
-
-      const btnShared = document.createElement('button');
-      btnShared.type = 'button';
-      btnShared.className = 'icon-btn tiny download-toggle';
-      btnShared.textContent = '⋯';
-      btnShared.title = tr("header.projectOptions", {}, "Project options");
-
-      const menuShared = document.createElement('div');
-      menuShared.className = 'download-menu';
-      menuShared.innerHTML = `
-        <button data-action="rename">${tr("action.rename")}</button>
-        <button data-action="delete">${tr("action.delete")}</button>
-      `;
-
-      ddShared.appendChild(btnShared);
-      ddShared.appendChild(menuShared);
-
-      // Toggle open/close for shared project menu
-      btnShared.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const open = ddShared.classList.contains('open');
-        document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
-        if (!open) ddShared.classList.add('open');
-      });
-
-      // Menu actions for shared projects (same as owned)
-      menuShared.querySelectorAll('button').forEach(b => {
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          ddShared.classList.remove('open');
-          const action = b.dataset.action;
-          if (action === 'rename') renameProject(project);
-          if (action === 'delete') deleteProject(project.id);
-        });
-      });
-
-      li.appendChild(ddShared);
+      // Shared projects: no rename/delete actions for non-owners
     }
 
     return li;
