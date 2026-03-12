@@ -954,14 +954,6 @@ const finalDeliveryDropzoneEl = document.getElementById("finalDeliveryDropzone")
 const finalDeliveryListEl = document.getElementById("finalDeliveryList");
 const finalDeliveryDownloadBtn = document.getElementById("finalDeliveryDownloadBtn");
 const finalDeliveryEmptyHint = document.getElementById("finalDeliveryEmptyHint");
-const onboardingOverlay = document.getElementById("onboardingOverlay");
-const onboardingStepTitle = document.getElementById("onboardingStepTitle");
-const onboardingStepText = document.getElementById("onboardingStepText");
-const onboardingPrevBtn = document.getElementById("onboardingPrevBtn");
-const onboardingNextBtn = document.getElementById("onboardingNextBtn");
-const onboardingDismissBtn = document.getElementById("onboardingDismissBtn");
-const onboardingDontShow = document.getElementById("onboardingDontShow");
-const onboardingShowAgainBtn = document.getElementById("onboardingShowAgainBtn");
 const addCommentBtn = document.getElementById("addCommentBtn");
 if (!addCommentBtn) console.error('[FlowPreview] addCommentBtn not found in DOM');
 const voiceRecordBtn = document.getElementById("voiceRecordBtn");
@@ -9420,21 +9412,7 @@ function renderAll() {
   maybeShowOnboarding();
 }
 
-function maybeShowOnboarding() {
-  const project = getActiveProject();
-  if (!project || !onboardingOverlay) return;
-  const role = getProjectRole(project);
-  if (roleCanModify(role)) return;
-  try {
-    const shareRaw = localStorage.getItem('approved_share_link');
-    const share = shareRaw ? JSON.parse(shareRaw) : null;
-    const key = `onboarding_done:${share?.share_id || project.id}`;
-    if (localStorage.getItem(key)) return;
-  } catch (e) {}
-  if (typeof window.showOnboardingOverlay === 'function') {
-    window.showOnboardingOverlay();
-  }
-}
+function maybeShowOnboarding() {}
 
 // Export for page.tsx to call after auth
 window.initializeFromSupabase = initializeFromSupabase;
@@ -9979,98 +9957,7 @@ function initFinalDeliveryUI() {
   }
 }
 
-const onboardingSteps = [
-  {
-    title: biText('Play', 'Play'),
-    text: biText('Premi Play per ascoltare la versione sincronizzata.', 'Press Play to listen to the synced version.')
-  },
-  {
-    title: biText('Commenta', 'Comment'),
-    text: biText('Clicca sul player e scrivi un commento con timecode automatico.', 'Click on the player and add a comment with automatic timecode.')
-  },
-  {
-    title: biText('Chiudi review', 'Close review'),
-    text: biText('Quando hai finito, chiudi la review per segnalare che hai completato i feedback.', 'When you are done, close the review to mark feedback as completed.')
-  },
-  {
-    title: biText('Approva o richiedi modifiche', 'Approve or request changes'),
-    text: biText('Se è tutto ok, approva la versione. Altrimenti richiedi modifiche.', 'If everything is fine, approve the version. Otherwise request changes.')
-  }
-];
-
 function initOnboardingUI() {
-  if (!onboardingOverlay) return;
-  let stepIndex = 0;
-
-  const renderStep = () => {
-    const step = onboardingSteps[stepIndex];
-    if (onboardingStepTitle) onboardingStepTitle.textContent = step.title;
-    if (onboardingStepText) onboardingStepText.textContent = step.text;
-    if (onboardingPrevBtn) onboardingPrevBtn.style.display = stepIndex === 0 ? 'none' : 'inline-flex';
-    if (onboardingNextBtn) onboardingNextBtn.textContent = stepIndex === onboardingSteps.length - 1
-      ? biText('Fine', 'Finish')
-      : biText('Avanti', 'Next');
-  };
-
-  const closeOverlay = async (completed) => {
-    onboardingOverlay.style.display = 'none';
-    if (!completed) return;
-    const project = getActiveProject();
-    if (!project) return;
-    const shareRaw = localStorage.getItem('approved_share_link');
-    const share = shareRaw ? JSON.parse(shareRaw) : null;
-    const key = `onboarding_done:${share?.share_id || project.id}`;
-    localStorage.setItem(key, '1');
-    try {
-      const headers = await getAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      await fetch('/api/onboarding/complete', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ projectId: project.id, shareId: share?.share_id || null })
-      });
-    } catch (e) {}
-  };
-
-  if (onboardingPrevBtn) onboardingPrevBtn.addEventListener('click', () => { stepIndex = Math.max(0, stepIndex - 1); renderStep(); });
-  if (onboardingNextBtn) onboardingNextBtn.addEventListener('click', () => {
-    if (stepIndex < onboardingSteps.length - 1) {
-      stepIndex += 1;
-      renderStep();
-    } else {
-      closeOverlay(true);
-    }
-  });
-  if (onboardingDismissBtn) onboardingDismissBtn.addEventListener('click', () => closeOverlay(false));
-  if (onboardingShowAgainBtn) onboardingShowAgainBtn.addEventListener('click', () => {
-    const project = getActiveProject();
-    const shareRaw = localStorage.getItem('approved_share_link');
-    const share = shareRaw ? JSON.parse(shareRaw) : null;
-    const key = `onboarding_done:${share?.share_id || project?.id}`;
-    if (key) localStorage.removeItem(key);
-    stepIndex = 0;
-    renderStep();
-    onboardingOverlay.style.display = 'flex';
-  });
-
-  if (onboardingDontShow) {
-    onboardingDontShow.addEventListener('change', () => {
-      if (!onboardingDontShow.checked) return;
-      const project = getActiveProject();
-      const shareRaw = localStorage.getItem('approved_share_link');
-      const share = shareRaw ? JSON.parse(shareRaw) : null;
-      const key = `onboarding_done:${share?.share_id || project?.id}`;
-      if (key) localStorage.setItem(key, '1');
-    });
-  }
-
-  window.showOnboardingOverlay = function () {
-    stepIndex = 0;
-    renderStep();
-    onboardingOverlay.style.display = 'flex';
-  };
-
-  maybeShowOnboarding();
 }
 
 async function loadAndRenderProjectNotes() {

@@ -451,23 +451,6 @@ export default function Page() {
         </div>
       </div>
 
-      <!-- ONBOARDING OVERLAY -->
-      <div id="onboardingOverlay" class="onboarding-overlay" style="display: none;">
-        <div class="onboarding-card">
-          <div id="onboardingStepTitle" class="onboarding-title">Benvenuto / Welcome</div>
-          <div id="onboardingStepText" class="onboarding-text">Contenuto step / Step content</div>
-          <div class="onboarding-actions">
-            <button id="onboardingPrevBtn" class="ghost-btn tiny">Indietro / Back</button>
-            <button id="onboardingNextBtn" class="primary-btn tiny">Avanti / Next</button>
-            <button id="onboardingDismissBtn" class="ghost-btn tiny">Salta / Skip</button>
-          </div>
-          <label class="onboarding-checkbox">
-            <input id="onboardingDontShow" type="checkbox" />
-            <span>Non mostrare piu / Don't show again</span>
-          </label>
-          <button id="onboardingShowAgainBtn" class="ghost-btn tiny">Mostra di nuovo / Show again</button>
-        </div>
-      </div>
 
       <!-- RIGHT COLUMN -->
       <div class="right-column">
