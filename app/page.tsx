@@ -24,7 +24,14 @@ export default function Page() {
       try {
         const { getSupabaseClient } = await import("@/lib/supabaseClient");
         const client = getSupabaseClient();
-        const { data } = await client.auth.getSession();
+
+        // Timeout di sicurezza: se getSession() non risponde entro 6s mostra la landing
+        const { data } = await Promise.race([
+          client.auth.getSession(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Auth check timeout')), 6000)
+          ),
+        ]) as any;
 
         if (data?.session?.user) {
           setIsLoggedIn(true);
