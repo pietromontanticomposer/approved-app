@@ -359,6 +359,14 @@ function safeWriteLocalStorage(key, value) {
   }
 }
 
+function safeRemoveLocalStorage(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (err) {
+    // Ignore quota/private mode errors
+  }
+}
+
 function clonePlain(value) {
   if (value === null || value === undefined) return value;
   try {
@@ -2488,16 +2496,93 @@ async function deleteProject(id) {
     return;
   }
 
-  state.projects = state.projects.filter(x => x.id !== id);
-  state.activeProjectId =
-    state.projects.length ? state.projects[state.projects.length - 1].id : null;
-
-  currentPlayerVersionId = null;
-  currentPlayerMediaType = null;
-  currentPlayerCueId = null;
-  state.playerMode = "review";
-
+  removeProjectFromState(id);
   renderAll();
+}
+
+function removeProjectFromState(projectId) {
+  const removedIndex = state.projects.findIndex(project => project.id === projectId);
+  if (removedIndex === -1) return;
+
+  const removedActiveProject = state.activeProjectId === projectId;
+  state.projects = state.projects.filter(project => project.id !== projectId);
+  projectDataCache.delete(projectId);
+
+  if (removedActiveProject) {
+    const fallbackProject =
+      state.projects[removedIndex] ||
+      state.projects[removedIndex - 1] ||
+      state.projects[0] ||
+      null;
+
+    state.activeProjectId = fallbackProject ? fallbackProject.id : null;
+    currentPlayerVersionId = null;
+    currentPlayerMediaType = null;
+    currentPlayerCueId = null;
+    state.playerMode = "review";
+
+    refreshSharedWithPanel(false);
+
+    if (fallbackProject) {
+      if (!fallbackProject.cues || fallbackProject.cues.length === 0) {
+        loadProjectCues(fallbackProject.id).catch(err => {
+          console.warn('[Flow] Failed to load fallback project after removal', err);
+        });
+      }
+
+      loadProjectNotes(fallbackProject.id).catch(err => {
+        console.warn('[Flow] Failed to load fallback project notes after removal', err);
+      });
+    }
+  }
+
+  if (state.projects.length === 0) {
+    safeRemoveLocalStorage(FAST_BOOT_CACHE_KEY);
+    return;
+  }
+
+  persistFastBootCache();
+}
+
+async function leaveProject(project) {
+  if (!project || !project.id) return;
+
+  const confirmed = await showConfirmDialog({
+    title: tr('project.leave', {}, 'Leave project'),
+    message: tr('project.leaveConfirm', { name: project.name }, `Leave "${project.name}"? You will lose access.`),
+    confirmLabel: tr('project.leave', {}, 'Leave project'),
+    cancelLabel: tr('action.cancel', {}, 'Cancel')
+  });
+  if (!confirmed) return;
+
+  try {
+    const headers = await getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+    const res = await fetch('/api/projects/leave', {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({ project_id: project.id })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (payload?.code === 'TEAM_SHARED_PROJECT') {
+        showAlert(tr(
+          'project.leaveTeamShared',
+          {},
+          'This project is shared through a team. Leave the team to remove access.'
+        ));
+        return;
+      }
+      showAlert(payload?.error || biText('Errore nel lasciare il progetto', 'Error while leaving project'));
+      return;
+    }
+
+    removeProjectFromState(project.id);
+    renderAll();
+  } catch (err) {
+    console.error('[FlowPreview] Exception leaving project', err);
+    showAlert(biText('Errore nel lasciare il progetto', 'Error while leaving project'));
+  }
 }
 
 // =======================
@@ -8056,28 +8141,42 @@ function showProjectMenu(event, project) {
     padding: 4px 0;
   `;
 
-  const renameOption = document.createElement('div');
-  renameOption.textContent = 'Rename';
-  renameOption.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:14px;color:#374151;';
-  renameOption.addEventListener('mouseenter', () => { renameOption.style.background = '#f3f4f6'; });
-  renameOption.addEventListener('mouseleave', () => { renameOption.style.background = 'transparent'; });
-  renameOption.addEventListener('click', () => {
-    menu.remove();
-    renameProject(project);
-  });
+  const entries = isOwnerOfProject(project)
+    ? [
+        {
+          label: tr('action.rename', {}, 'Rename'),
+          color: '#374151',
+          hover: '#f3f4f6',
+          onClick: () => renameProject(project)
+        },
+        {
+          label: tr('action.delete', {}, 'Delete'),
+          color: '#dc2626',
+          hover: '#fef2f2',
+          onClick: () => deleteProject(project.id)
+        }
+      ]
+    : [
+        {
+          label: tr('project.leave', {}, 'Leave project'),
+          color: '#dc2626',
+          hover: '#fef2f2',
+          onClick: () => leaveProject(project)
+        }
+      ];
 
-  const deleteOption = document.createElement('div');
-  deleteOption.textContent = 'Delete';
-  deleteOption.style.cssText = 'padding:8px 16px;cursor:pointer;font-size:14px;color:#dc2626;';
-  deleteOption.addEventListener('mouseenter', () => { deleteOption.style.background = '#fef2f2'; });
-  deleteOption.addEventListener('mouseleave', () => { deleteOption.style.background = 'transparent'; });
-  deleteOption.addEventListener('click', () => {
-    menu.remove();
-    deleteProject(project.id);
+  entries.forEach((entry) => {
+    const option = document.createElement('div');
+    option.textContent = entry.label;
+    option.style.cssText = `padding:8px 16px;cursor:pointer;font-size:14px;color:${entry.color};`;
+    option.addEventListener('mouseenter', () => { option.style.background = entry.hover; });
+    option.addEventListener('mouseleave', () => { option.style.background = 'transparent'; });
+    option.addEventListener('click', () => {
+      menu.remove();
+      entry.onClick();
+    });
+    menu.appendChild(option);
   });
-
-  menu.appendChild(renameOption);
-  menu.appendChild(deleteOption);
 
   // Position menu near the click
   document.body.appendChild(menu);
@@ -8207,6 +8306,7 @@ function renderProjectList() {
       btnShared.type = 'button';
       btnShared.className = 'icon-btn tiny download-toggle';
       btnShared.textContent = '⋯';
+      btnShared.title = tr("header.projectOptions", {}, "Project options");
 
       const menuShared = document.createElement('div');
       menuShared.className = 'download-menu';
@@ -8231,32 +8331,7 @@ function renderProjectList() {
         e.preventDefault();
         e.stopPropagation();
         ddShared.classList.remove('open');
-        const confirmed = await showConfirmDialog({
-          title: tr('project.leave', {}, 'Leave project'),
-          message: tr('project.leaveConfirm', { name: project.name }, `Leave "${project.name}"? You will lose access.`),
-          confirmLabel: tr('project.leave', {}, 'Leave project'),
-          cancelLabel: tr('action.cancel', {}, 'Cancel')
-        });
-        if (!confirmed) return;
-        try {
-          const headers = await getAuthHeaders();
-          headers['Content-Type'] = 'application/json';
-          const res = await fetch('/api/projects/leave', {
-            method: 'DELETE',
-            headers,
-            body: JSON.stringify({ project_id: project.id })
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showAlert(err.error || tr('error.generic', {}, 'Error'));
-            return;
-          }
-          state.projects = state.projects.filter(p => p.id !== project.id);
-          if (state.activeProjectId === project.id) state.activeProjectId = null;
-          renderAll();
-        } catch (err) {
-          showAlert(tr('error.network', {}, 'Network error'));
-        }
+        leaveProject(project);
       });
     }
 
@@ -8318,6 +8393,9 @@ function renderProjectHeader() {
     var t = window.i18n && window.i18n.t ? window.i18n.t : function(k) { return k; };
     projectTitleEl.textContent = t('header.noProject');
     projectMetaEl.textContent = t('header.getStarted');
+    projectTitleEl.onclick = null;
+    projectTitleEl.style.cursor = 'default';
+    projectMenuBtn.onclick = null;
     projectMenuBtn.style.display = "none";
     return;
   }
@@ -8333,8 +8411,20 @@ function renderProjectHeader() {
     versions === 1 ? tr("misc.version") : tr("misc.versions");
   projectMetaEl.textContent = `${cues} ${cuesLabel} · ${versions} ${versionsLabel}`;
 
-  projectTitleEl.onclick = () => renameProject(project);
-  projectMenuBtn.onclick = () => deleteProject(project.id);
+  if (isOwnerOfProject(project)) {
+    projectTitleEl.onclick = () => renameProject(project);
+    projectTitleEl.style.cursor = 'pointer';
+  } else {
+    projectTitleEl.onclick = null;
+    projectTitleEl.style.cursor = 'default';
+  }
+
+  projectMenuBtn.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showProjectMenu(event, project);
+  };
+  projectMenuBtn.title = tr("header.projectOptions", {}, "Project options");
   projectMenuBtn.style.display = "inline-flex";
 }
 

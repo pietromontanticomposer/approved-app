@@ -33,8 +33,20 @@ export async function GET(req: NextRequest) {
     if (error) throw error;
     if (!invites || invites.length === 0) return NextResponse.json({ invites: [] });
 
-    const projectIds = [...new Set(invites.filter(i => i.project_id).map(i => i.project_id))];
-    const inviterIds = [...new Set(invites.filter(i => i.invited_by).map(i => i.invited_by))];
+    const projectIds = Array.from(
+      new Set(
+        invites
+          .map((invite) => invite.project_id)
+          .filter((projectId): projectId is string => typeof projectId === "string" && projectId.length > 0)
+      )
+    );
+    const inviterIds = Array.from(
+      new Set(
+        invites
+          .map((invite) => invite.invited_by)
+          .filter((invitedBy): invitedBy is string => typeof invitedBy === "string" && invitedBy.length > 0)
+      )
+    );
 
     const [projectsRes, invitersRes] = await Promise.all([
       projectIds.length > 0

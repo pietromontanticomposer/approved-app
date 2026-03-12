@@ -200,6 +200,7 @@
       // Actions
       'project.leave': 'Leave project',
       'project.leaveConfirm': 'Leave "{name}"? You will lose access to this project.',
+      'project.leaveTeamShared': 'This project is shared through a team. Leave the team to remove access.',
       'action.rename': 'Rename',
       'action.delete': 'Delete',
       'action.download': 'Download',
@@ -450,6 +451,7 @@
       // Actions
       'project.leave': 'Lascia progetto',
       'project.leaveConfirm': 'Lasciare "{name}"? Perderai l\'accesso a questo progetto.',
+      'project.leaveTeamShared': 'Questo progetto ti e\' condiviso tramite un team. Devi uscire dal team per perdere l\'accesso.',
       'action.rename': 'Rinomina',
       'action.delete': 'Elimina',
       'action.download': 'Scarica',
