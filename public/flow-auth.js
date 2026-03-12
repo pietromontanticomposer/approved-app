@@ -9,16 +9,24 @@ const authState = {
 };
 
 // Initialize on load
-async function initAuth() {
+// existingSession: se passato da page.tsx salta la chiamata getSession() ridondante
+async function initAuth(existingSession) {
   console.log('[FlowAuth] Initializing auth...');
-  
+
   if (!window.supabaseClient) {
     console.warn('[FlowAuth] Supabase client not ready');
     return false;
   }
 
   try {
-    const { data: { session }, error } = await window.supabaseClient.auth.getSession();
+    let session = existingSession || null;
+    let error = null;
+
+    if (!session) {
+      const res = await window.supabaseClient.auth.getSession();
+      session = res.data?.session || null;
+      error = res.error;
+    }
 
     if (error || !session) {
       console.log('[FlowAuth] No session found');
@@ -42,7 +50,7 @@ async function initAuth() {
     } else {
       authState.session = session;
       authState.user = session.user;
-      console.log('[FlowAuth] ✅ Session loaded:', session.user.email);
+      console.log('[FlowAuth] ✅ Session loaded:', session.user.email, existingSession ? '(cached)' : '(fresh)');
 
       // Check if user is approved
       try {

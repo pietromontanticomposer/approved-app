@@ -41,7 +41,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, max-age=0',
+            value: 'public, max-age=300, stale-while-revalidate=60',
           },
         ],
       },
@@ -65,13 +65,13 @@ const nextConfig = {
           },
         ],
       },
-      // Cache media streaming with long TTL
+      // Media stream: private (file autenticati — non devono mai finire in cache CDN pubblica)
       {
         source: '/api/media/stream',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value: 'private, max-age=3600',
           },
         ],
       },

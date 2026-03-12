@@ -34,6 +34,8 @@ export default function Page() {
         ]) as any;
 
         if (data?.session?.user) {
+          // Cache session for flow-auth.js — evita un secondo getSession() ridondante
+          (window as any).__approvedSession = data.session;
           setIsLoggedIn(true);
         } else {
           setIsLoggedIn(false);
@@ -73,12 +75,12 @@ export default function Page() {
     const storageBucket = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET || 'media';
     (window as any).SUPABASE_PUBLIC_STORAGE_URL = `${supabaseUrl}/storage/v1/object/public/${storageBucket}`;
 
-    // Initialize supabase client immediately
+    // Initialize supabase client and signal readiness via event (no polling)
     const initSupabase = async () => {
       const { getSupabaseClient } = await import("@/lib/supabaseClient");
       const client = getSupabaseClient();
       (window as any).supabaseClient = client;
-      console.log('[HomePage] Supabase client ready:', !!client);
+      window.dispatchEvent(new Event('supabase-client-ready'));
     };
 
     initSupabase();
@@ -715,14 +717,7 @@ export default function Page() {
         />
       )}
 
-      <Script
-        src="https://unpkg.com/@supabase/supabase-js@2"
-        strategy="beforeInteractive"
-      />
-      <Script
-        src="/vendor/wavesurfer.min.js?v=6.6.4"
-        strategy="beforeInteractive"
-      />
+      <Script src="/vendor/wavesurfer.min.js?v=6.6.4" strategy="afterInteractive" />
       <Script src="/i18n.js?v=13" strategy="afterInteractive" />
       <Script src="/flow-auth.js?v=9" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
@@ -730,97 +725,57 @@ export default function Page() {
         src="/flow.js?v=14"
         strategy="afterInteractive"
         onLoad={() => {
-          console.log('[PageInit] Scripts loaded');
-          
-          // Wait for supabaseClient to be ready, then init auth
-          const waitForSupabase = setInterval(async () => {
-            if ((window as any).supabaseClient) {
-              clearInterval(waitForSupabase);
-              console.log('[PageInit] Supabase ready, initializing auth...');
-              
-              if ((window as any).flowAuth && typeof (window as any).flowAuth.initAuth === 'function') {
-                const ready = await (window as any).flowAuth.initAuth();
-                if (!ready) {
-                  console.log('[PageInit] Auth failed - will redirect to login');
-                } else {
-                  console.log('[PageInit] ✅ Auth successful, app loaded');
+          const boot = async () => {
+            if (typeof (window as any).flowAuth?.initAuth !== 'function') {
+              console.error('[PageInit] flowAuth.initAuth not found');
+              return;
+            }
+            // Passa la sessione già nota — evita un secondo getSession() in flow-auth.js
+            const ready = await (window as any).flowAuth.initAuth((window as any).__approvedSession);
+            if (!ready) return;
 
-                  // If there's a pending share/invite from login redirect, consume it first
-                  try {
-                    const pendingShare = localStorage.getItem('pending_share');
-                    if (pendingShare) {
-                      localStorage.removeItem('pending_share');
-                      try {
-                        const p = JSON.parse(pendingShare);
-                        if (p && p.share_id) {
-                          const t = p.token ? `?token=${encodeURIComponent(p.token)}` : '';
-                          window.location.href = `/share/${p.share_id}${t}`;
-                          return;
-                        }
-                      } catch {
-                        window.location.href = `/share/${pendingShare}`;
-                        return;
-                      }
-                    }
-                    const pendingInvite = localStorage.getItem('pending_invite');
-                    if (pendingInvite) {
-                      localStorage.removeItem('pending_invite');
-                      window.location.href = `/invite/${pendingInvite}`;
-                      return;
-                    }
-                  } catch (e) {
-                    console.warn('[PageInit] Error checking pending share/invite', e);
+            // Gestisci pending share/invite
+            try {
+              const pendingShare = localStorage.getItem('pending_share');
+              if (pendingShare) {
+                localStorage.removeItem('pending_share');
+                try {
+                  const p = JSON.parse(pendingShare);
+                  if (p?.share_id) {
+                    const t = p.token ? `?token=${encodeURIComponent(p.token)}` : '';
+                    window.location.href = `/share/${p.share_id}${t}`;
+                    return;
                   }
-
-                  // Defer heavy bootstrap until auth is ready
-                  // Try to call the main initializer; if not present, attempt
-                  // the safe fallback exposed by `flow-init.js`. If neither is
-                  // available yet, wait briefly and retry for robustness.
-                  const callInitOrFallback = async () => {
-                    if (typeof (window as any).initializeFromSupabase === 'function') {
-                      console.log('[PageInit] Calling initializeFromSupabase...');
-                      (window as any).initializeFromSupabase();
-                      return;
-                    }
-
-                    if (typeof (window as any).safeFetchProjectsFallback === 'function') {
-                      console.log('[PageInit] initializeFromSupabase not found - calling safeFetchProjectsFallback');
-                      try {
-                        await (window as any).safeFetchProjectsFallback();
-                        return;
-                      } catch (e) {
-                        console.warn('[PageInit] safeFetchProjectsFallback failed', e);
-                      }
-                    }
-
-                    // Retry a couple of times in case scripts are still loading
-                    for (let i = 0; i < 6; i++) {
-                      await new Promise(r => setTimeout(r, 250));
-                      if (typeof (window as any).initializeFromSupabase === 'function') {
-                        console.log('[PageInit] initializeFromSupabase became available - calling it');
-                        (window as any).initializeFromSupabase();
-                        return;
-                      }
-                    }
-
-                    console.warn('[PageInit] initializeFromSupabase NOT FOUND after retries');
-                  };
-
-                  callInitOrFallback().catch(e => console.error('[PageInit] init/fallback error', e));
-                }
-              } else {
-                console.error('[PageInit] flowAuth.initAuth not found');
+                } catch { window.location.href = `/share/${pendingShare}`; return; }
               }
+              const pendingInvite = localStorage.getItem('pending_invite');
+              if (pendingInvite) {
+                localStorage.removeItem('pending_invite');
+                window.location.href = `/invite/${pendingInvite}`;
+                return;
+              }
+            } catch {}
+
+            // Avvia bootstrap — flag per evitare doppio fetch da flow-init.js
+            (window as any).__flowInitializing = true;
+            if (typeof (window as any).initializeFromSupabase === 'function') {
+              (window as any).initializeFromSupabase();
+            } else if (typeof (window as any).safeFetchProjectsFallback === 'function') {
+              (window as any).safeFetchProjectsFallback();
             }
-          }, 50);
-          
-          // Timeout after 5 seconds
-          setTimeout(() => {
-            clearInterval(waitForSupabase);
-            if (!(window as any).supabaseClient) {
-              console.error('[PageInit] Supabase client not ready after 5s');
-            }
-          }, 5000);
+          };
+
+          // Avvia subito se supabaseClient è già pronto, altrimenti aspetta l'evento
+          if ((window as any).supabaseClient) {
+            boot();
+          } else {
+            window.addEventListener('supabase-client-ready', () => boot(), { once: true });
+            setTimeout(() => {
+              if (!(window as any).supabaseClient) {
+                console.error('[PageInit] supabase-client-ready mai ricevuto dopo 5s');
+              }
+            }, 5000);
+          }
         }}
       />
       <Script src="/flow-init.js" strategy="afterInteractive" />

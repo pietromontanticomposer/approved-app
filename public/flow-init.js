@@ -1,14 +1,24 @@
-// flow-init.js - defensive initializer to ensure projects are loaded
+// flow-init.js - fallback initializer (si attiva solo se page.tsx non ha già avviato il boot)
 (async function(){
   try {
-    console.log('[flow-init] start');
+    // Se page.tsx ha già avviato l'inizializzazione, non fare nulla
+    if (window.__flowInitializing) {
+      console.log('[flow-init] skipped — boot già in corso');
+      return;
+    }
 
-    // Wait a bit for supabaseClient/flowAuth/initializeFromSupabase to be available
+    console.log('[flow-init] start (fallback)');
+
+    // Aspetta al massimo 1s che i moduli principali siano pronti (era 2.5s)
     const wait = (ms) => new Promise(r => setTimeout(r, ms));
-    for (let i=0;i<50;i++) {
+    for (let i = 0; i < 20; i++) {
+      if (window.__flowInitializing) { console.log('[flow-init] boot iniziato, uscita'); return; }
       if (window.supabaseClient || window.flowAuth || window.initializeFromSupabase) break;
       await wait(50);
     }
+
+    // Controlla di nuovo dopo il polling
+    if (window.__flowInitializing) return;
 
     const safeFetchProjects = async () => {
       try {

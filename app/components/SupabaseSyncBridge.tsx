@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabaseClient } from "@/lib/supabaseClient";
 
 declare global {
   interface Window {
@@ -12,7 +12,7 @@ declare global {
 
 export default function SupabaseSyncBridge() {
   useEffect(() => {
-    // Expose Supabase client and sync functions to global scope
+    const supabase = getSupabaseClient();
     window.supabase = supabase;
 
     window.SupabaseSync = {
