@@ -150,13 +150,7 @@ export default function LoginPage() {
         }
         
         console.log('[Login] ✅ Sign in successful');
-        console.log('[Login] Checking localStorage...');
-        const stored = localStorage.getItem('approved-auth');
-        console.log('[Login] Auth in localStorage:', !!stored);
-        
-        // Wait for session to persist
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Check for pending invite or pending share
         const pendingInvite = localStorage.getItem("pending_invite");
         if (pendingInvite) {
