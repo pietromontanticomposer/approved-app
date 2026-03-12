@@ -448,8 +448,8 @@ function compactVersionForCache(version) {
           duration: version.media.duration || null,
           thumbnailUrl: version.media.thumbnailUrl || null,
           thumbnailPath: version.media.thumbnailPath || null,
-          waveform: null,
-          waveformSaved: false,
+          waveform: version.media.waveform || null,
+          waveformSaved: !!version.media.waveform,
           waveformImageUrl: version.media.waveformImageUrl || null,
           waveformImageSaved: !!version.media.waveformImageUrl
         }
