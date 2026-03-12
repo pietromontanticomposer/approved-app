@@ -4359,29 +4359,13 @@ function loadAudioPlayer(project, cue, version) {
     finalizeSwap();
     syncPlayState();
 
-    // Extract and save real peaks for future use
+    // Extract real peaks via AudioContext decode (MediaElement backend has no getPeaks)
     if (!version.media.waveformSaved) {
-      try {
-        let realPeaks = null;
-        if (ws.backend && typeof ws.backend.getPeaks === 'function') {
-          realPeaks = ws.backend.getPeaks(256);
-        } else if (ws.getDecodedData && typeof ws.getDecodedData === 'function') {
-          const decoded = ws.getDecodedData();
-          if (decoded) {
-            realPeaks = computeWaveformPeaksFromBuffer(decoded, 256)?.peaks;
-          }
-        }
-        if (realPeaks && realPeaks.length) {
-          version.media.waveform = realPeaks;
-          version.media.waveformSaved = true;
-          cacheSet(waveformParseCache, version.id, realPeaks);
-          persistWaveformPeaks(version);
-          // Redraw with real peaks using correct canvas width
-          try { ws.drawBuffer(); } catch (e) {}
-        }
-      } catch (e) {
-        // Ignore peak extraction errors
-      }
+      ensureWaveformPeaksForVersion(version).then(realPeaks => {
+        if (!realPeaks || !realPeaks.length) return;
+        if (mainWave !== ws || playerWaveLoadToken !== loadToken) return;
+        try { ws.drawBuffer(); } catch (e) {}
+      }).catch(() => {});
     }
   });
 
