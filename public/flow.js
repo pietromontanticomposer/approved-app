@@ -9378,6 +9378,8 @@ async function initializeFromSupabase() {
     renderAll();
     console.log("[Flow] Project list ready. Active project:", state.activeProjectId);
     persistFastBootCache();
+    // Load in-app invite notifications for users with an existing account
+    if (typeof window.loadPendingInvites === "function") window.loadPendingInvites();
 
     // Load active project data in background (non-blocking).
     if (bootProjectId) {
@@ -10516,6 +10518,155 @@ setTimeout(() => {
 // ==========================================
 // END NOTES FUNCTIONALITY
 // ==========================================
+
+// ========================
+// IN-APP INVITE NOTIFICATIONS
+// ========================
+
+(function () {
+  const bellWrap = document.getElementById("notifBellWrap");
+  const bellBtn = document.getElementById("notifBellBtn");
+  const badge = document.getElementById("notifBadge");
+  const panel = document.getElementById("notifPanel");
+  const list = document.getElementById("notifList");
+
+  if (!bellBtn || !panel || !list) return;
+
+  let pending = [];
+
+  function roleLabel(role) {
+    if (role === "editor") return biText("Editor", "Editor");
+    if (role === "commenter") return biText("Commentatore", "Commenter");
+    return biText("Visualizzatore", "Viewer");
+  }
+
+  function updateBadge() {
+    if (!badge) return;
+    if (pending.length > 0) {
+      badge.textContent = String(pending.length);
+      badge.style.display = "flex";
+    } else {
+      badge.style.display = "none";
+    }
+  }
+
+  function renderPanel() {
+    list.innerHTML = "";
+    if (pending.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "notif-empty";
+      empty.textContent = biText("Nessun invito in attesa", "No pending invites");
+      list.appendChild(empty);
+      return;
+    }
+    pending.forEach(inv => {
+      const item = document.createElement("div");
+      item.className = "notif-item";
+      const title = document.createElement("div");
+      title.className = "notif-item-title";
+      title.textContent = inv.project_name || biText("Progetto", "Project");
+      const meta = document.createElement("div");
+      meta.className = "notif-item-meta";
+      meta.textContent = biText("Invitato da", "Invited by") + " " + (inv.invited_by_name || "—") + " · " + roleLabel(inv.role);
+      const actions = document.createElement("div");
+      actions.className = "notif-item-actions";
+
+      const acceptBtn = document.createElement("button");
+      acceptBtn.className = "primary-btn tiny";
+      acceptBtn.textContent = biText("Accetta", "Accept");
+      acceptBtn.addEventListener("click", async () => {
+        acceptBtn.disabled = true;
+        acceptBtn.textContent = "…";
+        try {
+          const headers = await getAuthHeaders();
+          headers["Content-Type"] = "application/json";
+          const res = await fetch("/api/invites/accept", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ invite_token: inv.id })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showAlert(err.error || biText("Errore nell'accettare l'invito", "Error accepting invite"));
+            acceptBtn.disabled = false;
+            acceptBtn.textContent = biText("Accetta", "Accept");
+            return;
+          }
+          const result = await res.json();
+          pending = pending.filter(i => i.id !== inv.id);
+          updateBadge();
+          panel.style.display = "none";
+          // Reload project list to include the newly joined project
+          if (typeof initializeFromSupabase === "function") {
+            window.hasInitializedFromSupabase = false;
+            await initializeFromSupabase();
+          } else if (typeof renderAll === "function") {
+            renderAll();
+          }
+        } catch (e) {
+          showAlert(biText("Errore di rete", "Network error"));
+          acceptBtn.disabled = false;
+          acceptBtn.textContent = biText("Accetta", "Accept");
+        }
+      });
+
+      const dismissBtn = document.createElement("button");
+      dismissBtn.className = "ghost-btn tiny";
+      dismissBtn.textContent = biText("Ignora", "Dismiss");
+      dismissBtn.addEventListener("click", () => {
+        pending = pending.filter(i => i.id !== inv.id);
+        updateBadge();
+        renderPanel();
+      });
+
+      actions.appendChild(acceptBtn);
+      actions.appendChild(dismissBtn);
+      item.appendChild(title);
+      item.appendChild(meta);
+      item.appendChild(actions);
+      list.appendChild(item);
+    });
+  }
+
+  // Toggle panel open/close
+  bellBtn.addEventListener("click", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const isOpen = panel.style.display !== "none";
+    document.querySelectorAll(".download-dropdown.open").forEach(x => x.classList.remove("open"));
+    if (isOpen) {
+      panel.style.display = "none";
+    } else {
+      renderPanel();
+      panel.style.display = "block";
+    }
+  });
+
+  // Close panel on outside click
+  document.addEventListener("click", e => {
+    if (bellWrap && !bellWrap.contains(e.target)) {
+      panel.style.display = "none";
+    }
+  });
+
+  // Load pending invites from server
+  async function loadPendingInvites() {
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers["Authorization"]) return; // Not authenticated yet
+      const res = await fetch("/api/invites/pending", { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      pending = data.invites || [];
+      updateBadge();
+    } catch (e) {
+      // Silently ignore — non-critical feature
+    }
+  }
+
+  // Expose so initializeFromSupabase can call it after auth
+  window.loadPendingInvites = loadPendingInvites;
+})();
 
 console.log("[Flow] Script loaded, waiting for page.tsx to initialize...");
 

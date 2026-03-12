@@ -166,6 +166,16 @@ export default function Page() {
         </div>
       </div>
       <div class="topbar-actions">
+        <!-- NOTIFICATION BELL -->
+        <div id="notifBellWrap" class="download-dropdown notif-dropdown">
+          <button id="notifBellBtn" class="ghost-btn icon-btn notif-bell-btn" type="button">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span id="notifBadge" class="notif-badge" style="display:none">0</span>
+          </button>
+          <div id="notifPanel" class="download-menu notif-panel" style="display:none">
+            <div id="notifList"></div>
+          </div>
+        </div>
         <button id="myAccountBtn" class="ghost-btn" data-i18n="header.myAccount" onclick="window.location.href='/account'">
           My account
         </button>
