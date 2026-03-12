@@ -10684,10 +10684,14 @@ setTimeout(() => {
   const badge = document.getElementById("notifBadge");
   const panel = document.getElementById("notifPanel");
   const list = document.getElementById("notifList");
+  const NOTIF_POLL_INTERVAL_MS = 30000;
 
   if (!bellBtn || !panel || !list) return;
 
   let pending = [];
+  let pendingInvitesRequest = null;
+  let pendingInvitesPollTimer = null;
+  let pendingInvitesNeedsRender = false;
 
   function roleLabel(role) {
     if (role === "editor") return biText("Editor", "Editor");
@@ -10783,6 +10787,12 @@ setTimeout(() => {
     });
   }
 
+  function refreshPanelIfOpen() {
+    if (panel.style.display !== "none") {
+      renderPanel();
+    }
+  }
+
   // Toggle panel open/close
   bellBtn.addEventListener("click", e => {
     e.preventDefault();
@@ -10794,6 +10804,7 @@ setTimeout(() => {
     } else {
       renderPanel();
       panel.style.display = "block";
+      loadPendingInvites({ forceRender: true });
     }
   });
 
@@ -10805,19 +10816,51 @@ setTimeout(() => {
   });
 
   // Load pending invites from server
-  async function loadPendingInvites() {
-    try {
-      const headers = await getAuthHeaders();
-      if (!headers["Authorization"]) return; // Not authenticated yet
-      const res = await fetch("/api/invites/pending", { headers });
-      if (!res.ok) return;
-      const data = await res.json();
-      pending = data.invites || [];
-      updateBadge();
-    } catch (e) {
-      // Silently ignore — non-critical feature
-    }
+  async function loadPendingInvites(options = {}) {
+    const forceRender = options.forceRender === true;
+    if (forceRender) pendingInvitesNeedsRender = true;
+    if (pendingInvitesRequest) return pendingInvitesRequest;
+
+    pendingInvitesRequest = (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        if (!headers["Authorization"]) return;
+        const res = await fetch("/api/invites/pending", { headers, cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        pending = Array.isArray(data.invites) ? data.invites : [];
+        updateBadge();
+        if (pendingInvitesNeedsRender) refreshPanelIfOpen();
+      } catch (e) {
+        // Silently ignore — non-critical feature
+      } finally {
+        pendingInvitesNeedsRender = false;
+        pendingInvitesRequest = null;
+      }
+    })();
+
+    return pendingInvitesRequest;
   }
+
+  function startPendingInvitesPolling() {
+    if (pendingInvitesPollTimer) return;
+    pendingInvitesPollTimer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadPendingInvites({ forceRender: true });
+    }, NOTIF_POLL_INTERVAL_MS);
+  }
+
+  window.addEventListener("focus", () => {
+    loadPendingInvites({ forceRender: true });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      loadPendingInvites({ forceRender: true });
+    }
+  });
+
+  startPendingInvitesPolling();
 
   // Expose so initializeFromSupabase can call it after auth
   window.loadPendingInvites = loadPendingInvites;
