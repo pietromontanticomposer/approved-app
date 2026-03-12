@@ -1961,6 +1961,17 @@ function roleCanModify(role) {
   return role === 'owner' || role === 'editor';
 }
 
+// Returns true if the user can modify the project.
+// Falls back to true when project_role is unknown (null) and the project is
+// NOT explicitly shared — this handles the fast-boot window where auth hasn't
+// resolved yet. The server always enforces real permissions anyway.
+function canModifyProject(project) {
+  const role = getProjectRole(project);
+  if (roleCanModify(role)) return true;
+  if (!role && !project?.is_shared) return true; // unknown role, own project
+  return false;
+}
+
 function roleCanReview(role) {
   return role === 'owner' || role === 'editor' || role === 'commenter';
 }
@@ -5995,7 +6006,7 @@ function renderCueList(options = {}) {
 
     const menu = document.createElement("div");
     menu.className = "download-menu";
-    const canOwnerActions = roleCanModify(getProjectRole(project));
+    const canOwnerActions = canModifyProject(project);
     const canClientApprove = false;
     menu.innerHTML = `
       ${canOwnerActions ? `<button data-action="rename">${tr("action.rename")}</button>
@@ -6386,7 +6397,7 @@ function renderCueList(options = {}) {
       manageMenuBtn.className = "icon-btn tiny download-toggle";
       manageMenuBtn.textContent = "⋯";
 
-      const canModifyVersion = roleCanModify(getProjectRole(project));
+      const canModifyVersion = canModifyProject(project);
       const manageMenu = document.createElement("div");
       manageMenu.className = "download-menu";
       manageMenu.innerHTML = `
@@ -7332,7 +7343,7 @@ function renderReferences() {
     ddBtn.className = "ghost-btn tiny download-toggle";
     ddBtn.textContent = "⋯";
 
-    const canModifyRefs = roleCanModify(getProjectRole(project));
+    const canModifyRefs = canModifyProject(project);
     const ddMenu = document.createElement("div");
     ddMenu.className = "download-menu";
     ddMenu.innerHTML = `
@@ -7461,7 +7472,7 @@ function renderReferences() {
       vMenuBtn.className = "icon-btn tiny download-toggle";
       vMenuBtn.textContent = "⋯";
 
-      const canModifyRefVersion = roleCanModify(getProjectRole(project));
+      const canModifyRefVersion = canModifyProject(project);
       const vMenu = document.createElement("div");
       vMenu.className = "download-menu";
       vMenu.innerHTML = `
