@@ -8196,12 +8196,9 @@ function renderProjectList() {
 
       li.appendChild(dd);
     } else {
-      // For shared projects: keep li clickable + show "Leave project" in three-dot menu
-      li.style.cursor = 'pointer';
+      // For shared projects: click on label selects, ⋯ shows "Leave project"
       label.style.cursor = 'pointer';
-      const clickHandler = () => selectProject(project.id);
-      li.addEventListener('click', clickHandler);
-      label.addEventListener('click', clickHandler);
+      label.addEventListener('click', () => selectProject(project.id));
 
       const ddShared = document.createElement('div');
       ddShared.className = 'download-dropdown project-dropdown';
@@ -8210,14 +8207,17 @@ function renderProjectList() {
       btnShared.type = 'button';
       btnShared.className = 'icon-btn tiny download-toggle';
       btnShared.textContent = '⋯';
-      btnShared.title = tr('header.projectOptions', {}, 'Project options');
 
       const menuShared = document.createElement('div');
       menuShared.className = 'download-menu';
-      menuShared.innerHTML = `<button data-action="leave">${tr('project.leave', {}, 'Leave project')}</button>`;
+
+      const leaveBtn = document.createElement('button');
+      leaveBtn.textContent = tr('project.leave', {}, 'Leave project');
+      menuShared.appendChild(leaveBtn);
 
       ddShared.appendChild(btnShared);
       ddShared.appendChild(menuShared);
+      li.appendChild(ddShared);
 
       btnShared.addEventListener('click', e => {
         e.preventDefault();
@@ -8227,7 +8227,7 @@ function renderProjectList() {
         if (!open) ddShared.classList.add('open');
       });
 
-      menuShared.querySelector('[data-action="leave"]').addEventListener('click', async e => {
+      leaveBtn.addEventListener('click', async e => {
         e.preventDefault();
         e.stopPropagation();
         ddShared.classList.remove('open');
@@ -8251,7 +8251,6 @@ function renderProjectList() {
             showAlert(err.error || tr('error.generic', {}, 'Error'));
             return;
           }
-          // Remove from local state and re-render
           state.projects = state.projects.filter(p => p.id !== project.id);
           if (state.activeProjectId === project.id) state.activeProjectId = null;
           renderAll();
@@ -8259,8 +8258,6 @@ function renderProjectList() {
           showAlert(tr('error.network', {}, 'Network error'));
         }
       });
-
-      li.appendChild(ddShared);
     }
 
     return li;
