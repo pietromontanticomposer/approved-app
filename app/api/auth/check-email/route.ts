@@ -24,22 +24,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Admin client not configured' }, { status: 500 });
     }
 
-    // Check if user exists by email directly (avoids loading all users)
-    const { data, error } = await supabaseAdmin.auth.admin.getUserByEmail(email.toLowerCase());
+    // Check if user exists
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers();
 
     if (error) {
-      // "User not found" is expected — not a server error
-      const isNotFound = error.status === 422 || error.status === 404 ||
-        error.message?.toLowerCase().includes('not found') ||
-        error.message?.toLowerCase().includes('no rows');
-      if (isNotFound) {
-        return NextResponse.json({ exists: false });
-      }
-      console.error('[check-email] Error:', error);
+      console.error('[check-email] Error listing users:', error);
       return NextResponse.json({ error: 'Could not check email' }, { status: 500 });
     }
 
-    return NextResponse.json({ exists: !!data?.user });
+    const users = data.users || [];
+    const exists = users.some(u => u.email?.toLowerCase() === email.toLowerCase());
+
+    return NextResponse.json({ exists });
   } catch (err: any) {
     console.error('[check-email] Error', err);
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
