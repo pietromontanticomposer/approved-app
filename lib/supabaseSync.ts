@@ -162,7 +162,7 @@ export async function saveVersion(cueId: string, version: any) {
         media_storage_path: version.media?.storagePath || null,
         media_url: version.media?.url || null,
         media_original_name: version.media?.originalName || null,
-        media_display_name: version.media?.displayName || null,
+        media_display_name: version.media?.manualName ? version.media.displayName : null,
         media_duration: version.media?.duration || null,
         media_thumbnail_path: version.media?.thumbnailPath || null,
         media_thumbnail_url: version.media?.thumbnailUrl || null,

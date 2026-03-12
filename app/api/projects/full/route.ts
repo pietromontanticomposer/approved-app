@@ -580,7 +580,7 @@ export async function GET(req: NextRequest) {
       acc[c.project_id].push({
         id: c.id,
         index: c.index_in_project || 0,
-        originalName: c.name || 'Untitled',
+        originalName: c.original_name || c.name || 'Untitled',
         name: c.name || 'Untitled',
         displayName: c.display_name || '',
         maxRevisions: typeof c.max_revisions === "number" ? c.max_revisions : null,

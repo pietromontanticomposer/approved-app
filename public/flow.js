@@ -444,7 +444,7 @@ function compactVersionForCache(version) {
           url: version.media.url || null,
           storagePath: version.media.storagePath || null,
           originalName: version.media.originalName || "Media",
-          displayName: version.media.displayName || version.media.originalName || "Media",
+          displayName: version.media.manualName ? version.media.displayName : (version.media.originalName || "Media"),
           duration: version.media.duration || null,
           thumbnailUrl: version.media.thumbnailUrl || null,
           thumbnailPath: version.media.thumbnailPath || null,
@@ -5407,7 +5407,7 @@ async function loadProjectCuesLegacy(projectId, headers) {
         return {
           id: dbCue.id,
           index: dbCue.index_in_project || 0,
-          originalName: dbCue.name || "Untitled",
+          originalName: dbCue.original_name || dbCue.name || "Untitled",
           name: dbCue.name || "Untitled",
           displayName: "",
           maxRevisions: typeof dbCue.max_revisions === "number" ? dbCue.max_revisions : loadCueMaxRevisions(dbCue.id),
