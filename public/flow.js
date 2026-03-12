@@ -8185,14 +8185,71 @@ function renderProjectList() {
 
       li.appendChild(dd);
     } else {
-      // For shared projects: keep li clickable, but also show the three-dot menu
+      // For shared projects: keep li clickable + show "Leave project" in three-dot menu
       li.style.cursor = 'pointer';
       label.style.cursor = 'pointer';
       const clickHandler = () => selectProject(project.id);
       li.addEventListener('click', clickHandler);
       label.addEventListener('click', clickHandler);
 
-      // Shared projects: no rename/delete actions for non-owners
+      const ddShared = document.createElement('div');
+      ddShared.className = 'download-dropdown project-dropdown';
+
+      const btnShared = document.createElement('button');
+      btnShared.type = 'button';
+      btnShared.className = 'icon-btn tiny download-toggle';
+      btnShared.textContent = '⋯';
+      btnShared.title = tr('header.projectOptions', {}, 'Project options');
+
+      const menuShared = document.createElement('div');
+      menuShared.className = 'download-menu';
+      menuShared.innerHTML = `<button data-action="leave">${tr('project.leave', {}, 'Leave project')}</button>`;
+
+      ddShared.appendChild(btnShared);
+      ddShared.appendChild(menuShared);
+
+      btnShared.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = ddShared.classList.contains('open');
+        document.querySelectorAll('.download-dropdown.open').forEach(x => x.classList.remove('open'));
+        if (!open) ddShared.classList.add('open');
+      });
+
+      menuShared.querySelector('[data-action="leave"]').addEventListener('click', async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        ddShared.classList.remove('open');
+        const confirmed = await showConfirmDialog({
+          title: tr('project.leave', {}, 'Leave project'),
+          message: tr('project.leaveConfirm', { name: project.name }, `Leave "${project.name}"? You will lose access.`),
+          confirmLabel: tr('project.leave', {}, 'Leave project'),
+          cancelLabel: tr('action.cancel', {}, 'Cancel')
+        });
+        if (!confirmed) return;
+        try {
+          const headers = await getAuthHeaders();
+          headers['Content-Type'] = 'application/json';
+          const res = await fetch('/api/projects/leave', {
+            method: 'DELETE',
+            headers,
+            body: JSON.stringify({ project_id: project.id })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showAlert(err.error || tr('error.generic', {}, 'Error'));
+            return;
+          }
+          // Remove from local state and re-render
+          state.projects = state.projects.filter(p => p.id !== project.id);
+          if (state.activeProjectId === project.id) state.activeProjectId = null;
+          renderAll();
+        } catch (err) {
+          showAlert(tr('error.network', {}, 'Network error'));
+        }
+      });
+
+      li.appendChild(ddShared);
     }
 
     return li;

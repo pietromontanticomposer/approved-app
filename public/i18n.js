@@ -198,6 +198,8 @@
       'modal.addNotePlaceholder': 'Write a note for the team...',
 
       // Actions
+      'project.leave': 'Leave project',
+      'project.leaveConfirm': 'Leave "{name}"? You will lose access to this project.',
       'action.rename': 'Rename',
       'action.delete': 'Delete',
       'action.download': 'Download',
@@ -446,6 +448,8 @@
       'modal.addNotePlaceholder': 'Scrivi una nota per il team...',
 
       // Actions
+      'project.leave': 'Lascia progetto',
+      'project.leaveConfirm': 'Lasciare "{name}"? Perderai l\'accesso a questo progetto.',
       'action.rename': 'Rinomina',
       'action.delete': 'Elimina',
       'action.download': 'Scarica',
