@@ -130,7 +130,8 @@ export async function POST(req: NextRequest) {
 
     // Get user name
     const { data: userData } = await supabaseAdmin.auth.admin.getUserById(auth.userId);
-    const authorName = userData?.user?.user_metadata?.full_name ||
+    const authorName = userData?.user?.user_metadata?.display_name ||
+                      userData?.user?.user_metadata?.full_name ||
                       userData?.user?.email?.split('@')[0] ||
                       'Unknown User';
 

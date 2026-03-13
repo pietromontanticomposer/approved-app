@@ -31,6 +31,7 @@ export default function AccountPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [theme, setTheme] = useState("dark-01");
@@ -44,7 +45,7 @@ export default function AccountPage() {
     { value: "light", label: bi("Chiaro", "Light") },
   ];
 
-  const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() ||
+  const initials = `${displayName?.[0] || ""}${firstName?.[0] || ""}${lastName?.[0] || ""}`.slice(0, 2).toUpperCase() ||
     (user?.email ? user.email.slice(0, 2).toUpperCase() : "AC");
   const lastSignIn = user?.last_sign_in_at
     ? new Date(user.last_sign_in_at).toLocaleString("it-IT")
@@ -63,8 +64,11 @@ export default function AccountPage() {
       setUser(userData?.user || null);
 
       const meta = userData?.user?.user_metadata || {};
-      setFirstName(meta.first_name || meta.firstName || "");
-      setLastName(meta.last_name || meta.lastName || "");
+      const first = meta.first_name || meta.firstName || "";
+      const last = meta.last_name || meta.lastName || "";
+      setDisplayName(meta.display_name || meta.full_name || `${first} ${last}`.trim() || userData?.user?.email?.split("@")[0] || "");
+      setFirstName(first);
+      setLastName(last);
 
       const identities: ProviderInfo[] = (userData?.user?.identities || []).map((i: any) => ({
         provider: i.provider,
@@ -124,9 +128,15 @@ export default function AccountPage() {
     setError(null);
     setMessage(null);
     try {
+      const trimmedDisplayName = displayName.trim();
+      if (trimmedDisplayName.length < 2) {
+        setError(bi("Il nome utente deve avere almeno 2 caratteri", "Username must be at least 2 characters"));
+        return;
+      }
       const full = `${firstName || ""} ${lastName || ""}`.trim();
       const { error: updErr } = await supabase.auth.updateUser({
         data: {
+          display_name: trimmedDisplayName,
           first_name: firstName || null,
           last_name: lastName || null,
           full_name: full || null,
@@ -140,6 +150,14 @@ export default function AccountPage() {
       // Refresh user
       const { data: refreshed } = await supabase.auth.getUser();
       setUser(refreshed?.user || null);
+      if (typeof window !== "undefined" && (window as any).flowAuth?.setUserMetadata) {
+        (window as any).flowAuth.setUserMetadata(refreshed?.user?.user_metadata || {
+          display_name: trimmedDisplayName,
+          first_name: firstName || null,
+          last_name: lastName || null,
+          full_name: full || null,
+        });
+      }
       setMessage(bi('Profilo aggiornato', 'Profile updated'));
     } catch (e: any) {
       setError(e?.message || bi('Errore', 'Error'));
@@ -202,13 +220,13 @@ export default function AccountPage() {
               <div>
                 <div style={styles.cardEyebrow}>{bi("Profilo", "Profile")}</div>
                 <h2 style={styles.cardTitle}>{bi("Dati personali", "Personal details")}</h2>
-                <p style={styles.cardDesc}>{bi("Aggiorna nome e preferenze di profilo.", "Update your name and profile preferences.")}</p>
+                <p style={styles.cardDesc}>{bi("Aggiorna nome utente, nome e preferenze di profilo.", "Update username, name and profile preferences.")}</p>
               </div>
               <div style={styles.avatar}>{initials}</div>
             </div>
             <div style={styles.profileSummary}>
               <div style={styles.profileName}>
-                {user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || bi("Utente", "User")}
+                {user.user_metadata?.display_name || user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || bi("Utente", "User")}
               </div>
               <div style={styles.profileEmail}>{user.email || "—"}</div>
               <div style={styles.profileMeta}>
@@ -217,6 +235,12 @@ export default function AccountPage() {
               </div>
             </div>
             <div style={styles.fieldStack}>
+              <div style={styles.fieldRow}>
+                <div style={styles.label}>{bi("Nome utente", "Username")}</div>
+                <div style={styles.inputRow}>
+                  <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={bi("Nome utente visibile", "Visible username")} style={styles.input} />
+                </div>
+              </div>
               <div style={styles.fieldRow}>
                 <div style={styles.label}>{bi("Nome", "Name")}</div>
                 <div style={styles.inputRow}>

@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
     const sharedWith = rows.map((m) => {
       const user = usersById[m.member_id] || {};
       const meta = user.raw_user_meta_data || {};
-      const displayName = meta.full_name || meta.name || user.email || m.member_id;
+      const displayName = meta.display_name || meta.full_name || meta.name || user.email || m.member_id;
       return {
         member_id: m.member_id,
         role: m.role || "viewer",

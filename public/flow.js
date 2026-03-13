@@ -5968,7 +5968,7 @@ function addCommentFromInput() {
   const meta = user && user.user_metadata ? user.user_metadata : {};
   const first = meta.first_name || meta.firstName || meta.first || '';
   const last = meta.last_name || meta.lastName || meta.last || '';
-  const displayName = meta.full_name || meta.fullName || meta.display_name || `${first} ${last}`.trim() || user?.email || 'Client';
+  const displayName = meta.display_name || meta.full_name || meta.fullName || `${first} ${last}`.trim() || user?.email || 'Client';
 
   const localId = uid();
   version.comments.push({
@@ -6244,7 +6244,7 @@ async function uploadVoiceComment(version, blob, ext, recordTime, parentCommentI
   const meta = user && user.user_metadata ? user.user_metadata : {};
   const first = meta.first_name || meta.firstName || meta.first || '';
   const last = meta.last_name || meta.lastName || meta.last || '';
-  const displayName = meta.full_name || meta.fullName || meta.display_name || `${first} ${last}`.trim() || user?.email || 'Client';
+  const displayName = meta.display_name || meta.full_name || meta.fullName || `${first} ${last}`.trim() || user?.email || 'Client';
 
   // Show uploading state
   const localId = uid();

@@ -8,6 +8,27 @@ const authState = {
   share: null
 };
 
+function getPreferredUserLabel(user) {
+  if (!user) return 'User';
+  const meta = user.user_metadata || {};
+  const first = meta.first_name || meta.firstName || '';
+  const last = meta.last_name || meta.lastName || '';
+  return (
+    meta.display_name ||
+    meta.full_name ||
+    `${first} ${last}`.trim() ||
+    user.email ||
+    'User'
+  );
+}
+
+function syncVisibleUserLabel() {
+  const userEmailEl = document.getElementById('userEmail');
+  if (userEmailEl) {
+    userEmailEl.textContent = getPreferredUserLabel(authState.user);
+  }
+}
+
 // Initialize on load
 // existingSession: se passato da page.tsx salta la chiamata getSession() ridondante
 async function initAuth(existingSession) {
@@ -76,10 +97,7 @@ async function initAuth(existingSession) {
     }
 
     // Aggiorna subito la UI utente (evita "Loading...")
-    const userEmailEl = document.getElementById('userEmail');
-    if (userEmailEl) {
-      userEmailEl.textContent = authState.user?.email || 'User';
-    }
+    syncVisibleUserLabel();
 
     // Set up auth state listener
     window.supabaseClient.auth.onAuthStateChange((event, newSession) => {
@@ -154,6 +172,24 @@ function getAuthHeaders() {
   return headers;
 }
 
+function setUserMetadata(nextMetadata) {
+  if (!authState.user) return;
+  authState.user = {
+    ...authState.user,
+    user_metadata: {
+      ...(authState.user.user_metadata || {}),
+      ...(nextMetadata || {})
+    }
+  };
+  if (authState.session?.user) {
+    authState.session = {
+      ...authState.session,
+      user: authState.user
+    };
+  }
+  syncVisibleUserLabel();
+}
+
 async function signOut() {
   try {
     console.log('[FlowAuth] Signing out...');
@@ -203,6 +239,7 @@ window.flowAuth = {
   getUser,
   getSession,
   getAuthHeaders,
+  setUserMetadata,
   signOut
 };
 

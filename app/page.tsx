@@ -4,6 +4,7 @@
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import ShareModal from "./components/ShareModal";
+import DisplayNamePrompt from "./components/DisplayNamePrompt";
 import { LandingContent } from "./landing/page";
 
 // Force rebuild - Jan 8 2026 - v8 - Enhanced error logging for Supabase Storage
@@ -17,6 +18,10 @@ export default function Page() {
   } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [displayNamePromptOpen, setDisplayNamePromptOpen] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
+  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
 
   // Check auth status on mount
   useEffect(() => {
@@ -98,6 +103,111 @@ export default function Page() {
       window.removeEventListener('open-share-modal', handleOpenShareModal);
     };
   }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn !== true) return;
+
+    let cancelled = false;
+
+    const checkDisplayName = async () => {
+      try {
+        const { getSupabaseClient } = await import("@/lib/supabaseClient");
+        const client = getSupabaseClient();
+        const { data } = await client.auth.getUser();
+        const user = data?.user || null;
+        const meta = user?.user_metadata || {};
+        const first = meta.first_name || meta.firstName || "";
+        const last = meta.last_name || meta.lastName || "";
+        const currentDisplayName = typeof meta.display_name === "string" ? meta.display_name.trim() : "";
+        const suggestedName =
+          currentDisplayName ||
+          meta.full_name ||
+          `${first} ${last}`.trim() ||
+          user?.email?.split("@")[0] ||
+          "";
+
+        if (cancelled) return;
+        setDisplayNameDraft(suggestedName);
+        setDisplayNamePromptOpen(!currentDisplayName);
+        setDisplayNameError(null);
+      } catch (error) {
+        console.warn("[HomePage] Unable to check display name", error);
+      }
+    };
+
+    checkDisplayName();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
+
+  const handleDisplayNameSubmit = async () => {
+    const trimmed = displayNameDraft.trim();
+    if (trimmed.length < 2) {
+      setDisplayNameError("Inserisci almeno 2 caratteri.");
+      return;
+    }
+
+    try {
+      setDisplayNameSaving(true);
+      setDisplayNameError(null);
+      const { getSupabaseClient } = await import("@/lib/supabaseClient");
+      const client = getSupabaseClient();
+      const { data } = await client.auth.getUser();
+      const user = data?.user || null;
+      if (!user) {
+        setDisplayNameError("Sessione non valida. Ricarica la pagina.");
+        return;
+      }
+
+      const meta = user.user_metadata || {};
+      const first = meta.first_name || meta.firstName || "";
+      const last = meta.last_name || meta.lastName || "";
+      const fullName = meta.full_name || `${first} ${last}`.trim() || null;
+
+      const { error } = await client.auth.updateUser({
+        data: {
+          ...meta,
+          display_name: trimmed,
+          full_name: fullName,
+        },
+      });
+
+      if (error) {
+        setDisplayNameError(error.message || "Errore nel salvataggio del nome utente.");
+        return;
+      }
+
+      const refreshed = await client.auth.getUser();
+      const nextUser = refreshed.data?.user || {
+        ...user,
+        user_metadata: {
+          ...meta,
+          display_name: trimmed,
+          full_name: fullName,
+        },
+      };
+
+      if ((window as any).__approvedSession) {
+        (window as any).__approvedSession = {
+          ...(window as any).__approvedSession,
+          user: nextUser,
+        };
+      }
+      if ((window as any).flowAuth?.setUserMetadata) {
+        (window as any).flowAuth.setUserMetadata(nextUser.user_metadata || {});
+      }
+
+      setDisplayNamePromptOpen(false);
+      setDisplayNameError(null);
+    } catch (error: any) {
+      console.warn("[HomePage] Unable to save display name", error);
+      setDisplayNameError(error?.message || "Errore nel salvataggio del nome utente.");
+    } finally {
+      setDisplayNameSaving(false);
+    }
+  };
 
   const html = `<div class="app">
   <aside class="sidebar">
@@ -709,6 +819,15 @@ export default function Page() {
           teamId={shareData.teamId}
         />
       )}
+
+      <DisplayNamePrompt
+        isOpen={displayNamePromptOpen}
+        value={displayNameDraft}
+        saving={displayNameSaving}
+        error={displayNameError}
+        onChange={setDisplayNameDraft}
+        onSubmit={handleDisplayNameSubmit}
+      />
 
       <Script src="/vendor/wavesurfer.min.js?v=6.6.4" strategy="afterInteractive" />
       <Script src="/i18n.js?v=13" strategy="afterInteractive" />
