@@ -388,6 +388,22 @@ function getBootSession() {
   return null;
 }
 
+// Build auth headers using flowAuth if available, otherwise fall back to getBootSession()
+function getBestAuthHeaders() {
+  if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
+    return window.flowAuth.getAuthHeaders();
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  const session = getBootSession();
+  if (session && session.access_token) {
+    headers['Authorization'] = 'Bearer ' + session.access_token;
+    if (session.user && session.user.id) {
+      headers['x-actor-id'] = session.user.id;
+    }
+  }
+  return headers;
+}
+
 function getCurrentUser() {
   try {
     if (window.flowAuth && typeof window.flowAuth.getUser === "function") {
@@ -5847,10 +5863,7 @@ async function loadProjectCues(projectId, options = {}) {
   const skipRender = options && options.skipRender === true;
   const useCacheFirst = !options || options.useCacheFirst !== false;
 
-  const headers =
-    (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
-      ? window.flowAuth.getAuthHeaders()
-      : { 'Content-Type': 'application/json' };
+  const headers = getBestAuthHeaders();
 
   if (useCacheFirst) {
     const cachedSnapshot = getCachedProjectSnapshot(projectId);
@@ -5868,13 +5881,21 @@ async function loadProjectCues(projectId, options = {}) {
 
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-    const response = await fetch(
-      `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0&includeApprovals=0&includeDeliveries=0`,
-      {
-      headers,
-      cache: 'no-store'
+    const fetchUrl = `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0&includeApprovals=0&includeDeliveries=0`;
+    let response = await fetch(fetchUrl, { headers, cache: 'no-store' });
+
+    // 401 retry: wait for auth refresh then try once more
+    if (response.status === 401) {
+      console.warn("[Flow] 401 loading cues — waiting for auth refresh...");
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        const s = getBootSession();
+        if (s && s.access_token && s.access_token !== (headers['Authorization'] || '').replace('Bearer ', '')) break;
       }
-    );
+      const freshHeaders = getBestAuthHeaders();
+      response = await fetch(fetchUrl, { headers: freshHeaders, cache: 'no-store' });
+    }
+
     if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
 
     const payload = await response.json();
@@ -6517,10 +6538,7 @@ function cleanupMiniWaves() {
 
 async function persistCueOrder(project) {
   if (!project || !roleCanModify(getProjectRole(project))) return;
-  const headers =
-    (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function')
-      ? window.flowAuth.getAuthHeaders()
-      : { 'Content-Type': 'application/json' };
+  const headers = getBestAuthHeaders();
 
   await Promise.all(
     project.cues.map((cue, idx) =>
@@ -9858,8 +9876,37 @@ async function initializeFromSupabase() {
 
     let response = await fetch("/api/projects?lite=1", { headers: fetchHeaders, cache: "no-store" });
     let didRetry = false;
+
+    // If we got a 401, the cached token was likely expired.
+    // Wait for flowAuth.initAuth() to refresh the session, then retry once.
+    if (response.status === 401 && !didRetry) {
+      console.warn("[Flow] 401 on project list — waiting for auth refresh...");
+      didRetry = true;
+
+      // Wait up to 4s for flowAuth to have a valid session
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise(r => setTimeout(r, 100));
+        const s = getBootSession();
+        if (s && s.access_token && s.access_token !== fetchHeaders['Authorization']?.replace('Bearer ', '')) {
+          break;
+        }
+      }
+
+      const freshSession = getBootSession();
+      if (freshSession && freshSession.access_token) {
+        const retryHeaders = { 'Content-Type': 'application/json' };
+        retryHeaders['Authorization'] = 'Bearer ' + freshSession.access_token;
+        if (freshSession.user && freshSession.user.id) {
+          retryHeaders['x-actor-id'] = freshSession.user.id;
+        }
+        console.log("[Flow] Retrying /api/projects with refreshed token");
+        response = await fetch("/api/projects?lite=1", { headers: retryHeaders, cache: "no-store" });
+        fetchHeaders = retryHeaders;
+      }
+    }
+
     if (!response.ok) {
-      console.error("[Flow] Failed to fetch projects:", response.statusText);
+      console.error("[Flow] Failed to fetch projects:", response.status, response.statusText);
       renderAll(); // Fallback to empty UI
       return;
     }

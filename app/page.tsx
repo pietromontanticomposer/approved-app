@@ -67,6 +67,14 @@ export default function Page() {
         if (data?.session?.user) {
           // Cache session for flow-auth.js — evita un secondo getSession() ridondante
           (window as any).__approvedSession = data.session;
+          // Signal scripts that a fresh session is now available
+          // (the cached one from readCachedBrowserSession may have been expired)
+          if ((window as any).flowAuth && typeof (window as any).flowAuth.getSession === 'function') {
+            // flowAuth already has it — no action needed
+          } else {
+            // Dispatch event so flow.js retry logic can pick up the fresh token
+            try { window.dispatchEvent(new Event('approved-session-refreshed')); } catch {}
+          }
           setIsLoggedIn(true);
         } else {
           setIsLoggedIn(false);
