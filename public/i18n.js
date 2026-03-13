@@ -449,7 +449,7 @@
       'modal.addNotePlaceholder': 'Scrivi una nota per il team...',
 
       // Actions
-      'project.leave': 'lascia progetto',
+      'project.leave': 'abbandona progetto',
       'project.leaveConfirm': 'Lasciare "{name}"? Perderai l\'accesso a questo progetto.',
       'project.leaveTeamShared': 'Questo progetto ti e\' condiviso tramite un team. Devi uscire dal team per perdere l\'accesso.',
       'action.rename': 'Rinomina',
