@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { rememberProjectToOpen } from "@/lib/projectBoot";
 
 const bi = (it: string, en: string) => {
   if (typeof window === "undefined") return it;
@@ -200,8 +201,11 @@ export default function SharePage() {
       // Ask the main app to open the redeemed project when landing on the home page
       if (b && b.project_id) {
         try {
-          localStorage.setItem('open_project', b.project_id);
-          localStorage.setItem('open_project_tab', 'shared-with-me');
+          rememberProjectToOpen(b.project_id, "shared-with-me", {
+            userId: user?.id || null,
+            shareId: shareId || null,
+            shareProjectId: b.project_id
+          });
         } catch (e) {
           console.warn('[Share] Could not set open_project in localStorage', e);
         }
@@ -227,8 +231,10 @@ export default function SharePage() {
         project_id: share.project_id,
         role: share.role || 'viewer'
       }));
-      localStorage.setItem('open_project', share.project_id);
-      localStorage.setItem('open_project_tab', 'shared-with-me');
+      rememberProjectToOpen(share.project_id, "shared-with-me", {
+        shareId: share.share_id || token,
+        shareProjectId: share.project_id
+      });
       router.push(`/?shared_project=${encodeURIComponent(share.project_id || '')}`);
     } catch (e) {
       console.warn('[Share] Unable to open without account', e);
@@ -281,8 +287,10 @@ export default function SharePage() {
       document.cookie = `guest_session=${data.session_token}; path=/; max-age=${maxAge}; SameSite=Strict`;
 
       setSuccess(true);
-      localStorage.setItem('open_project', data.project_id);
-      localStorage.setItem('open_project_tab', 'shared-with-me');
+      rememberProjectToOpen(data.project_id, "shared-with-me", {
+        guestSessionToken: data.session_token,
+        guestProjectId: data.project_id
+      });
 
       setTimeout(() => {
         router.push(`/?guest=1&project=${encodeURIComponent(data.project_id)}`);

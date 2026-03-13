@@ -337,7 +337,12 @@ const projectNotesStore = Object.create(null);
 let referencesCollapsed = false;
 let cuesCollapsed = false;
 let hasInitializedFromSupabase = false; // Prevent double init when fallback kicks in
-const FAST_BOOT_CACHE_KEY = "approved-fast-boot-v1";
+const FAST_BOOT_CACHE_KEY_PREFIX = "approved-fast-boot-v2";
+const FAST_BOOT_CACHE_LEGACY_KEY = "approved-fast-boot-v1";
+const OPEN_PROJECT_KEY_PREFIX = "approved-open-project-v2";
+const OPEN_PROJECT_TAB_KEY_PREFIX = "approved-open-project-tab-v2";
+const OPEN_PROJECT_LEGACY_KEY = "open_project";
+const OPEN_PROJECT_TAB_LEGACY_KEY = "open_project_tab";
 const FAST_BOOT_TTL_MS = 1000 * 60 * 30; // 30 minutes
 const projectDataCache = new Map();
 const commentsLoadInFlight = new Set();
@@ -367,10 +372,83 @@ function safeRemoveLocalStorage(key) {
   }
 }
 
+function readCookieValue(name) {
+  if (typeof document === "undefined" || !document.cookie) return "";
+  const prefix = `${name}=`;
+  const parts = document.cookie.split(";").map((part) => part.trim());
+  const match = parts.find((part) => part.startsWith(prefix));
+  return match ? decodeURIComponent(match.slice(prefix.length)) : "";
+}
+
+function getProjectBootScope() {
+  try {
+    const userId =
+      (window.flowAuth && typeof window.flowAuth.getUser === "function" && window.flowAuth.getUser()?.id) ||
+      (window.__approvedSession && window.__approvedSession.user && window.__approvedSession.user.id) ||
+      "";
+    if (userId) return `user:${userId}`;
+  } catch (err) {}
+
+  try {
+    const rawGuest = safeReadLocalStorage("approved_guest_session");
+    if (rawGuest) {
+      const guest = JSON.parse(rawGuest);
+      if (guest?.session_token) return `guest:${guest.session_token}`;
+      if (guest?.project_id) return `guest-project:${guest.project_id}`;
+    }
+  } catch (err) {}
+
+  try {
+    const guestCookie = readCookieValue("guest_session");
+    if (guestCookie) return `guest:${guestCookie}`;
+  } catch (err) {}
+
+  try {
+    const rawShare = safeReadLocalStorage("approved_share_link");
+    if (rawShare) {
+      const share = JSON.parse(rawShare);
+      if (share?.share_id) return `share:${share.share_id}`;
+      if (share?.project_id) return `share-project:${share.project_id}`;
+    }
+  } catch (err) {}
+
+  return "anonymous";
+}
+
+function getScopedStorageKey(prefix) {
+  return `${prefix}:${getProjectBootScope()}`;
+}
+
+function clearLegacyProjectBootKeys() {
+  safeRemoveLocalStorage(FAST_BOOT_CACHE_LEGACY_KEY);
+  safeRemoveLocalStorage(OPEN_PROJECT_LEGACY_KEY);
+  safeRemoveLocalStorage(OPEN_PROJECT_TAB_LEGACY_KEY);
+}
+
+function clearRememberedProjectToOpen() {
+  safeRemoveLocalStorage(getScopedStorageKey(OPEN_PROJECT_KEY_PREFIX));
+  safeRemoveLocalStorage(getScopedStorageKey(OPEN_PROJECT_TAB_KEY_PREFIX));
+  safeRemoveLocalStorage(OPEN_PROJECT_LEGACY_KEY);
+  safeRemoveLocalStorage(OPEN_PROJECT_TAB_LEGACY_KEY);
+}
+
+function readRememberedProjectToOpen() {
+  return {
+    projectId: safeReadLocalStorage(getScopedStorageKey(OPEN_PROJECT_KEY_PREFIX)),
+    tabName: safeReadLocalStorage(getScopedStorageKey(OPEN_PROJECT_TAB_KEY_PREFIX))
+  };
+}
+
 function rememberProjectToOpen(projectId, tabName) {
   if (!projectId) return;
-  safeWriteLocalStorage('open_project', projectId);
-  if (tabName) safeWriteLocalStorage('open_project_tab', tabName);
+  safeWriteLocalStorage(getScopedStorageKey(OPEN_PROJECT_KEY_PREFIX), projectId);
+  if (tabName) {
+    safeWriteLocalStorage(getScopedStorageKey(OPEN_PROJECT_TAB_KEY_PREFIX), tabName);
+  } else {
+    safeRemoveLocalStorage(getScopedStorageKey(OPEN_PROJECT_TAB_KEY_PREFIX));
+  }
+  safeRemoveLocalStorage(OPEN_PROJECT_LEGACY_KEY);
+  safeRemoveLocalStorage(OPEN_PROJECT_TAB_LEGACY_KEY);
 }
 
 function clonePlain(value) {
@@ -537,6 +615,7 @@ function persistFastBootCache() {
 
   const payload = {
     v: 1,
+    scope: getProjectBootScope(),
     savedAt: Date.now(),
     activeProjectId: state.activeProjectId || null,
     projects: state.projects.slice(0, 50).map((p) => ({
@@ -551,16 +630,19 @@ function persistFastBootCache() {
     activeProjectData: compactProjectSnapshot(activeProject)
   };
 
-  safeWriteLocalStorage(FAST_BOOT_CACHE_KEY, JSON.stringify(payload));
+  safeWriteLocalStorage(getScopedStorageKey(FAST_BOOT_CACHE_KEY_PREFIX), JSON.stringify(payload));
+  safeRemoveLocalStorage(FAST_BOOT_CACHE_LEGACY_KEY);
 }
 
 function hydrateFastBootCache() {
-  const raw = safeReadLocalStorage(FAST_BOOT_CACHE_KEY);
+  clearLegacyProjectBootKeys();
+  const raw = safeReadLocalStorage(getScopedStorageKey(FAST_BOOT_CACHE_KEY_PREFIX));
   if (!raw) return false;
 
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.projects)) return false;
+    if (parsed.scope && parsed.scope !== getProjectBootScope()) return false;
     if (!parsed.savedAt || (Date.now() - parsed.savedAt) > FAST_BOOT_TTL_MS) return false;
 
     state.projects = parsed.projects.map(createProjectShell);
@@ -2815,7 +2897,7 @@ function removeProjectFromState(projectId) {
   }
 
   if (state.projects.length === 0) {
-    safeRemoveLocalStorage(FAST_BOOT_CACHE_KEY);
+    safeRemoveLocalStorage(getScopedStorageKey(FAST_BOOT_CACHE_KEY_PREFIX));
     return;
   }
 
@@ -9771,17 +9853,17 @@ async function initializeFromSupabase() {
     // If a specific project was requested (open_project), prefer it
     let bootProjectId = null;
     try {
-      const openProject = localStorage.getItem('open_project');
-      const openProjectTab = localStorage.getItem('open_project_tab');
+      const rememberedProject = readRememberedProjectToOpen();
+      const openProject = rememberedProject.projectId;
+      const openProjectTab = rememberedProject.tabName;
       if (openProject) {
         const found = state.projects.find(p => p.id === openProject);
         if (found) {
           state.activeProjectId = found.id;
           bootProjectId = found.id;
-          setActiveSidebarTab(openProjectTab || (found.is_shared ? 'shared-with-me' : 'my-projects'));
-          // Clean up the flag so subsequent loads don't reopen it
-          localStorage.removeItem('open_project');
-          localStorage.removeItem('open_project_tab');
+          const expectedTab = found.is_shared ? 'shared-with-me' : 'my-projects';
+          setActiveSidebarTab(openProjectTab === expectedTab ? openProjectTab : expectedTab);
+          clearRememberedProjectToOpen();
         }
       }
     } catch (e) {

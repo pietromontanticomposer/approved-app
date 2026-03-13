@@ -209,7 +209,16 @@ async function signOut() {
         const storage = window.supabaseClient.storage;
         const keys = Object.keys(localStorage);
         keys.forEach(key => {
-          if (key.includes('approved-auth') || key.includes('supabase')) {
+          if (
+            key.includes('approved-auth') ||
+            key.includes('supabase') ||
+            key === 'open_project' ||
+            key === 'open_project_tab' ||
+            key === 'approved-fast-boot-v1' ||
+            key.startsWith('approved-fast-boot-v2:') ||
+            key.startsWith('approved-open-project-v2:') ||
+            key.startsWith('approved-open-project-tab-v2:')
+          ) {
             localStorage.removeItem(key);
             console.log('[FlowAuth] Removed localStorage key:', key);
           }

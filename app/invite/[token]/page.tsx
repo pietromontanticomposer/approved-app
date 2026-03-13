@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { isUuid } from "@/lib/validation";
+import { rememberProjectToOpen } from "@/lib/projectBoot";
 
 const bi = (it: string, en: string) => {
   if (typeof window === "undefined") return it;
@@ -134,8 +135,7 @@ export default function InvitePage() {
       try {
         const projectIdToOpen = data?.project_id || invite?.project_id || null;
         if (projectIdToOpen) {
-          localStorage.setItem('open_project', projectIdToOpen);
-          localStorage.setItem('open_project_tab', 'shared-with-me');
+          rememberProjectToOpen(projectIdToOpen, "shared-with-me", { userId: user?.id || null });
         }
       } catch (e) {
         console.warn('[Invite] Could not set open_project', e);
