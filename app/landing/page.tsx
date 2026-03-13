@@ -1,6 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useState, type CSSProperties } from "react";
+
+type LandingScreenshotProps = {
+  src: string;
+  alt: string;
+  fallbackLabel: string;
+  fallbackHint?: string;
+  sizes?: string;
+  priority?: boolean;
+  imageStyle?: CSSProperties;
+};
+
+function LandingScreenshot({
+  src,
+  alt,
+  fallbackLabel,
+  fallbackHint,
+  sizes = "100vw",
+  priority = false,
+  imageStyle,
+}: LandingScreenshotProps) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: 24,
+        color: "#64748b",
+        fontSize: 14
+      }}>
+        <div>
+          <div>{fallbackLabel}</div>
+          {fallbackHint ? (
+            <div style={{ fontSize: 13, marginTop: 8, opacity: 0.7 }}>
+              {fallbackHint}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      fill
+      priority={priority}
+      unoptimized
+      sizes={sizes}
+      style={{ objectFit: "cover", ...imageStyle }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export function LandingContent() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -170,30 +231,13 @@ export function LandingContent() {
               position: "relative"
             }}>
               {/* Placeholder per screenshot */}
-              <img
-                src="/screenshots/app-main.png"
+              <LandingScreenshot
+                src="/screenshots/app-main.svg"
                 alt="Approved - Interface principale"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover"
-                }}
-                onError={(e) => {
-                  // Fallback se l'immagine non esiste
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  if (target.parentElement) {
-                    target.parentElement.innerHTML = `
-                      <div style="text-align: center; padding: 60px; color: ${colors.textWeak}">
-                        <div style="font-size: 48px; margin-bottom: 16px;">📸</div>
-                        <div>Screenshot app principale</div>
-                        <div style="font-size: 13px; margin-top: 8px; opacity: 0.7">
-                          Salva lo screenshot in /public/screenshots/app-main.png
-                        </div>
-                      </div>
-                    `;
-                  }
-                }}
+                priority
+                sizes="(max-width: 1000px) 100vw, 1000px"
+                fallbackLabel="Screenshot app principale"
+                fallbackHint="Anteprima principale dell'app"
               />
             </div>
           </div>
@@ -260,10 +304,10 @@ export function LandingContent() {
             gap: 24
           }}>
             {[
-              { step: "1", verb: "Carica", desc: "Trascina il tuo file audio. WAV, MP3, AIFF.", screenshot: "/screenshots/step-upload.png" },
-              { step: "2", verb: "Condividi", desc: "Genera un link. Il cliente non deve registrarsi.", screenshot: "/screenshots/step-share.png" },
-              { step: "3", verb: "Commenta", desc: "Feedback precisi sulla timeline. Niente più 'al minuto 2 circa'.", screenshot: "/screenshots/step-comment.png" },
-              { step: "4", verb: "Approva", desc: "Un click. Data e ora registrate. Fine revisioni.", screenshot: "/screenshots/step-approve.png" },
+              { step: "1", verb: "Carica", desc: "Trascina il tuo file audio. WAV, MP3, AIFF.", screenshot: "/screenshots/step-upload.svg" },
+              { step: "2", verb: "Condividi", desc: "Genera un link. Il cliente non deve registrarsi.", screenshot: "/screenshots/step-share.svg" },
+              { step: "3", verb: "Commenta", desc: "Feedback precisi sulla timeline. Niente più 'al minuto 2 circa'.", screenshot: "/screenshots/step-comment.svg" },
+              { step: "4", verb: "Approva", desc: "Un click. Data e ora registrate. Fine revisioni.", screenshot: "/screenshots/step-approve.svg" },
             ].map((item, i) => (
               <div key={i} style={{
                 background: colors.surface,
@@ -302,16 +346,14 @@ export function LandingContent() {
                   alignItems: "center",
                   justifyContent: "center",
                   border: `1px solid ${colors.border}`,
-                  overflow: "hidden"
+                  overflow: "hidden",
+                  position: "relative"
                 }}>
-                  <img
+                  <LandingScreenshot
                     src={item.screenshot}
                     alt={item.verb}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
+                    sizes="(max-width: 768px) 100vw, 220px"
+                    fallbackLabel={item.verb}
                   />
                 </div>
               </div>
@@ -461,16 +503,14 @@ export function LandingContent() {
               borderRadius: 12,
               border: `1px solid ${colors.border}`,
               overflow: "hidden",
-              aspectRatio: "16/10"
+              aspectRatio: "16/10",
+              position: "relative"
             }}>
-              <img
-                src="/screenshots/feature-waveform.png"
+              <LandingScreenshot
+                src="/screenshots/feature-waveform.svg"
                 alt="Timeline con waveform"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.outerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${colors.textWeak};font-size:14px;">Screenshot: feature-waveform.png</div>`;
-                }}
+                sizes="(max-width: 768px) 100vw, 550px"
+                fallbackLabel="Screenshot: feature-waveform"
               />
             </div>
           </div>
@@ -489,16 +529,14 @@ export function LandingContent() {
               border: `1px solid ${colors.border}`,
               overflow: "hidden",
               aspectRatio: "16/10",
-              order: -1
+              order: -1,
+              position: "relative"
             }}>
-              <img
-                src="/screenshots/feature-comments.png"
+              <LandingScreenshot
+                src="/screenshots/feature-comments.svg"
                 alt="Sistema commenti"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.outerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${colors.textWeak};font-size:14px;">Screenshot: feature-comments.png</div>`;
-                }}
+                sizes="(max-width: 768px) 100vw, 550px"
+                fallbackLabel="Screenshot: feature-comments"
               />
             </div>
             <div>
@@ -545,16 +583,14 @@ export function LandingContent() {
               borderRadius: 12,
               border: `1px solid ${colors.border}`,
               overflow: "hidden",
-              aspectRatio: "16/10"
+              aspectRatio: "16/10",
+              position: "relative"
             }}>
-              <img
-                src="/screenshots/feature-share.png"
+              <LandingScreenshot
+                src="/screenshots/feature-share.svg"
                 alt="Condivisione link"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.outerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:${colors.textWeak};font-size:14px;">Screenshot: feature-share.png</div>`;
-                }}
+                sizes="(max-width: 768px) 100vw, 550px"
+                fallbackLabel="Screenshot: feature-share"
               />
             </div>
           </div>

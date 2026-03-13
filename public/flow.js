@@ -8780,10 +8780,11 @@ function refreshTranslationsOnly() {
 function updateVisibility() {
   const project = getActiveProject();
   const canModify = project ? roleCanModify(getProjectRole(project)) : false;
+  const canManageSharing = project ? isOwnerOfProject(project) : false;
   if (contentEl) contentEl.style.display = project ? "grid" : "none";
-  if (shareBtn) shareBtn.disabled = !project;
+  if (shareBtn) shareBtn.disabled = !project || !canManageSharing;
   if (deliverBtn) deliverBtn.disabled = !project;
-  if (copyLinkBtn) copyLinkBtn.disabled = !project;
+  if (copyLinkBtn) copyLinkBtn.disabled = !project || !canManageSharing;
   if (addCueBtn) addCueBtn.disabled = !project || !canModify;
   if (addReferenceBtn) addReferenceBtn.disabled = !project || !canModify;
   setDropzoneEnabled(cuesDropzoneEl, !!project && canModify);
@@ -9158,12 +9159,17 @@ if (statusApprovedBtn) {
   });
 }
 
-// Copy demo link -> create invite if authenticated, otherwise prompt/register or copy temporary link
+// Copy client link -> owner only
 if (copyLinkBtn) {
   copyLinkBtn.addEventListener('click', async () => {
     const project = window.getActiveProject ? window.getActiveProject() : null;
     if (!project) {
       showAlert(biText('Nessun progetto selezionato', 'No project selected'));
+      return;
+    }
+
+    if (!isOwnerOfProject(project)) {
+      showAlert(tr("share.clientForbidden"));
       return;
     }
 
@@ -9221,101 +9227,17 @@ if (copyLinkBtn) {
             const text = await resp.text();
             console.warn('[FlowPreview] /api/projects/share returned', resp.status, text);
             if (resp.status === 403) {
-              // Try to create an invite link instead (users who are not owners may be allowed to create invites)
-              try {
-                const invResp = await fetch('/api/invites', {
-                  method: 'POST',
-                  headers: { ...headers, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ project_id: project.id, team_id: project.team_id, role: 'viewer', is_link_invite: true })
-                });
-
-                const invBody = await invResp.json().catch(() => ({}));
-                if (invResp.ok && invBody.invite_url) {
-                  await navigator.clipboard.writeText(invBody.invite_url);
-                  showAlert(biText('Link invito copiato negli appunti', 'Invite link copied to clipboard') + ': ' + invBody.invite_url);
-                  return;
-                }
-
-                console.warn('[FlowPreview] /api/invites failed or not allowed', invResp.status, invBody);
-                showAlert(biText('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.', 'You are not authorized to create share links for this project. A temporary link will be copied.'));
-              } catch (ie) {
-                console.warn('[FlowPreview] create invite fallback failed', ie);
-                showAlert(biText('Non sei autorizzato a creare link di condivisione per questo progetto. Verrà copiato un link temporaneo.', 'You are not authorized to create share links for this project. A temporary link will be copied.'));
-              }
+              showAlert(tr("share.clientForbidden"));
+              return;
             }
           }
         } catch (err) {
           console.warn('[FlowPreview] Server /api/projects/share failed, will try RPC fallbacks', err);
         }
 
-        // If server API failed, try RPCs as fallback (older flow)
-        if (sup && typeof sup.rpc === 'function') {
-          // Prefer new create_project_share RPC (Drive-like). If it fails, fall back to create_invite.
-          let shareToken = null;
-          try {
-            const { data: shareData, error: shareError } = await sup.rpc('create_project_share', {
-              p_project_id: project.id || null,
-              p_role: 'viewer',
-              p_expires_in_days: 7,
-              p_created_by: user.id
-            });
-            if (shareError) throw shareError;
-            if (shareData && shareData.token) shareToken = shareData.token;
-          } catch (err) {
-            console.warn('[FlowPreview] create_project_share not available or failed, falling back to create_invite', err);
-          }
-
-          let inviteUrl = null;
-          const base = window.location.origin;
-          if (shareToken) {
-            inviteUrl = `${base}/share/${shareToken}`;
-          } else {
-            // Fallback to existing create_invite RPC
-            const { data: rpcData, error: rpcError } = await sup.rpc('create_invite', {
-              p_team_id: project.team_id,
-              p_project_id: project.id || null,
-              p_email: null,
-              p_role: 'viewer',
-              p_is_link_invite: true,
-              p_invited_by: user.id,
-              p_expires_in_days: 7
-            });
-
-            if (rpcError) {
-              console.error('[FlowPreview] create_invite RPC error', rpcError);
-              throw rpcError;
-            }
-
-            const created = rpcData || null;
-            if (!created || created.success === false) {
-              console.warn('[FlowPreview] create_invite returned no invite', created);
-              throw new Error(created?.error || 'No invite created');
-            }
-
-            const inviteId = created.invite_id || (Array.isArray(created) ? created[0]?.invite_id : null);
-            if (!inviteId) {
-              console.warn('[FlowPreview] invite_id missing in RPC result', created);
-              throw new Error('invite_id missing');
-            }
-
-            inviteUrl = `${base}/invite/${inviteId}`;
-          }
-
-          await navigator.clipboard.writeText(inviteUrl);
-          showAlert(biText('Link copiato negli appunti', 'Link copied to clipboard') + ': ' + inviteUrl);
-          return;
-        }
       } catch (err) {
-        console.error('[FlowPreview] Failed to create/copy invite via server/RPC', err);
-        // Fallback: copy a temporary project link so user can still share something
-        try {
-          const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
-          await navigator.clipboard.writeText(temp);
-          showAlert(biText('Impossibile generare link definitivo. Link temporaneo copiato negli appunti', 'Unable to generate permanent link. Temporary link copied to clipboard') + ': ' + temp);
-        } catch (clipErr) {
-          console.error('[FlowPreview] Fallback clipboard write failed', clipErr);
-          showAlert(biText('Errore creando il link di condivisione', 'Error while creating share link'));
-        }
+        console.error('[FlowPreview] Failed to create/copy share link via server API', err);
+        showAlert(biText('Impossibile generare il link cliente adesso. Riprova tra poco.', 'Unable to generate the client link right now. Please try again shortly.'));
       } finally {
         copyLinkBtn.disabled = false;
       }
@@ -9323,34 +9245,7 @@ if (copyLinkBtn) {
       return;
     }
 
-    // Not authenticated: ask the user whether to register or copy a temporary project link
-    const shouldRegister = await showConfirmDialog({
-      title: tr("action.confirmDefaultTitle"),
-      message: tr(
-        "share.registerPrompt",
-        {},
-        biText(
-          "Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare.",
-          "You are not authenticated. Register now to create a shareable link. Press OK to register, Cancel to copy a temporary link."
-        )
-      ),
-      confirmLabel: tr("action.confirm"),
-      cancelLabel: tr("action.cancel")
-    });
-    if (shouldRegister) {
-      window.location.href = '/register';
-      return;
-    }
-
-    // Copy a simple temporary link (project id) so user can paste it elsewhere — note: this may not grant access without invite
-    try {
-      const temp = `${window.location.origin}/?shared_project=${encodeURIComponent(project.id)}`;
-      await navigator.clipboard.writeText(temp);
-      showAlert(biText('Link temporaneo copiato negli appunti', 'Temporary link copied to clipboard'));
-    } catch (err) {
-      console.error('[FlowPreview] Clipboard write failed', err);
-      showAlert(biText('Impossibile copiare il link.', 'Unable to copy link.'));
-    }
+    showAlert(biText('Accedi come proprietario del progetto per creare un link cliente.', 'Sign in as the project owner to create a client link.'));
   });
 }
 

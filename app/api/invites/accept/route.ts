@@ -31,6 +31,9 @@ export async function POST(req: NextRequest) {
     if (!inviteToken) {
       return NextResponse.json({ error: 'invite_token required' }, { status: 400 });
     }
+    if (!isUuid(inviteToken)) {
+      return NextResponse.json({ error: 'Invalid invite token' }, { status: 400 });
+    }
 
     const { data: invite, error: inviteErr } = await supabaseAdmin
       .from('invites')

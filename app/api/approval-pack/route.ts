@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
         const buf = Buffer.from(await mediaResp.arrayBuffer());
         const mediaName = (version as any)?.media_display_name || (version as any)?.media_original_name || 'media';
         files.push({ name: mediaName, data: buf });
-      } catch (err) {
+      } catch {
         files.push({ name: 'media_link.txt', data: mediaUrl });
       }
     } else if (mediaUrl) {

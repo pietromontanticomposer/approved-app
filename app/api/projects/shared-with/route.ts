@@ -48,21 +48,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    const isOwner = project.owner_id === auth.userId;
-    let isMember = false;
-
+    const isOwner = !!project.owner_id && project.owner_id === auth.userId;
     if (!isOwner) {
-      const { data: membership } = await supabaseAdmin
-        .from("project_members")
-        .select("member_id")
-        .eq("project_id", projectId)
-        .eq("member_id", auth.userId)
-        .maybeSingle();
-      isMember = !!membership;
-    }
-
-    if (!isOwner && !isMember) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden - only the project owner can view access management for this project" },
+        { status: 403 }
+      );
     }
 
     const { data: members, error: membersErr } = await supabaseAdmin

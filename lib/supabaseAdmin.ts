@@ -9,6 +9,11 @@ const supabaseServiceKey =
 // Export a variable and assign it below to avoid `export` inside conditionals
 export let supabaseAdmin: any = null;
 
+const FAKE_OWNER_ID = '11111111-1111-4111-8111-111111111111';
+const FAKE_USER_ID = '22222222-2222-4222-8222-222222222222';
+const FAKE_TEAM_ID = '33333333-3333-4333-8333-333333333333';
+const FAKE_PROJECT_ID = '44444444-4444-4444-8444-444444444444';
+
 // If real env vars are present, use real client. Otherwise, if testing is enabled,
 // provide a lightweight in-memory fake client to allow local tests without secrets.
 if (supabaseUrl && supabaseServiceKey) {
@@ -21,11 +26,11 @@ if (supabaseUrl && supabaseServiceKey) {
   type Row = Record<string, any>;
   const db: Record<string, Row[]> = {
     projects: [
-      { id: 'p1', team_id: 't1', owner_id: 'owner-1', name: 'Test Project' },
+      { id: FAKE_PROJECT_ID, team_id: FAKE_TEAM_ID, owner_id: FAKE_OWNER_ID, name: 'Test Project' },
     ],
     share_links: [],
     project_members: [],
-    team_members: [ { team_id: 't1', user_id: 'owner-1', role: 'owner' } ],
+    team_members: [ { team_id: FAKE_TEAM_ID, user_id: FAKE_OWNER_ID, role: 'owner' } ],
     audit_logs: [],
   };
 
@@ -65,20 +70,34 @@ if (supabaseUrl && supabaseServiceKey) {
         };
       },
       update: (payload: any) => {
-        // return chainable object supporting .eq(k,v)
-        return {
-          eq: async (k: string, v: any) => {
-            const rows = db[tableName] || [];
-            let updatedCount = 0;
-            for (const r of rows) {
-              if (q._where.every(w => String(r[w.k]) === String(w.v)) && String(r[k]) === String(v)) {
-                Object.assign(r, payload);
-                updatedCount++;
-              }
+        const rows = db[tableName] || [];
+        const eqWhere = [...q._where];
+        const ltWhere: Array<{ k: string; v: any }> = [];
+        const matches = (row: any) =>
+          eqWhere.every(w => String(row[w.k]) === String(w.v)) &&
+          ltWhere.every(w => Number(row[w.k]) < Number(w.v));
+
+        const chain: any = {
+          eq(k: string, v: any) {
+            eqWhere.push({ k, v });
+            return chain;
+          },
+          lt(k: string, v: any) {
+            ltWhere.push({ k, v });
+            return chain;
+          },
+          async select() {
+            const updatedRows: any[] = [];
+            for (const row of rows) {
+              if (!matches(row)) continue;
+              Object.assign(row, payload);
+              updatedRows.push(clone(row));
             }
-            return { data: updatedCount>0 ? rows.filter(r => (q._where.every(w => String(r[w.k]) === String(w.v)) && String(r[k]) === String(v))) : [], error: null };
+            return { data: updatedRows, error: null };
           }
         };
+
+        return chain;
       },
       upsert: async (payload: any, _opts?: any) => {
         const rows = db[tableName] || (db[tableName] = []);
@@ -104,7 +123,8 @@ if (supabaseUrl && supabaseServiceKey) {
 
   // Fake auth users store
   const fakeAuthUsers: Record<string, any> = {
-    'owner-1': { id: 'owner-1', email: 'owner@test.com', user_metadata: { full_name: 'Test Owner' } },
+    [FAKE_OWNER_ID]: { id: FAKE_OWNER_ID, email: 'owner@test.com', user_metadata: { full_name: 'Test Owner' } },
+    [FAKE_USER_ID]: { id: FAKE_USER_ID, email: 'user@test.com', user_metadata: { full_name: 'Test Collaborator' } },
   };
 
   const fakeAdmin = {
@@ -129,7 +149,9 @@ if (supabaseUrl && supabaseServiceKey) {
         },
       },
       getUser: async (_token: string) => {
-        return { data: { user: fakeAuthUsers['owner-1'] }, error: null };
+        const token = String(_token || '').trim();
+        const user = fakeAuthUsers[token] || fakeAuthUsers[FAKE_OWNER_ID];
+        return { data: { user }, error: null };
       },
     },
     storage: {

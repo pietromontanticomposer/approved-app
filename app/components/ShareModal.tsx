@@ -346,6 +346,12 @@ export default function ShareModal({
           </button>
         </div>
 
+        <div style={{ marginBottom: "1rem", padding: "0.75rem", background: "#1a2230", borderRadius: "4px", border: "1px solid #2d3b57" }}>
+          <p style={{ margin: 0, color: "#c7d2fe", fontSize: "0.85rem" }}>
+            <strong>{bi("Nota", "Note")}:</strong> {bi("solo il proprietario puo invitare persone, revocare accessi e generare link. L'editor puo modificare il progetto ma non gestisce la condivisione.", "only the owner can invite people, revoke access, and generate links. Editors can modify the project but do not manage sharing.")}
+          </p>
+        </div>
+
         {activeTab === "email" ? (
           <form onSubmit={handleInviteByEmail}>
             <div style={{ marginBottom: "1rem" }}>
@@ -387,10 +393,9 @@ export default function ShareModal({
                   fontSize: "1rem",
                 }}
               >
-                <option value="viewer">👁️ {bi("Visualizzatore (può commentare)", "Viewer (can comment)")}</option>
+                <option value="viewer">👁️ {bi("Visualizzatore (vede e commenta)", "Viewer (can view and comment)")}</option>
                 <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
-                <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
-                <option value="owner">👑 {bi("Proprietario (controllo totale)", "Owner (full control)")}</option>
+                <option value="editor">✏️ {bi("Editor (può modificare, non gestisce accessi)", "Editor (can edit, cannot manage access)")}</option>
               </select>
             </div>
 
@@ -479,9 +484,9 @@ export default function ShareModal({
                     fontSize: "1rem",
                   }}
                 >
-                  <option value="viewer">👁️ {bi("Visualizzatore (può commentare)", "Viewer (can comment)")}</option>
+                  <option value="viewer">👁️ {bi("Visualizzatore (vede e commenta)", "Viewer (can view and comment)")}</option>
                   <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
-                  <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
+                  <option value="editor">✏️ {bi("Editor (può modificare, non gestisce accessi)", "Editor (can edit, cannot manage access)")}</option>
                 </select>
               </div>
             )}

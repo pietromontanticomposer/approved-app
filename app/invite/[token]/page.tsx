@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { isUuid } from "@/lib/validation";
 
 const bi = (it: string, en: string) => {
   if (typeof window === "undefined") return it;
@@ -31,9 +32,7 @@ export default function InvitePage() {
 
   const initializeInvite = useCallback(async () => {
     try {
-      // Prevent calling RPC when token is missing or string "null"
-      if (!token || token === "null") {
-        console.warn('[Invite] Missing or invalid token:', token);
+      if (!token || token === "null" || !isUuid(token)) {
         setError(bi("Invito non valido.", "Invalid invite."));
         setLoading(false);
         return;
@@ -52,11 +51,7 @@ export default function InvitePage() {
       const inviteError = resp.ok ? null : (rpcRes?.error || 'Invite fetch failed');
       const inviteData = resp.ok ? rpcRes : null;
 
-      // If error object exists but is empty, log details and continue to data check
       if (inviteError) {
-        // Prefer message if present
-        const msg = inviteError.message || JSON.stringify(inviteError, Object.getOwnPropertyNames(inviteError));
-        console.error("Error fetching invite (RPC):", msg, inviteError);
         setError(bi("Invito non trovato o non valido.", "Invite not found or invalid."));
         setLoading(false);
         return;

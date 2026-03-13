@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     }
     if (email && !isValidEmail(email)) return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
 
-    // Verify actor is owner or editor of the project
+    // Only the project owner can manage sharing for this project.
     const { data: proj, error: projErr } = await supabaseAdmin
       .from('projects')
       .select('id, team_id, owner_id')
@@ -65,48 +65,12 @@ export async function POST(req: Request) {
       .maybeSingle();
     if (projErr || !proj) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
 
-    // Simple ownership check: match owner or check project_members
-    let isAuthorized = false;
-    if (proj.owner_id && proj.owner_id === actorId) isAuthorized = true;
-    const isOwner = proj.owner_id && proj.owner_id === actorId;
-
-    if (!isAuthorized) {
-      const { data: pm } = await supabaseAdmin
-        .from('project_members')
-        .select('role')
-        .eq('project_id', projectId)
-        .eq('member_id', actorId)
-        .limit(1);
-      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'editor')) {
-        isAuthorized = true;
-      }
-    }
-
-    // If still not authorized, check the user's role in the project's team
-    if (!isAuthorized && proj.team_id) {
-      try {
-        const { data: teamRows } = await supabaseAdmin
-          .from('team_members')
-          .select('user_id, role')
-          .eq('team_id', proj.team_id)
-          .eq('user_id', actorId)
-          .in('role', ['owner', 'editor'])
-          .limit(1);
-        if (teamRows && teamRows.length > 0) isAuthorized = true;
-      } catch (e) {
-        console.warn('[/api/projects/share] team owner lookup failed', e);
-      }
-    }
-
-    if (!isAuthorized) {
-      console.warn('[/api/projects/share] Forbidden: actor not authorized', { actorId, projectOwner: proj.owner_id });
-      const { data: pmDebug } = await supabaseAdmin.from('project_members').select('member_id,role').eq('project_id', projectId);
-      console.warn('[/api/projects/share] project_members for project', projectId, pmDebug || []);
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    if (invite && !isOwner) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const isOwner = !!proj.owner_id && proj.owner_id === actorId;
+    if (!isOwner) {
+      return NextResponse.json(
+        { error: 'Forbidden - only the project owner can manage sharing for this project' },
+        { status: 403 }
+      );
     }
 
     // Build safe origin: prefer NEXT_PUBLIC_APP_URL, then Origin header, then x-forwarded-proto + host, then localhost fallback
@@ -210,15 +174,19 @@ export async function DELETE(req: Request) {
     const { data: linkData, error: linkErr } = await supabaseAdmin.from('share_links').select('id, project_id, created_by').eq('id', id).maybeSingle();
     if (linkErr || !linkData) return NextResponse.json({ error: 'Share link not found' }, { status: 404 });
 
-    // Check actor authorization (owner/editor)
-    const { data: proj } = await supabaseAdmin.from('projects').select('owner_id').eq('id', linkData.project_id).maybeSingle();
-    let isAuthorized = false;
-    if (proj?.owner_id === actorId) isAuthorized = true;
-    if (!isAuthorized) {
-      const { data: pm } = await supabaseAdmin.from('project_members').select('role').eq('project_id', linkData.project_id).eq('member_id', actorId).limit(1);
-      if (pm && pm.length > 0 && (pm[0].role === 'owner' || pm[0].role === 'editor')) isAuthorized = true;
+    // Only the project owner can revoke a share link.
+    const { data: proj } = await supabaseAdmin
+      .from('projects')
+      .select('owner_id')
+      .eq('id', linkData.project_id)
+      .maybeSingle();
+    const isOwner = !!proj?.owner_id && proj.owner_id === actorId;
+    if (!isOwner) {
+      return NextResponse.json(
+        { error: 'Forbidden - only the project owner can manage sharing for this project' },
+        { status: 403 }
+      );
     }
-    if (!isAuthorized) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const { error } = await supabaseAdmin.from('share_links').update({ revoked_at: new Date().toISOString() }).eq('id', id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -601,11 +601,11 @@ export default function Page() {
                 <div>
                   <strong data-i18n="share.clientLink">Client link</strong>
                   <div class="share-meta" data-i18n="share.clientHint">
-                    They can listen, comment and approve without an account.
+                    Only the project owner can generate this link. Recipients can listen, comment and approve without an account.
                   </div>
                 </div>
                 <button id="copyLinkBtn" class="ghost-btn small" disabled data-i18n="share.copyLink">
-                  Copy demo link
+                  Copy client link
                 </button>
               </div>
             </div>

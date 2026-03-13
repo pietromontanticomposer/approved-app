@@ -156,12 +156,12 @@
 
       // Share
       'share.clientLink': 'Client link',
-      'share.clientHint': 'They can listen, comment and approve without an account.',
-      'share.copyLink': 'Copy demo link',
-      'share.registerPrompt': 'You are not authenticated. Register now to create a shareable link. Press OK to register, Cancel to copy a temporary link.',
+      'share.clientHint': 'Only the project owner can generate this link. Recipients can listen, comment and approve without an account.',
+      'share.copyLink': 'Copy client link',
+      'share.clientForbidden': 'Only project owners can create client links.',
       'share.tabLink': 'Link',
       'share.tabPeople': 'Shared with',
-      'share.peopleHint': 'Only project owners can see this list.',
+      'share.peopleHint': 'Only project owners can invite people and manage access.',
       'share.peopleEmpty': 'Not shared yet.',
       'share.peopleLoading': 'Loading...',
       'share.peopleForbidden': 'You do not have permission to view this list.',
@@ -407,12 +407,12 @@
 
       // Share
       'share.clientLink': 'Link cliente',
-      'share.clientHint': 'Possono ascoltare, commentare e approvare senza account.',
-      'share.copyLink': 'Copia link demo',
-      'share.registerPrompt': 'Non sei autenticato. Registrarsi ora permette di creare un link condivisibile. Premi OK per registrarti, Annulla per copiare un link temporaneo da incollare.',
+      'share.clientHint': 'Solo il proprietario del progetto puo generare questo link. Chi lo riceve puo ascoltare, commentare e approvare senza account.',
+      'share.copyLink': 'Copia link cliente',
+      'share.clientForbidden': 'Solo i proprietari del progetto possono creare link cliente.',
       'share.tabLink': 'Link',
       'share.tabPeople': 'Condivisi con',
-      'share.peopleHint': 'Solo i proprietari del progetto possono vedere questa lista.',
+      'share.peopleHint': 'Solo i proprietari del progetto possono invitare persone e gestire gli accessi.',
       'share.peopleEmpty': 'Non condiviso con nessuno.',
       'share.peopleLoading': 'Caricamento...',
       'share.peopleForbidden': 'Non hai i permessi per vedere questa lista.',

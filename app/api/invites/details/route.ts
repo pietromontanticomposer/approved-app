@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isUuid } from "@/lib/validation";
 
 /**
  * GET /api/invites/details?token=uuid
@@ -10,6 +11,9 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const token = url.searchParams.get("token");
     if (!token) return NextResponse.json({ error: "token required" }, { status: 400 });
+    if (!isUuid(token)) {
+      return NextResponse.json({ error: "Invalid invite token" }, { status: 400 });
+    }
 
     const { data: linkData, error } = await supabaseAdmin
       .from("invites")

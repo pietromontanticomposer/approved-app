@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         if (!resp.ok) throw new Error(`Fetch failed (${resp.status})`);
         const buf = Buffer.from(await resp.arrayBuffer());
         zipEntries.push({ name: baseName, data: buf });
-      } catch (err) {
+      } catch {
         zipEntries.push({ name: `${baseName}.link.txt`, data: resolved });
       }
     }

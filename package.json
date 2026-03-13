@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node ./scripts/next-with-clean-baseline.cjs dev",
+    "build": "node ./scripts/next-with-clean-baseline.cjs build",
+    "start": "node ./scripts/next-with-clean-baseline.cjs start",
     "lint": "eslint . --ext .js,.ts,.tsx",
     "maildev": "maildev --smtp=1025 --web 1080",
     "test:email": "node dev-scripts/e2e_robust.js"
@@ -13,13 +13,14 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.86.2",
     "dotenv": "^17.2.3",
-    "next": "16.0.7",
+    "next": "16.1.6",
     "node-fetch": "^2.7.0",
-    "nodemailer": "^6.9.4",
+    "nodemailer": "8.0.2",
     "pg": "^8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "resend": "^6.6.0",
+    "server-only": "^0.0.1",
     "uuid": "^13.0.0",
     "wavesurfer.js": "^6.6.4"
   },
@@ -28,14 +29,15 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "baseline-browser-mapping": "^2.10.7",
     "eslint": "^9",
-    "eslint-config-next": "16.0.7",
-    "localtunnel": "^2.0.2",
+    "eslint-config-next": "16.1.6",
     "ngrok": "^5.0.0-beta.2",
     "playwright": "^1.57.0",
     "postgres": "^3.4.7",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5"
   }
 }

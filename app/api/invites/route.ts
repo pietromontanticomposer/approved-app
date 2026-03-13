@@ -244,6 +244,9 @@ export async function DELETE(req: NextRequest) {
     if (!inviteId) {
       return NextResponse.json({ error: "invite_id required" }, { status: 400 });
     }
+    if (!isUuid(inviteId)) {
+      return NextResponse.json({ error: "Invalid invite_id" }, { status: 400 });
+    }
 
     // Usa la funzione RPC per revocare l'invito
     const { data, error } = await supabaseAdmin.rpc("revoke_invite", {
