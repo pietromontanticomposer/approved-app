@@ -825,7 +825,10 @@ export default function Page() {
         strategy="beforeInteractive"
         dangerouslySetInnerHTML={{
           __html: `
-            // Ensure initializer stubs exist early to avoid race when scripts load
+            // Ensure initializer stubs exist early to avoid race when scripts load.
+            // Set __flowInitializing = true immediately so flow-init.js never
+            // calls initializeFromSupabase before page.tsx boot() runs initAuth.
+            window.__flowInitializing = true;
             window.initializeFromSupabase = window.initializeFromSupabase || (async function(){
               console.warn('[InitStub] initializeFromSupabase called before implementation');
             });
@@ -865,10 +868,10 @@ export default function Page() {
 
       <Script src="/vendor/wavesurfer.min.js?v=6.6.4" strategy="afterInteractive" />
       <Script src="/i18n.js?v=13" strategy="afterInteractive" />
-      <Script src="/flow-auth.js?v=9" strategy="afterInteractive" />
+      <Script src="/flow-auth.js?v=10" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=14"
+        src="/flow.js?v=15"
         strategy="afterInteractive"
         onLoad={() => {
           const boot = async () => {

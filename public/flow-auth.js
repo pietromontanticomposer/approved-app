@@ -40,13 +40,24 @@ async function initAuth(existingSession) {
   }
 
   try {
-    let session = existingSession || null;
+    // ALWAYS call getSession() to get a fresh/refreshed token.
+    // existingSession (from cache) may have an expired access_token.
+    let session = null;
     let error = null;
 
-    if (!session) {
+    try {
       const res = await window.supabaseClient.auth.getSession();
       session = res.data?.session || null;
       error = res.error;
+    } catch (e) {
+      console.warn('[FlowAuth] getSession() threw, falling back to existingSession', e);
+      session = existingSession || null;
+    }
+
+    // Fallback to existingSession only if getSession returned nothing
+    if (!session && existingSession) {
+      console.log('[FlowAuth] getSession() returned no session, using existingSession fallback');
+      session = existingSession;
     }
 
     if (error || !session) {

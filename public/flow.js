@@ -391,7 +391,10 @@ function getBootSession() {
 // Build auth headers using flowAuth if available, otherwise fall back to getBootSession()
 function getBestAuthHeaders() {
   if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
-    return window.flowAuth.getAuthHeaders();
+    const fh = window.flowAuth.getAuthHeaders();
+    // If flowAuth returned headers WITH an Authorization token, use them.
+    if (fh && fh.Authorization) return fh;
+    // Otherwise flowAuth has no session — fall through to bootSession fallback.
   }
   const headers = { 'Content-Type': 'application/json' };
   const session = getBootSession();
@@ -10037,9 +10040,43 @@ async function initializeFromSupabase() {
 
     // Load active project data in background (non-blocking).
     if (bootProjectId) {
-      loadProjectCues(bootProjectId, { useCacheFirst: false }).catch(err => {
-        console.warn("[Flow] Failed loading boot project", err);
-      });
+      loadProjectCues(bootProjectId, { useCacheFirst: false })
+        .then(() => {
+          // Safety net: if cues are still empty after load, the fetch may have
+          // silently returned bad data (e.g. expired token → 200 with empty payload).
+          // Wait briefly then retry with guaranteed-fresh auth.
+          const bp = getProjectById(bootProjectId);
+          if (bp && bp.cues && bp.cues.length > 0) return; // loaded fine
+
+          console.warn("[Flow] Boot project loaded but cues still empty — scheduling retry");
+          setTimeout(async () => {
+            try {
+              // Force-refresh auth headers before retrying
+              if (window.flowAuth && typeof window.flowAuth.initAuth === 'function') {
+                await window.flowAuth.initAuth().catch(() => {});
+              }
+              await loadProjectCues(bootProjectId, { useCacheFirst: false });
+              const bpAfter = getProjectById(bootProjectId);
+              console.log("[Flow] Retry result: cues =", bpAfter && bpAfter.cues ? bpAfter.cues.length : 0);
+            } catch (retryErr) {
+              console.warn("[Flow] Retry loadProjectCues also failed", retryErr);
+            }
+          }, 2500);
+        })
+        .catch(err => {
+          console.warn("[Flow] Failed loading boot project", err);
+          // Retry after a delay with refreshed auth
+          setTimeout(async () => {
+            try {
+              if (window.flowAuth && typeof window.flowAuth.initAuth === 'function') {
+                await window.flowAuth.initAuth().catch(() => {});
+              }
+              await loadProjectCues(bootProjectId, { useCacheFirst: false });
+            } catch (retryErr) {
+              console.warn("[Flow] Retry loadProjectCues also failed", retryErr);
+            }
+          }, 2500);
+        });
     } else {
       console.log("[Flow] No projects found for this user.");
     }
