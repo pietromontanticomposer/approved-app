@@ -201,6 +201,7 @@ export default function SharePage() {
       if (b && b.project_id) {
         try {
           localStorage.setItem('open_project', b.project_id);
+          localStorage.setItem('open_project_tab', 'shared-with-me');
         } catch (e) {
           console.warn('[Share] Could not set open_project in localStorage', e);
         }
@@ -227,6 +228,7 @@ export default function SharePage() {
         role: share.role || 'viewer'
       }));
       localStorage.setItem('open_project', share.project_id);
+      localStorage.setItem('open_project_tab', 'shared-with-me');
       router.push(`/?shared_project=${encodeURIComponent(share.project_id || '')}`);
     } catch (e) {
       console.warn('[Share] Unable to open without account', e);
@@ -280,6 +282,7 @@ export default function SharePage() {
 
       setSuccess(true);
       localStorage.setItem('open_project', data.project_id);
+      localStorage.setItem('open_project_tab', 'shared-with-me');
 
       setTimeout(() => {
         router.push(`/?guest=1&project=${encodeURIComponent(data.project_id)}`);

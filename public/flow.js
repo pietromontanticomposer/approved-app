@@ -367,6 +367,12 @@ function safeRemoveLocalStorage(key) {
   }
 }
 
+function rememberProjectToOpen(projectId, tabName) {
+  if (!projectId) return;
+  safeWriteLocalStorage('open_project', projectId);
+  if (tabName) safeWriteLocalStorage('open_project_tab', tabName);
+}
+
 function clonePlain(value) {
   if (value === null || value === undefined) return value;
   try {
@@ -9490,13 +9496,16 @@ async function initializeFromSupabase() {
     let bootProjectId = null;
     try {
       const openProject = localStorage.getItem('open_project');
+      const openProjectTab = localStorage.getItem('open_project_tab');
       if (openProject) {
         const found = state.projects.find(p => p.id === openProject);
         if (found) {
           state.activeProjectId = found.id;
           bootProjectId = found.id;
+          setActiveSidebarTab(openProjectTab || (found.is_shared ? 'shared-with-me' : 'my-projects'));
           // Clean up the flag so subsequent loads don't reopen it
           localStorage.removeItem('open_project');
+          localStorage.removeItem('open_project_tab');
         }
       }
     } catch (e) {
@@ -10752,6 +10761,9 @@ setTimeout(() => {
             return;
           }
           const result = await res.json();
+          if (result?.project_id) {
+            rememberProjectToOpen(result.project_id, 'shared-with-me');
+          }
           pending = pending.filter(i => i.id !== inv.id);
           updateBadge();
           panel.style.display = "none";
@@ -10761,6 +10773,13 @@ setTimeout(() => {
             await initializeFromSupabase();
           } else if (typeof renderAll === "function") {
             renderAll();
+          }
+          if (result?.project_id) {
+            const acceptedProject = getProjectById(result.project_id);
+            if (acceptedProject) {
+              setActiveSidebarTab(acceptedProject.is_shared ? "shared-with-me" : "my-projects");
+              await selectProject(result.project_id);
+            }
           }
         } catch (e) {
           showAlert(biText("Errore di rete", "Network error"));

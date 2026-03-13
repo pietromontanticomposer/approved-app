@@ -137,17 +137,17 @@ export default function InvitePage() {
 
       // If invite contains a project_id, instruct app to open that project after redirect
       try {
-        if (invite && invite.project_id) {
-          localStorage.setItem('open_project', invite.project_id);
+        const projectIdToOpen = data?.project_id || invite?.project_id || null;
+        if (projectIdToOpen) {
+          localStorage.setItem('open_project', projectIdToOpen);
+          localStorage.setItem('open_project_tab', 'shared-with-me');
         }
       } catch (e) {
         console.warn('[Invite] Could not set open_project', e);
       }
 
-      // Redirect to home where initializeFromSupabase will open the project
-      setTimeout(() => {
-        router.push("/");
-      }, 1200);
+      // Redirect immediately to the home app where the shared project is opened.
+      router.replace("/");
     } catch (err) {
       console.error("Error accepting invite:", err);
       setError(bi("Errore imprevisto.", "Unexpected error."));

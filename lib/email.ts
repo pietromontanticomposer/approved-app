@@ -2,6 +2,26 @@ import nodemailer from 'nodemailer';
 
 const isDev = process.env.NODE_ENV !== "production";
 
+function readEnv(name: string, fallback = ''): string {
+  const value = process.env[name];
+  if (typeof value !== 'string') return fallback;
+  return value.trim();
+}
+
+function readEnvInt(name: string, fallback: number): number {
+  const raw = readEnv(name);
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readEnvBool(name: string, fallback: boolean): boolean {
+  const raw = readEnv(name).toLowerCase();
+  if (!raw) return fallback;
+  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') return true;
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
+  return fallback;
+}
+
 function escapeHtml(text: string | null | undefined): string {
   if (!text) return '';
   return text
@@ -15,31 +35,47 @@ let transporter: any = null;
 
 function getTransporter() {
   // Read env vars at runtime, not at module load time
-  const SMTP_USER = process.env.SMTP_USER;
-  const SMTP_PASS = process.env.SMTP_PASS;
+  const SMTP_HOST = readEnv('SMTP_HOST');
+  const SMTP_PORT = readEnvInt('SMTP_PORT', 587);
+  const SMTP_SECURE = readEnvBool('SMTP_SECURE', SMTP_PORT === 465);
+  const SMTP_USER = readEnv('SMTP_USER');
+  const SMTP_PASS = readEnv('SMTP_PASS');
 
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.warn('[Email] SMTP not configured - SMTP_USER:', !!SMTP_USER, 'SMTP_PASS:', !!SMTP_PASS);
+  if (!SMTP_HOST && !SMTP_USER && !SMTP_PASS) {
+    console.warn('[Email] SMTP not configured - SMTP_HOST:', !!SMTP_HOST, 'SMTP_USER:', !!SMTP_USER, 'SMTP_PASS:', !!SMTP_PASS);
     return null;
   }
 
   // Recreate transporter each time to ensure fresh env vars
-  // Use Gmail service directly - nodemailer handles the connection details
-  // This avoids DNS resolution issues on serverless platforms like Vercel
-  transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
+  const transportConfig: any = SMTP_HOST
+    ? {
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_SECURE,
+      }
+    : {
+        service: 'gmail',
+      };
+
+  if (SMTP_USER || SMTP_PASS) {
+    if (!SMTP_USER || !SMTP_PASS) {
+      console.warn('[Email] Incomplete SMTP auth configuration - SMTP_USER:', !!SMTP_USER, 'SMTP_PASS:', !!SMTP_PASS);
+      return null;
+    }
+    transportConfig.auth = {
       user: SMTP_USER,
       pass: SMTP_PASS,
-    },
-  });
+    };
+  }
+
+  transporter = nodemailer.createTransport(transportConfig);
 
   return transporter;
 }
 
 function getFromAddress() {
-  const FROM_NAME = process.env.FROM_NAME || 'Approved';
-  const FROM_ADDRESS = process.env.FROM_ADDRESS || 'noreply@approved.app';
+  const FROM_NAME = readEnv('FROM_NAME') || 'Approved';
+  const FROM_ADDRESS = readEnv('FROM_ADDRESS') || 'noreply@approved.app';
   return `${FROM_NAME} <${FROM_ADDRESS}>`;
 }
 
