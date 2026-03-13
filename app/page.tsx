@@ -896,19 +896,23 @@ export default function Page() {
 
             // Avvia bootstrap — flag per evitare doppio fetch da flow-init.js
             (window as any).__flowInitializing = true;
+
+            // Completa auth prima di caricare i progetti — il token in cache potrebbe
+            // essere scaduto e initializeFromSupabase ha bisogno di un token fresco.
+            if (typeof (window as any).flowAuth?.initAuth === 'function') {
+              try {
+                await (window as any).flowAuth.initAuth((window as any).__approvedSession);
+              } catch (error: any) {
+                console.warn('[PageInit] flowAuth.initAuth failed', error);
+              }
+            } else {
+              console.warn('[PageInit] flowAuth.initAuth not found');
+            }
+
             if (typeof (window as any).initializeFromSupabase === 'function') {
               (window as any).initializeFromSupabase();
             } else if (typeof (window as any).safeFetchProjectsFallback === 'function') {
               (window as any).safeFetchProjectsFallback();
-            }
-
-            // Completa auth/approval in background, ma non bloccare il caricamento progetti.
-            if (typeof (window as any).flowAuth?.initAuth === 'function') {
-              (window as any).flowAuth.initAuth((window as any).__approvedSession).catch((error: any) => {
-                console.warn('[PageInit] flowAuth.initAuth failed', error);
-              });
-            } else {
-              console.warn('[PageInit] flowAuth.initAuth not found');
             }
           };
 
