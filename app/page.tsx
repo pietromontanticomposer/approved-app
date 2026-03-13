@@ -9,6 +9,25 @@ import { LandingContent } from "./landing/page";
 
 // Force rebuild - Jan 8 2026 - v8 - Enhanced error logging for Supabase Storage
 
+function readCachedBrowserSession() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("approved-auth");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const session = parsed?.currentSession || parsed?.session || parsed;
+    if (!session?.user || !session?.access_token) return null;
+    const expiresAtMs =
+      typeof session.expires_at === "number" ? session.expires_at * 1000 : null;
+    if (expiresAtMs && expiresAtMs < (Date.now() - 60_000) && !session.refresh_token) {
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 export default function Page() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareData, setShareData] = useState<{
@@ -26,6 +45,13 @@ export default function Page() {
   // Check auth status on mount
   useEffect(() => {
     const checkAuth = async () => {
+      const cachedSession = readCachedBrowserSession();
+      if (cachedSession?.user) {
+        (window as any).__approvedSession = cachedSession;
+        setIsLoggedIn(true);
+        setCheckingAuth(false);
+      }
+
       try {
         const { getSupabaseClient } = await import("@/lib/supabaseClient");
         const client = getSupabaseClient();

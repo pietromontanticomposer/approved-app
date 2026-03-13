@@ -1640,6 +1640,22 @@ function normalizeExtractedStoragePath(path) {
   return normalized || null;
 }
 
+function getRelativeStoragePath(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("blob:")
+  ) {
+    return null;
+  }
+  return normalizeExtractedStoragePath(trimmed);
+}
+
 function extractStoragePathFromUrl(raw) {
   if (!raw || typeof raw !== "string") return null;
   const trimmed = raw.trim();
@@ -1714,6 +1730,11 @@ function getPublicStorageUrl(storagePath) {
 
 function getDirectUrl(raw) {
   if (!raw) return raw;
+  if (typeof raw === "string") {
+    const storagePath = getRelativeStoragePath(raw);
+    const publicUrl = storagePath ? getPublicStorageUrl(storagePath) : null;
+    if (publicUrl) return publicUrl;
+  }
   // Already a proxy URL - extract and return the underlying URL if signed
   if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
     try {
@@ -1747,6 +1768,37 @@ function getDirectUrl(raw) {
     // Storage path needs proxy to sign
     return `/api/media/stream?path=${encodeURIComponent(raw)}`;
   }
+}
+
+function getPlaybackUrl(raw) {
+  if (!raw) return raw;
+
+  if (typeof raw === "string" && raw.startsWith("/api/media/stream")) {
+    try {
+      const u = new URL(raw, window.location.origin);
+      const rawUrl = u.searchParams.get("url");
+      if (rawUrl) return getPlaybackUrl(rawUrl);
+      const rawPath = u.searchParams.get("path");
+      if (rawPath) {
+        const publicUrl = getPublicStorageUrl(rawPath);
+        if (publicUrl) return publicUrl;
+        return `/api/media/stream?path=${encodeURIComponent(rawPath)}&redirect=1`;
+      }
+    } catch (e) {
+      return raw;
+    }
+  }
+
+  if (typeof raw === "string") {
+    const storagePath = extractStoragePathFromUrl(raw) || getRelativeStoragePath(raw);
+    if (storagePath) {
+      const publicUrl = getPublicStorageUrl(storagePath);
+      if (publicUrl) return publicUrl;
+      return `/api/media/stream?path=${encodeURIComponent(storagePath)}&redirect=1`;
+    }
+  }
+
+  return getDirectUrl(raw);
 }
 
 /**
@@ -1798,13 +1850,13 @@ function resolveVersionMediaUrl(version) {
     typeof version.media.storagePath === "string"
       ? version.media.storagePath.trim()
       : null;
-  if (storagePath) return getProxiedUrl(storagePath);
+  if (storagePath) return getPlaybackUrl(storagePath);
   const mediaUrl =
     typeof version.media.url === "string"
       ? version.media.url.trim()
       : null;
   if (!mediaUrl) return null;
-  return getProxiedUrl(mediaUrl);
+  return getPlaybackUrl(mediaUrl);
 }
 
 function getWaveformPeaks(raw) {
@@ -4704,7 +4756,7 @@ function loadAudioPlayer(project, cue, version) {
     const videoWrap = document.createElement("div");
     videoWrap.className = "audio-picture-video";
     const video = document.createElement("video");
-    video.src = getProxiedUrl(refVideo.storagePath || refVideo.url);
+    video.src = getPlaybackUrl(refVideo.storagePath || refVideo.url);
     video.playsInline = true;
     video.muted = true;
     video.preload = "metadata";
