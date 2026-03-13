@@ -86,19 +86,15 @@
     // If initializeFromSupabase exists, attempt to bootstrap client auth first
     if (typeof window.initializeFromSupabase === 'function') {
       try {
-        // Prefer to run flowAuth.initAuth first so we have client-side session available
-        if (window.flowAuth && typeof window.flowAuth.initAuth === 'function') {
-          try {
-            console.log('[flow-init] bootstrapping flowAuth.initAuth before initializeFromSupabase');
-            const ok = await window.flowAuth.initAuth().catch(() => false);
-            console.log('[flow-init] flowAuth.initAuth result', !!ok);
-          } catch (e) {
-            console.warn('[flow-init] flowAuth.initAuth failed', e);
-          }
-        }
-
         console.log('[flow-init] calling initializeFromSupabase');
         const p = window.initializeFromSupabase();
+
+        if (window.flowAuth && typeof window.flowAuth.initAuth === 'function') {
+          window.flowAuth.initAuth(window.__approvedSession).catch((e) => {
+            console.warn('[flow-init] flowAuth.initAuth failed', e);
+          });
+        }
+
         // if it returns a promise, wait shortly then check DOM
         if (p && typeof p.then === 'function') {
           await Promise.race([p, new Promise(r => setTimeout(r, 2000))]);

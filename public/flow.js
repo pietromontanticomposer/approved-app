@@ -372,6 +372,39 @@ function safeRemoveLocalStorage(key) {
   }
 }
 
+function getBootSession() {
+  try {
+    if (window.flowAuth && typeof window.flowAuth.getSession === "function") {
+      const session = window.flowAuth.getSession();
+      if (session) return session;
+    }
+  } catch (err) {}
+
+  try {
+    const session = window.__approvedSession || null;
+    if (session) return session;
+  } catch (err) {}
+
+  return null;
+}
+
+function getCurrentUser() {
+  try {
+    if (window.flowAuth && typeof window.flowAuth.getUser === "function") {
+      const user = window.flowAuth.getUser();
+      if (user) return user;
+    }
+  } catch (err) {}
+
+  const session = getBootSession();
+  return session?.user || null;
+}
+
+function getCurrentUserId() {
+  const user = getCurrentUser();
+  return user?.id || null;
+}
+
 function readCookieValue(name) {
   if (typeof document === "undefined" || !document.cookie) return "";
   const prefix = `${name}=`;
@@ -382,10 +415,7 @@ function readCookieValue(name) {
 
 function getProjectBootScope() {
   try {
-    const userId =
-      (window.flowAuth && typeof window.flowAuth.getUser === "function" && window.flowAuth.getUser()?.id) ||
-      (window.__approvedSession && window.__approvedSession.user && window.__approvedSession.user.id) ||
-      "";
+    const userId = getCurrentUserId() || "";
     if (userId) return `user:${userId}`;
   } catch (err) {}
 
@@ -2039,9 +2069,7 @@ function getStatusClassKey(status) {
 }
 
 function isOwnerOfProject(project) {
-  const user = window.flowAuth && typeof window.flowAuth.getUser === "function"
-    ? window.flowAuth.getUser()
-    : null;
+  const user = getCurrentUser();
   if (!project) return false;
   if (project.project_role === 'owner') return true;
   if (!user || !project.owner_id) return false;
@@ -8685,7 +8713,7 @@ function renderProjectList() {
 
   // Split projects into owned vs shared.
   // Prefer the server-provided `is_shared` flag when present (covers direct project_members).
-  const userId = window.flowAuth?.getUser?.()?.id || null;
+  const userId = getCurrentUserId();
   const hasIsShared = state.projects.some(p => typeof p.is_shared !== 'undefined');
   let myProjects, sharedProjects;
   if (hasIsShared) {
@@ -8923,7 +8951,7 @@ async function handleShareInvite() {
     return;
   }
 
-  const userId = window.flowAuth?.getUser?.()?.id || null;
+  const userId = getCurrentUserId();
   const isOwner = userId && project.owner_id && project.owner_id === userId;
   if (!isOwner) {
     setShareInviteMessage(tr("share.inviteForbidden"), true);
@@ -9043,7 +9071,7 @@ async function refreshSharedWithPanel(force) {
     return;
   }
 
-  const userId = window.flowAuth?.getUser?.()?.id || null;
+  const userId = getCurrentUserId();
   const isOwner = userId && project.owner_id && project.owner_id === userId;
 
   if (sharePeopleHintEl) {
@@ -9741,18 +9769,17 @@ async function initializeFromSupabase() {
     // Fetch projects from API (include auth headers when available)
     let fetchHeaders = { 'Content-Type': 'application/json' };
     try {
-      if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
-        // Ensure flowAuth has run its bootstrap (some hosts may have a session
-        // stored in Supabase but flowAuth.initAuth wasn't awaited before we
-        // initialize). Call initAuth() if available and no session is present.
-        try {
-          const s = window.flowAuth.getSession && window.flowAuth.getSession();
-          if (!s && typeof window.flowAuth.initAuth === 'function') {
-            await window.flowAuth.initAuth();
-          }
-        } catch (e) {
-          // ignore init errors and fall back to other detection below
+      const bootSession = getBootSession();
+      if (bootSession) {
+        if (bootSession.user?.id) {
+          fetchHeaders['x-actor-id'] = bootSession.user.id;
         }
+        if (bootSession.access_token) {
+          fetchHeaders['Authorization'] = 'Bearer ' + bootSession.access_token;
+        }
+      }
+
+      if (window.flowAuth && typeof window.flowAuth.getAuthHeaders === 'function') {
         const fh = window.flowAuth.getAuthHeaders();
         if (fh && typeof fh === 'object') fetchHeaders = { ...fetchHeaders, ...fh };
       } else if (window.supabaseClient && window.supabaseClient.auth) {
@@ -9794,32 +9821,38 @@ async function initializeFromSupabase() {
     try {
       const looksAnonymous = !Array.isArray(data.my_projects) && !Array.isArray(data.shared_with_me) && !Array.isArray(data.projects);
       const shouldRetry = looksAnonymous || data.public === true;
-      if (shouldRetry && window.flowAuth && typeof window.flowAuth.initAuth === 'function' && !didRetry) {
-        const boot = await window.flowAuth.initAuth().catch(() => false);
-        if (boot) {
-          // After initAuth we may be in a demo fallback (demo token/local id).
-          // Avoid retrying the fetch if initAuth produced a demo token — that
-          // would overwrite a server-resolved actor response (e.g. when the
-          // server already returned shared_with_me for the true authenticated user).
-          try {
-            const fh = window.flowAuth.getAuthHeaders && window.flowAuth.getAuthHeaders();
-            const authVal = fh && (fh.Authorization || fh.authorization || '');
-            const actorVal = fh && (fh['x-actor-id'] || fh['X-Actor-Id'] || '');
-            const isDemoToken = typeof authVal === 'string' && authVal.includes('demo');
-            const isDemoActor = typeof actorVal === 'string' && actorVal.startsWith('demo');
-            if (isDemoToken || isDemoActor) {
-              console.log('[Flow] flowAuth initialized into demo mode; skipping retry to avoid overriding actor-resolved data');
-            } else {
-              let newHeaders = { 'Content-Type': 'application/json' };
-              if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
-              response = await fetch('/api/projects?lite=1', { headers: newHeaders, cache: "no-store" });
-              data = await response.json();
-              didRetry = true;
-              console.log('[Flow] Retried /api/projects after flowAuth.initAuth()');
-            }
-          } catch (e) {
-            // ignore retry errors
+      if (shouldRetry && !didRetry) {
+        let newHeaders = { 'Content-Type': 'application/json' };
+        const session = getBootSession();
+        if (session?.user?.id) {
+          newHeaders['x-actor-id'] = session.user.id;
+        }
+        if (session?.access_token) {
+          newHeaders['Authorization'] = 'Bearer ' + session.access_token;
+        }
+
+        if ((!session || !session.access_token) && window.flowAuth && typeof window.flowAuth.initAuth === 'function') {
+          await window.flowAuth.initAuth(window.__approvedSession).catch(() => false);
+        }
+
+        try {
+          const fh = window.flowAuth?.getAuthHeaders && window.flowAuth.getAuthHeaders();
+          const authVal = fh && (fh.Authorization || fh.authorization || '');
+          const actorVal = fh && (fh['x-actor-id'] || fh['X-Actor-Id'] || '');
+          const isDemoToken = typeof authVal === 'string' && authVal.includes('demo');
+          const isDemoActor = typeof actorVal === 'string' && actorVal.startsWith('demo');
+          if (!(isDemoToken || isDemoActor)) {
+            if (fh && typeof fh === 'object') newHeaders = { ...newHeaders, ...fh };
           }
+        } catch (e) {
+          // ignore retry header errors
+        }
+
+        if (newHeaders.Authorization || newHeaders['x-actor-id']) {
+          response = await fetch('/api/projects?lite=1', { headers: newHeaders, cache: "no-store" });
+          data = await response.json();
+          didRetry = true;
+          console.log('[Flow] Retried /api/projects with cached session');
         }
       }
     } catch (e) {

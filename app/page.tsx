@@ -838,14 +838,6 @@ export default function Page() {
         strategy="afterInteractive"
         onLoad={() => {
           const boot = async () => {
-            if (typeof (window as any).flowAuth?.initAuth !== 'function') {
-              console.error('[PageInit] flowAuth.initAuth not found');
-              return;
-            }
-            // Passa la sessione già nota — evita un secondo getSession() in flow-auth.js
-            const ready = await (window as any).flowAuth.initAuth((window as any).__approvedSession);
-            if (!ready) return;
-
             // Gestisci pending share/invite
             try {
               const pendingShare = localStorage.getItem('pending_share');
@@ -874,6 +866,15 @@ export default function Page() {
               (window as any).initializeFromSupabase();
             } else if (typeof (window as any).safeFetchProjectsFallback === 'function') {
               (window as any).safeFetchProjectsFallback();
+            }
+
+            // Completa auth/approval in background, ma non bloccare il caricamento progetti.
+            if (typeof (window as any).flowAuth?.initAuth === 'function') {
+              (window as any).flowAuth.initAuth((window as any).__approvedSession).catch((error: any) => {
+                console.warn('[PageInit] flowAuth.initAuth failed', error);
+              });
+            } else {
+              console.warn('[PageInit] flowAuth.initAuth not found');
             }
           };
 
