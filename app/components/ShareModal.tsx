@@ -387,7 +387,7 @@ export default function ShareModal({
                   fontSize: "1rem",
                 }}
               >
-                <option value="viewer">👁️ {bi("Visualizzatore (solo lettura)", "Viewer (read only)")}</option>
+                <option value="viewer">👁️ {bi("Visualizzatore (può commentare)", "Viewer (can comment)")}</option>
                 <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
                 <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
                 <option value="owner">👑 {bi("Proprietario (controllo totale)", "Owner (full control)")}</option>
@@ -479,7 +479,7 @@ export default function ShareModal({
                     fontSize: "1rem",
                   }}
                 >
-                  <option value="viewer">👁️ {bi("Visualizzatore (solo lettura)", "Viewer (read only)")}</option>
+                  <option value="viewer">👁️ {bi("Visualizzatore (può commentare)", "Viewer (can comment)")}</option>
                   <option value="commenter">💬 {bi("Commentatore (può commentare)", "Commenter (can comment)")}</option>
                   <option value="editor">✏️ {bi("Editor (può modificare)", "Editor (can edit)")}</option>
                 </select>

@@ -5,7 +5,7 @@ export function roleCanAccess(role: AccessRole | null): boolean {
 }
 
 export function roleCanReview(role: AccessRole | null): boolean {
-  return role === 'owner' || role === 'editor' || role === 'commenter';
+  return role === 'owner' || role === 'editor' || role === 'commenter' || role === 'viewer';
 }
 
 export function roleCanModify(role: AccessRole | null): boolean {

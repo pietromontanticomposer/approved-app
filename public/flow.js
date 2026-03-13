@@ -1987,7 +1987,7 @@ function canModifyProject(project) {
 }
 
 function roleCanReview(role) {
-  return role === 'owner' || role === 'editor' || role === 'commenter';
+  return role === 'owner' || role === 'editor' || role === 'commenter' || role === 'viewer';
 }
 
 function canAddCommentsForVersion(status) {

@@ -274,7 +274,7 @@ export async function canModifyProject(userId: string, projectId: string): Promi
 }
 
 /**
- * Check if user can review/comment on a project (owner, editor, commenter)
+ * Check if user can review/comment on a project (owner, editor, commenter, viewer)
  */
 export async function canReviewProject(userId: string, projectId: string): Promise<boolean> {
   // In demo/dev mode without real auth, allow reviews
@@ -302,7 +302,7 @@ export async function canReviewProject(userId: string, projectId: string): Promi
       .maybeSingle();
 
     const projectRole = projectMembership?.role || null;
-    if (projectRole === 'editor' || projectRole === 'commenter' || projectRole === 'owner') {
+    if (projectRole === 'editor' || projectRole === 'commenter' || projectRole === 'viewer' || projectRole === 'owner') {
       return true;
     }
 
@@ -315,7 +315,7 @@ export async function canReviewProject(userId: string, projectId: string): Promi
         .maybeSingle();
 
       const teamRole = teamMembership?.role || null;
-      if (teamRole === 'editor' || teamRole === 'commenter' || teamRole === 'owner') {
+      if (teamRole === 'editor' || teamRole === 'commenter' || teamRole === 'viewer' || teamRole === 'owner') {
         return true;
       }
     }

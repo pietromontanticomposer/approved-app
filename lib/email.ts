@@ -128,7 +128,7 @@ export async function sendInviteEmail(email: string, inviteLink: string, invited
   const roleText = role === 'editor' ? 'Editor (può modificare)'
     : role === 'commenter' ? 'Commentatore (può commentare)'
     : role === 'owner' ? 'Proprietario (controllo totale)'
-    : 'Viewer (può visualizzare)';
+    : 'Viewer (può commentare)';
 
   const safeProjectName = escapeHtml(projectName);
   const safeInvitedBy = escapeHtml(invitedBy);
