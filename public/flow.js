@@ -590,6 +590,7 @@ function mapApiCommentRow(row) {
     time: row.time_seconds !== undefined ? row.time_seconds : (row.time || 0),
     author: row.author || "Client",
     actorId: row.actor_id || null,
+    parentCommentId: row.parent_comment_id || null,
     text: row.text || "",
     audio_url: row.audio_url || null,
     created_at: row.created_at
@@ -971,6 +972,9 @@ const finalDeliveryEmptyHint = document.getElementById("finalDeliveryEmptyHint")
 const addCommentBtn = document.getElementById("addCommentBtn");
 if (!addCommentBtn) console.error('[FlowPreview] addCommentBtn not found in DOM');
 const voiceRecordBtn = document.getElementById("voiceRecordBtn");
+const commentInputWrap = commentInputEl ? commentInputEl.closest(".comment-input") : null;
+let commentReplyBannerEl = null;
+let activeCommentReplyId = null;
 
 const playerTitleEl = document.getElementById("playerTitle");
 if (!playerTitleEl) console.error('[FlowPreview] playerTitleEl not found in DOM');
@@ -1061,7 +1065,10 @@ if (shareInviteBtn) {
 // =======================
 function tr(key, params, fallback) {
   const t = window.i18n && typeof window.i18n.t === "function" ? window.i18n.t : null;
-  if (t) return t(key, params || {});
+  if (t) {
+    const translated = t(key, params || {});
+    if (translated !== key) return translated;
+  }
   if (fallback !== undefined) return fallback;
   return key;
 }
@@ -1078,9 +1085,13 @@ function showConfirmDialog(options = {}) {
   const {
     title = tr("action.confirmDefaultTitle", {}, "Sei sicuro?"),
     message = tr("action.confirmDefaultMessage", {}, "Confermi questa azione?"),
-    confirmLabel = tr("action.confirm", {}, "Conferma"),
-    cancelLabel = tr("action.cancel", {}, "Annulla")
+    confirmLabel,
+    confirmText,
+    cancelLabel,
+    cancelText
   } = options || {};
+  const resolvedConfirmLabel = confirmLabel || confirmText || tr("action.confirm", {}, "Conferma");
+  const resolvedCancelLabel = cancelLabel || cancelText || tr("action.cancel", {}, "Annulla");
 
   return new Promise(resolve => {
     const overlay = document.createElement("div");
@@ -1106,12 +1117,12 @@ function showConfirmDialog(options = {}) {
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "ghost-btn tiny confirm-cancel";
-    cancelBtn.textContent = cancelLabel;
+    cancelBtn.textContent = resolvedCancelLabel;
 
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "danger-btn tiny confirm-confirm";
-    confirmBtn.textContent = confirmLabel;
+    confirmBtn.textContent = resolvedConfirmLabel;
 
     actionsEl.appendChild(cancelBtn);
     actionsEl.appendChild(confirmBtn);
@@ -1994,6 +2005,274 @@ function canAddCommentsForVersion(status) {
   return normalizeVersionStatus(status) === "in_review";
 }
 
+function getVersionComments(version) {
+  return Array.isArray(version?.comments) ? version.comments : [];
+}
+
+function findCommentById(version, commentId) {
+  if (!version || !commentId) return null;
+  return getVersionComments(version).find(comment => comment && comment.id === commentId) || null;
+}
+
+function isOwnerAuthoredComment(project, comment) {
+  return !!(project?.owner_id && comment?.actorId && comment.actorId === project.owner_id);
+}
+
+function isInternalCommentUser(project) {
+  const role = getProjectRole(project);
+  return roleCanModify(role) || isOwnerOfProject(project);
+}
+
+function canCreateTopLevelComment(project, version) {
+  if (!project || !version || !version.media) return false;
+  return roleCanReview(getProjectRole(project)) && canAddCommentsForVersion(version.status);
+}
+
+function canReplyToComment(project, version, comment) {
+  if (!project || !version || !comment || !version.media) return false;
+  const role = getProjectRole(project);
+  if (!roleCanReview(role)) return false;
+
+  const status = normalizeVersionStatus(version.status);
+  if (status === "in_review") return true;
+  if (status !== "review_completed") return false;
+  if (isInternalCommentUser(project)) return true;
+  return isOwnerAuthoredComment(project, comment) && !!comment.parentCommentId;
+}
+
+function getActiveCommentReply(version) {
+  if (!activeCommentReplyId) return null;
+  const comment = findCommentById(version, activeCommentReplyId);
+  if (!comment) {
+    activeCommentReplyId = null;
+    return null;
+  }
+  return comment;
+}
+
+function getCommentReplyBannerText(comment) {
+  const authorLabel = comment?.author || tr("misc.client", {}, "Client");
+  const timeLabel = formatTime(comment?.time || 0);
+  return tr(
+    "comments.replyingTo",
+    { author: authorLabel, time: timeLabel },
+    biText(`Risposta a ${authorLabel} · ${timeLabel}`, `Replying to ${authorLabel} · ${timeLabel}`)
+  );
+}
+
+function ensureCommentReplyBanner() {
+  if (!commentInputWrap) return null;
+  if (!commentReplyBannerEl) {
+    commentReplyBannerEl = document.createElement("div");
+    commentReplyBannerEl.className = "comment-reply-banner";
+
+    const text = document.createElement("span");
+    text.className = "comment-reply-text";
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "comment-reply-cancel";
+    cancel.addEventListener("click", (event) => {
+      event.stopPropagation();
+      clearActiveCommentReply({ focus: true });
+    });
+
+    commentReplyBannerEl.appendChild(text);
+    commentReplyBannerEl.appendChild(cancel);
+    commentInputWrap.insertBefore(commentReplyBannerEl, commentInputEl);
+  }
+  return commentReplyBannerEl;
+}
+
+function updateCommentReplyBanner(replyComment) {
+  const banner = ensureCommentReplyBanner();
+  if (!banner) return;
+
+  const textEl = banner.querySelector(".comment-reply-text");
+  const cancelEl = banner.querySelector(".comment-reply-cancel");
+  if (!replyComment) {
+    banner.style.display = "none";
+    commentInputWrap?.classList.remove("is-replying");
+    return;
+  }
+
+  if (textEl) {
+    textEl.textContent = getCommentReplyBannerText(replyComment);
+  }
+  if (cancelEl) {
+    cancelEl.textContent = tr("comments.replyCancel", {}, biText("Annulla risposta", "Cancel reply"));
+  }
+  banner.style.display = "flex";
+  commentInputWrap?.classList.add("is-replying");
+}
+
+function stripTimecodePrefixWhenStandalone(value) {
+  return /^\d{1,2}:\d{2}(?::\d{2})?,?\s*$/.test(value || "") ? "" : value;
+}
+
+function getCommentComposerContext(project, version) {
+  const replyComment = getActiveCommentReply(version);
+  const canReply = !!replyComment && canReplyToComment(project, version, replyComment);
+
+  if (replyComment && !canReply) {
+    activeCommentReplyId = null;
+  }
+
+  return {
+    replyComment: canReply ? replyComment : null,
+    canCreateTopLevel: canCreateTopLevelComment(project, version),
+    enabled: canCreateTopLevelComment(project, version) || canReply
+  };
+}
+
+function getCommentLockedMessage(project, version) {
+  if (!project || !version || !version.media) {
+    return tr("comments.referencesOnly");
+  }
+
+  const status = normalizeVersionStatus(version.status);
+  if (status === "review_completed") {
+    if (isInternalCommentUser(project)) {
+      return tr(
+        "comments.replyOnlyInternalMessage",
+        {},
+        biText(
+          "I nuovi commenti sono chiusi per questa versione. Puoi ancora rispondere ai commenti esistenti.",
+          "New comments are closed for this version. You can still reply to existing comments."
+        )
+      );
+    }
+    if (roleCanReview(getProjectRole(project))) {
+      return tr(
+        "comments.replyOnlyOwnerMessage",
+        {},
+        biText(
+          "Hai finito di commentare questa versione. Puoi solo rispondere alle risposte del proprietario.",
+          "You are done commenting on this version. You can only reply to the project owner responses."
+        )
+      );
+    }
+  }
+
+  return REVIEW_CLOSED_MESSAGE();
+}
+
+function getCommentInputPlaceholder(project, version, replyComment) {
+  if (replyComment) {
+    const authorLabel = replyComment.author || tr("misc.client", {}, "Client");
+    return tr(
+      "comments.replyPlaceholder",
+      { author: authorLabel },
+      biText(`Rispondi a ${authorLabel}...`, `Reply to ${authorLabel}...`)
+    );
+  }
+
+  if (canCreateTopLevelComment(project, version)) {
+    return tr("comments.addPlaceholder");
+  }
+
+  const status = normalizeVersionStatus(version?.status);
+  if (status === "review_completed") {
+    if (isInternalCommentUser(project)) {
+      return tr(
+        "comments.replySelectPlaceholder",
+        {},
+        biText("Seleziona un commento a cui rispondere...", "Select a comment to reply...")
+      );
+    }
+    if (roleCanReview(getProjectRole(project))) {
+      return tr(
+        "comments.replyOwnerOnlyPlaceholder",
+        {},
+        biText("Commenti chiusi. Puoi rispondere solo alle risposte del proprietario.", "Comments are closed. You can only reply to owner responses.")
+      );
+    }
+  }
+
+  return tr("comments.closedPlaceholder");
+}
+
+function updateCommentComposerState(options = {}) {
+  if (!commentInputEl || !addCommentBtn) return;
+
+  const ctx = getActiveContext();
+  if (!ctx || !ctx.version.media) {
+    activeCommentReplyId = null;
+    updateCommentReplyBanner(null);
+    setCommentsEnabled(false);
+    commentInputEl.placeholder = tr("comments.closedPlaceholder");
+    return;
+  }
+
+  const composer = getCommentComposerContext(ctx.project, ctx.version);
+  updateCommentReplyBanner(composer.replyComment);
+  setCommentsEnabled(composer.enabled);
+  commentInputEl.placeholder = getCommentInputPlaceholder(ctx.project, ctx.version, composer.replyComment);
+
+  if (options.focus && composer.enabled) {
+    try {
+      commentInputEl.focus();
+      commentInputEl.setSelectionRange(commentInputEl.value.length, commentInputEl.value.length);
+    } catch (err) {}
+  }
+}
+
+function clearActiveCommentReply(options = {}) {
+  const hadReply = !!activeCommentReplyId;
+  activeCommentReplyId = null;
+  if (hadReply && commentInputEl) {
+    commentInputEl.value = stripTimecodePrefixWhenStandalone(commentInputEl.value);
+  }
+  updateCommentComposerState(options);
+}
+
+function setActiveCommentReply(comment, options = {}) {
+  activeCommentReplyId = comment?.id || null;
+  if (commentInputEl) {
+    commentInputEl.value = stripTimecodePrefixWhenStandalone(commentInputEl.value);
+  }
+  updateCommentComposerState(options);
+}
+
+function collectDescendantCommentIds(comments, rootId) {
+  const ids = new Set();
+  const stack = [rootId];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop();
+    if (!currentId || ids.has(currentId)) continue;
+    ids.add(currentId);
+    comments.forEach((comment) => {
+      if (comment?.parentCommentId === currentId) {
+        stack.push(comment.id);
+      }
+    });
+  }
+
+  return ids;
+}
+
+function removeCommentThreadLocally(version, commentId) {
+  if (!version || !commentId) return;
+  const comments = getVersionComments(version);
+  const idsToRemove = collectDescendantCommentIds(comments, commentId);
+  version.comments = comments.filter(comment => !idsToRemove.has(comment.id));
+  if (activeCommentReplyId && idsToRemove.has(activeCommentReplyId)) {
+    activeCommentReplyId = null;
+  }
+}
+
+function canManageComment(project, version, comment) {
+  const user = window.flowAuth && typeof window.flowAuth.getUser === "function"
+    ? window.flowAuth.getUser()
+    : null;
+  const currentUid = user?.id || null;
+  if (!currentUid || !comment) return false;
+  if (isInternalCommentUser(project)) return true;
+  if (!comment.actorId || comment.actorId !== currentUid) return false;
+  return normalizeVersionStatus(version?.status) === "in_review";
+}
+
 function toggleActionContainer(container, buttons) {
   if (!container) return;
   const hasVisible = buttons.some(btn => btn && btn.style.display !== "none");
@@ -2007,7 +2286,6 @@ function updateReviewUI(project, version) {
   const canReview = roleCanReview(role);
   const isOwner = isOwnerOfProject(project) || role === 'owner';
   const isCollaborator = !isOwner && canReview;
-  const canComment = canAddCommentsForVersion(status) && canReview;
 
   if (reviewCompleteBtn) {
     const showReviewComplete = isCollaborator && status === "in_review";
@@ -2040,15 +2318,7 @@ function updateReviewUI(project, version) {
 
   toggleActionContainer(reviewActionsEl, [reviewCompleteBtn]);
   toggleActionContainer(decisionActionsEl, [approveVersionBtn, requestChangesBtn]);
-
-  setCommentsEnabled(canComment);
-  if (commentInputEl) {
-    if (canComment) {
-      commentInputEl.placeholder = tr("comments.addPlaceholder");
-    } else {
-      commentInputEl.placeholder = tr("comments.closedPlaceholder");
-    }
-  }
+  updateCommentComposerState();
 
   if (downloadApprovalPackBtn) {
     downloadApprovalPackBtn.style.display = status === "approved" ? "inline-flex" : "none";
@@ -2075,6 +2345,8 @@ function updateReviewUI(project, version) {
 }
 
 function resetReviewUI() {
+  activeCommentReplyId = null;
+  updateCommentReplyBanner(null);
   if (reviewCompleteBtn) reviewCompleteBtn.style.display = "none";
   if (startRevisionBtn) startRevisionBtn.style.display = "none";
   if (approveVersionBtn) approveVersionBtn.style.display = "none";
@@ -2554,9 +2826,9 @@ async function leaveProject(project) {
   if (!project || !project.id) return;
 
   const confirmed = await showConfirmDialog({
-    title: tr('project.leave', {}, 'Leave project'),
+    title: tr('project.leave', {}, biText('Abbandona progetto', 'Leave project')),
     message: tr('project.leaveConfirm', { name: project.name }, `Leave "${project.name}"? You will lose access.`),
-    confirmLabel: tr('project.leave', {}, 'Leave project'),
+    confirmLabel: tr('project.leave', {}, biText('Abbandona progetto', 'Leave project')),
     cancelLabel: tr('action.cancel', {}, 'Cancel')
   });
   if (!confirmed) return;
@@ -4273,6 +4545,9 @@ function clearPlayerWaveShell() {
 function setCommentsEnabled(x) {
   commentInputEl.disabled = !x;
   addCommentBtn.disabled = !x;
+  if (voiceRecordBtn) {
+    voiceRecordBtn.disabled = !x;
+  }
 }
 
 function getCurrentMediaTime() {
@@ -4944,31 +5219,62 @@ function renderComments() {
   if (!ctx || !ctx.version.media) {
     if (commentsListEl) commentsListEl.replaceChildren();
     commentsSummaryEl.textContent = tr("comments.noComments");
+    activeCommentReplyId = null;
+    updateCommentReplyBanner(null);
     setCommentsEnabled(false);
     return;
   }
 
-  const { version } = ctx;
-  const arr = Array.isArray(version.comments) ? version.comments : [];
+  const { project, version } = ctx;
+  const arr = getVersionComments(version);
 
   if (version.commentsLoading && !arr.length) {
     if (commentsListEl) commentsListEl.replaceChildren();
     commentsSummaryEl.textContent = "Loading comments...";
+    updateCommentComposerState();
     return;
   }
 
   if (!arr.length) {
     if (commentsListEl) commentsListEl.replaceChildren();
     commentsSummaryEl.textContent = tr("comments.noComments");
+    updateCommentComposerState();
     return;
   }
 
   commentsSummaryEl.textContent = tr("comments.count", { n: arr.length });
 
+  const nodesById = new Map();
+  const rootNodes = [];
+  arr.forEach((comment, index) => {
+    nodesById.set(comment.id, { comment, children: [], index });
+  });
+  arr.forEach((comment) => {
+    const node = nodesById.get(comment.id);
+    const parentNode = comment.parentCommentId ? nodesById.get(comment.parentCommentId) : null;
+    if (parentNode && comment.parentCommentId !== comment.id) {
+      parentNode.children.push(node);
+      return;
+    }
+    rootNodes.push(node);
+  });
+
   const frag = document.createDocumentFragment();
-  arr.forEach(c => {
+  const renderCommentNode = (node) => {
+    const c = node.comment;
     const li = document.createElement("li");
-    li.style.position = 'relative';
+    li.className = "comment-item";
+    li.style.position = "relative";
+    if (c.parentCommentId) li.classList.add("comment-item-reply");
+    if (activeCommentReplyId && c.id === activeCommentReplyId) {
+      li.classList.add("is-reply-target");
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+
+    const metaPrimary = document.createElement("div");
+    metaPrimary.className = "comment-meta-primary";
 
     const tc = document.createElement("span");
     tc.className = "timecode";
@@ -4978,7 +5284,19 @@ function renderComments() {
     author.className = "author";
     author.textContent = c.author || tr("misc.client", {}, "Client");
 
-    const text = document.createElement("p");
+    metaPrimary.appendChild(tc);
+    metaPrimary.appendChild(author);
+
+    if (isOwnerAuthoredComment(project, c)) {
+      const badge = document.createElement("span");
+      badge.className = "comment-owner-badge";
+      badge.textContent = tr("comments.ownerBadge", {}, biText("Proprietario", "Owner"));
+      metaPrimary.appendChild(badge);
+    }
+
+    meta.appendChild(metaPrimary);
+
+    const text = document.createElement("div");
     text.className = "comment-text";
 
     // Check if this is a voice comment
@@ -5090,34 +5408,27 @@ function renderComments() {
       text.textContent = c.text;
     }
 
-    // Actions (edit/delete) only visible to comment owner
+    const footer = document.createElement("div");
+    footer.className = "comment-footer";
+
     const actions = document.createElement('div');
     actions.className = 'comment-actions';
     try {
-      const currentUser = window.flowAuth ? window.flowAuth.getUser() : null;
-      const currentUid = currentUser ? currentUser.id : null;
-      const isOwner = currentUid && c.actorId && currentUid === c.actorId;
-
-      if (isOwner) {
-        // Create menu-based actions (three-dot menu) instead of inline buttons
-        const renderOwnerActions = () => {
+      if (canManageComment(project, version, c)) {
+        const renderCommentActions = () => {
           actions.innerHTML = '';
           const menuContainer = document.createElement('div');
-          // reuse download-dropdown semantics so styling matches cue/refs menus
           menuContainer.className = 'download-dropdown comment-dropdown';
           menuContainer.style.position = 'absolute';
           menuContainer.style.top = '8px';
           menuContainer.style.right = '12px';
 
           const menuBtn = document.createElement('button');
-          // use the same icon button classes as cue/refs three-dot menus
           menuBtn.type = 'button';
           menuBtn.className = 'icon-btn tiny download-toggle';
           menuBtn.setAttribute('aria-label', 'Comment actions');
           menuBtn.title = 'Comment actions';
-          // three-dot horizontal glyph to match other menus
           menuBtn.textContent = '⋯';
-          // ensure visibility in case inherited styles hide small icon buttons
           menuBtn.style.color = '#9ca3af';
           menuBtn.style.background = 'transparent';
           menuBtn.style.padding = '2px 6px';
@@ -5125,9 +5436,7 @@ function renderComments() {
           menuBtn.style.lineHeight = '1';
 
           const menu = document.createElement('div');
-          // reuse existing blue dropdown styles
           menu.className = 'download-menu';
-          // we'll control visibility via CSS (.open) and position fixed to avoid clipping
           menu.style.position = 'fixed';
           menu.style.zIndex = 10000;
 
@@ -5137,28 +5446,38 @@ function renderComments() {
           const mDelete = document.createElement('button');
           mDelete.textContent = biText('Elimina', 'Delete');
 
-          // Edit handler (reuse existing edit flow)
           const startEdit = () => {
-            // replace text with input
             const input = document.createElement('input');
             input.type = 'text';
             input.value = c.text || '';
-            input.style.width = '60%';
+            input.className = 'comment-edit-input';
+
+            const inlineActions = document.createElement('div');
+            inlineActions.className = 'comment-inline-actions';
+
             const save = document.createElement('button');
             save.className = 'primary-btn tiny';
             save.textContent = biText('Salva', 'Save');
+
             const cancel = document.createElement('button');
             cancel.className = 'ghost-btn tiny';
             cancel.textContent = tr("action.cancel");
 
-            // swap nodes
-            li.replaceChild(input, text);
-            actions.innerHTML = '';
-            actions.appendChild(save);
-            actions.appendChild(cancel);
+            inlineActions.appendChild(save);
+            inlineActions.appendChild(cancel);
 
-            save.addEventListener('click', async (e) => {
-              e.stopPropagation();
+            li.replaceChild(input, text);
+            if (footer.parentNode === li) {
+              li.insertBefore(inlineActions, footer);
+            } else if (actions.parentNode === li) {
+              li.insertBefore(inlineActions, actions);
+            } else {
+              li.appendChild(inlineActions);
+            }
+            actions.innerHTML = '';
+
+            save.addEventListener('click', async (event) => {
+              event.stopPropagation();
               const newText = input.value.trim();
               if (!newText) {
                 await showAlert(tr('comments.emptyError'));
@@ -5176,27 +5495,25 @@ function renderComments() {
                   await showAlert(tr('comments.updateError', { error: (j.error || r.statusText) }));
                   return;
                 }
-                // update local model
                 c.text = j.comment.text || newText;
-                // restore UI
-                text.textContent = c.text;
                 li.replaceChild(text, input);
-                renderOwnerActions();
+                inlineActions.remove();
+                renderCommentActions();
+                renderComments();
               } catch (err) {
                 console.error('Error updating comment', err);
-              showAlert(biText('Eccezione durante aggiornamento commento', 'Exception while updating comment'));
+                showAlert(biText('Eccezione durante aggiornamento commento', 'Exception while updating comment'));
               }
             });
 
-            cancel.addEventListener('click', (e) => {
-              e.stopPropagation();
-              // restore
+            cancel.addEventListener('click', (event) => {
+              event.stopPropagation();
               li.replaceChild(text, input);
-              renderOwnerActions();
+              inlineActions.remove();
+              renderCommentActions();
             });
           };
 
-          // Delete handler
           const doDelete = async () => {
             if (!await showConfirm(biText('Eliminare questo commento?', 'Delete this comment?'))) return;
             try {
@@ -5210,67 +5527,82 @@ function renderComments() {
                 await showAlert(tr('comments.deleteError', { error: (j.error || r.statusText) }));
                 return;
               }
-              // remove from local array
-              const idx = version.comments.findIndex(x => x.id === c.id);
-              if (idx >= 0) version.comments.splice(idx, 1);
+              removeCommentThreadLocally(version, c.id);
               renderComments();
             } catch (err) {
               console.error('Error deleting comment', err);
-            showAlert(biText('Eccezione durante cancellazione commento', 'Exception while deleting comment'));
+              showAlert(biText('Eccezione durante cancellazione commento', 'Exception while deleting comment'));
             }
           };
 
-          mEdit.addEventListener('click', (ev) => { ev.stopPropagation(); startEdit(); });
-          mDelete.addEventListener('click', async (ev) => { ev.stopPropagation(); await doDelete(); });
+          mEdit.addEventListener('click', (event) => {
+            event.stopPropagation();
+            startEdit();
+          });
+          mDelete.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await doDelete();
+          });
 
           menu.appendChild(mEdit);
           menu.appendChild(mDelete);
-
-          // append menu button and menu into the download-dropdown wrapper
           menuContainer.appendChild(menuBtn);
           menuContainer.appendChild(menu);
           actions.appendChild(menuContainer);
 
-          // Toggle open class on wrapper (same behavior as cue/refs menus)
-          menuBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
+          menuBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
             const open = menuContainer.classList.contains('open');
             document
               .querySelectorAll('.download-dropdown.open')
               .forEach(x => x.classList.remove('open'));
             if (!open) {
               menuContainer.classList.add('open');
-              // position relative to viewport using button rect
               const rect = menuBtn.getBoundingClientRect();
-              // compute width (fallback if not yet rendered)
-              const mW = menu.offsetWidth || 150;
-              const left = Math.max(8, rect.right - mW);
-              const top = Math.max(8, rect.bottom + 6);
-              menu.style.left = left + 'px';
-              menu.style.top = top + 'px';
+              const menuWidth = menu.offsetWidth || 150;
+              menu.style.left = `${Math.max(8, rect.right - menuWidth)}px`;
+              menu.style.top = `${Math.max(8, rect.bottom + 6)}px`;
             } else {
               menuContainer.classList.remove('open');
             }
           });
 
-          // close menu when clicking an item
-          menu.querySelectorAll('button').forEach(b => {
-            b.addEventListener('click', (ev) => {
-              ev.stopPropagation();
+          menu.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', (event) => {
+              event.stopPropagation();
               menuContainer.classList.remove('open');
             });
           });
         };
 
-        renderOwnerActions();
+        renderCommentActions();
       }
-    } catch (e) {
-      // ignore
+    } catch (err) {}
+
+    if (canReplyToComment(project, version, c)) {
+      const replyBtn = document.createElement("button");
+      replyBtn.type = "button";
+      replyBtn.className = "ghost-btn tiny comment-reply-btn";
+      if (activeCommentReplyId === c.id) {
+        replyBtn.classList.add("is-active");
+      }
+      replyBtn.textContent = tr("comments.replyAction", {}, biText("Rispondi", "Reply"));
+      replyBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (activeCommentReplyId === c.id) {
+          clearActiveCommentReply({ focus: true });
+        } else {
+          setActiveCommentReply(c, { focus: true });
+        }
+      });
+      footer.appendChild(replyBtn);
     }
 
-    li.appendChild(tc);
-    li.appendChild(author);
+    li.appendChild(meta);
     li.appendChild(text);
+    if (footer.childNodes.length > 0) {
+      li.appendChild(footer);
+    }
     if (actions && actions.childNodes && actions.childNodes.length) li.appendChild(actions);
 
     li.addEventListener("click", () => {
@@ -5288,12 +5620,24 @@ function renderComments() {
       }
     });
 
-    frag.appendChild(li);
+    if (node.children.length > 0) {
+      const childrenList = document.createElement("ul");
+      childrenList.className = "comment-children";
+      node.children.forEach((childNode) => {
+        childrenList.appendChild(renderCommentNode(childNode));
+      });
+      li.appendChild(childrenList);
+    }
+
+    return li;
+  };
+
+  rootNodes.forEach((node) => {
+    frag.appendChild(renderCommentNode(node));
   });
 
   if (commentsListEl) commentsListEl.replaceChildren(frag);
-
-  // comment enablement handled by review state
+  updateCommentComposerState();
 }
 
 // =======================
@@ -5595,22 +5939,28 @@ function addCommentFromInput() {
   const ctx = getActiveContext();
   if (!ctx) return;
 
-  const { version } = ctx;
+  const { project, version } = ctx;
   if (!version.media) return;
-  if (!canAddCommentsForVersion(version.status)) {
-    showAlert(REVIEW_CLOSED_MESSAGE());
+  const composer = getCommentComposerContext(project, version);
+  if (!composer.enabled) {
+    showAlert(getCommentLockedMessage(project, version));
     return;
   }
 
   const text = commentInputEl.value.trim();
   if (!text) return;
 
-  const t = getCurrentMediaTime();
-  const tc = formatTime(t);
+  const replyComment = composer.replyComment;
+  const commentTime = replyComment ? (replyComment.time || 0) : getCurrentMediaTime();
+  const tc = formatTime(commentTime);
 
   let final = text;
-  if (text.startsWith(tc)) {
+  if (!replyComment && text.startsWith(tc)) {
     final = text.slice(tc.length).trim().replace(/^,/, "").trim();
+  }
+  if (!final) {
+    showAlert(tr("comments.emptyError"));
+    return;
   }
 
   // determine author display (try client-side metadata), then optimistic UI
@@ -5623,14 +5973,17 @@ function addCommentFromInput() {
   const localId = uid();
   version.comments.push({
     id: localId,
-    time: t,
+    time: commentTime,
     author: displayName,
     text: final,
+    parentCommentId: replyComment ? replyComment.id : null,
     // optimistic actor id so owner actions (three-dot menu) show immediately
     actorId: user ? user.id : null
   });
 
   commentInputEl.value = "";
+  activeCommentReplyId = null;
+  updateCommentComposerState();
   renderComments();
 
   // persist to server
@@ -5642,13 +5995,26 @@ function addCommentFromInput() {
         resp = await apiCall('/api/comments', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName })
+          body: JSON.stringify({
+            version_id: version.id,
+            time_seconds: commentTime,
+            text: final,
+            author: displayName,
+            parent_comment_id: replyComment ? replyComment.id : null
+          })
         });
       } else {
         const r = await fetch('/api/comments', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ version_id: version.id, time_seconds: t, text: final, author: displayName, projectId: state.activeProjectId })
+          body: JSON.stringify({
+            version_id: version.id,
+            time_seconds: commentTime,
+            text: final,
+            author: displayName,
+            parent_comment_id: replyComment ? replyComment.id : null,
+            projectId: state.activeProjectId
+          })
         });
         try { resp = await r.json(); } catch(e) { resp = { error: 'invalid_json' }; }
       }
@@ -5666,6 +6032,7 @@ function addCommentFromInput() {
         for (let c of version.comments) {
           if (c.id === localId) {
             c.id = saved.id;
+            c.parentCommentId = saved.parent_comment_id || c.parentCommentId || null;
             c.created_at = saved.created_at || c.created_at;
             // ensure actorId is set from server if present, otherwise keep optimistic value
             if (saved.actorId) c.actorId = saved.actorId;
@@ -5682,16 +6049,23 @@ function addCommentFromInput() {
   })();
 }
 
-const commentInputWrap = commentInputEl.closest(".comment-input");
 if (commentInputWrap) {
   commentInputWrap.addEventListener("click", () => {
     if (commentInputEl.disabled) {
-      showAlert(REVIEW_CLOSED_MESSAGE());
+      const ctx = getActiveContext();
+      if (!ctx) return;
+      showAlert(getCommentLockedMessage(ctx.project, ctx.version));
     }
   });
 }
 
 commentInputEl.addEventListener("focus", () => {
+  const ctx = getActiveContext();
+  if (!ctx) return;
+  const composer = getCommentComposerContext(ctx.project, ctx.version);
+  if (composer.replyComment || !composer.canCreateTopLevel || commentInputEl.disabled) {
+    return;
+  }
   const t = getCurrentMediaTime();
   const tc = formatTime(t);
   const base = `${tc}, `;
@@ -5782,12 +6156,14 @@ if (voiceRecordBtn) {
     const ctx = getActiveContext();
     if (!ctx) return;
 
-    const { version } = ctx;
+    const { project, version } = ctx;
     if (!version.media) return;
-    if (!canAddCommentsForVersion(version.status)) {
-      showAlert(REVIEW_CLOSED_MESSAGE());
+    const composer = getCommentComposerContext(project, version);
+    if (!composer.enabled) {
+      showAlert(getCommentLockedMessage(project, version));
       return;
     }
+    const replyComment = composer.replyComment;
 
     // If already recording, stop
     if (voiceMediaRecorder && voiceMediaRecorder.state === "recording") {
@@ -5808,7 +6184,7 @@ if (voiceRecordBtn) {
 
       voiceMediaRecorder = new MediaRecorder(stream, { mimeType });
       voiceRecordedChunks = [];
-      voiceRecordingStartTime = getCurrentMediaTime();
+      voiceRecordingStartTime = replyComment ? (replyComment.time || 0) : getCurrentMediaTime();
 
       voiceMediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -5830,7 +6206,7 @@ if (voiceRecordBtn) {
         const ext = mimeType.includes('webm') ? 'webm' : 'm4a';
 
         // Upload the audio
-        await uploadVoiceComment(version, blob, ext, voiceRecordingStartTime);
+        await uploadVoiceComment(version, blob, ext, voiceRecordingStartTime, replyComment ? replyComment.id : null);
       };
 
       voiceMediaRecorder.onerror = (e) => {
@@ -5860,7 +6236,7 @@ if (voiceRecordBtn) {
   });
 }
 
-async function uploadVoiceComment(version, blob, ext, recordTime) {
+async function uploadVoiceComment(version, blob, ext, recordTime, parentCommentId = null) {
   const project = getActiveProject();
   if (!project) return;
 
@@ -5878,8 +6254,11 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
     author: displayName,
     text: biText('[Caricamento nota vocale...]', '[Uploading voice note...]'),
     isUploading: true,
+    parentCommentId: parentCommentId || null,
     actorId: user ? user.id : null
   });
+  activeCommentReplyId = null;
+  updateCommentComposerState();
   renderComments();
 
   try {
@@ -5923,6 +6302,7 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
         text: '',
         author: displayName,
         audio_url: uploadPath,
+        parent_comment_id: parentCommentId || null,
         projectId: project.id
       })
     });
@@ -5941,6 +6321,7 @@ async function uploadVoiceComment(version, blob, ext, recordTime) {
         author: displayName,
         text: '',
         audio_url: uploadPath,
+        parentCommentId: resp.comment?.parent_comment_id || parentCommentId || null,
         actorId: user ? user.id : null
       };
     }
@@ -8164,7 +8545,7 @@ function showProjectMenu(event, project) {
       ]
     : [
         {
-          label: tr('project.leave', {}, 'Leave project'),
+          label: tr('project.leave', {}, biText('Abbandona progetto', 'Leave project')),
           color: '#dc2626',
           hover: '#fef2f2',
           onClick: () => leaveProject(project)
@@ -8318,7 +8699,7 @@ function renderProjectList() {
       menuShared.className = 'download-menu';
 
       const leaveBtn = document.createElement('button');
-      leaveBtn.textContent = tr('project.leave', {}, 'Leave project');
+      leaveBtn.textContent = tr('project.leave', {}, biText('Abbandona progetto', 'Leave project'));
       menuShared.appendChild(leaveBtn);
 
       ddShared.appendChild(btnShared);
@@ -8932,7 +9313,7 @@ const columnResizer = document.getElementById("columnResizer");
 const leftColumn = document.querySelector(".left-column");
 const rightColumn = document.querySelector(".right-column");
 
-const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MIN_WIDTH = 224;
 const SIDEBAR_MAX_WIDTH = 500;
 
 function updateSidebarResizerPosition() {

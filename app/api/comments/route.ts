@@ -43,6 +43,56 @@ async function getUserDisplayName(userId: string | null): Promise<string | null>
   }
 }
 
+function normalizeVersionStatus(status: string | null | undefined): string {
+  if (!status) return "in_review";
+  if (status === "in-review") return "in_review";
+  if (status === "changes-requested") return "changes_requested";
+  return status;
+}
+
+async function getVersionCommentContext(versionId: string): Promise<{
+  projectId: string | null;
+  ownerId: string | null;
+  status: string;
+}> {
+  const { data: version, error: versionErr } = await supabaseAdmin
+    .from("versions")
+    .select("id, cue_id, status")
+    .eq("id", versionId)
+    .maybeSingle();
+
+  if (versionErr || !version) {
+    return { projectId: null, ownerId: null, status: "in_review" };
+  }
+
+  const { data: cue } = await supabaseAdmin
+    .from("cues")
+    .select("project_id")
+    .eq("id", (version as any).cue_id)
+    .maybeSingle();
+
+  const projectId = (cue as any)?.project_id || null;
+  if (!projectId) {
+    return {
+      projectId: null,
+      ownerId: null,
+      status: normalizeVersionStatus((version as any).status)
+    };
+  }
+
+  const { data: project } = await supabaseAdmin
+    .from("projects")
+    .select("owner_id")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  return {
+    projectId,
+    ownerId: (project as any)?.owner_id || null,
+    status: normalizeVersionStatus((version as any).status)
+  };
+}
+
 // ============================================================================
 // API ROUTES
 // ============================================================================
@@ -125,7 +175,7 @@ export async function GET(req: NextRequest) {
  *
  * Creates a new comment
  * Requires: Authentication
- * Body: { version_id: string, time_seconds: number, text: string, author?: string }
+ * Body: { version_id: string, time_seconds: number, text: string, author?: string, parent_comment_id?: string | null }
  * Returns: { comment: Comment }
  */
 export async function POST(req: NextRequest) {
@@ -147,7 +197,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { version_id, time_seconds, author, text, audio_url } = body;
+    const {
+      version_id,
+      time_seconds,
+      author,
+      text,
+      audio_url,
+      parent_comment_id
+    } = body;
 
     // Validate required fields (text can be empty for voice comments)
     if (!version_id || time_seconds === undefined) {
@@ -195,14 +252,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // SECURITY: Verify version belongs to a project the user can review/comment
-    const { data: version } = await supabaseAdmin
-      .from("versions")
-      .select("id, cues(project_id)")
-      .eq("id", version_id)
-      .single();
+    if (parent_comment_id !== undefined && parent_comment_id !== null && !isUuid(parent_comment_id)) {
+      return NextResponse.json(
+        { error: "parent_comment_id must be a valid UUID when provided" },
+        { status: 400 }
+      );
+    }
 
-    const projectId = (version as any)?.cues?.project_id || null;
+    const versionContext = await getVersionCommentContext(version_id);
+    const projectId = versionContext.projectId;
     if (!projectId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -210,6 +268,59 @@ export async function POST(req: NextRequest) {
     const access = await resolveAccessContext(req, projectId);
     if (!access || !roleCanReview(access.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const isInternalReviewer =
+      access.source === 'user' &&
+      (roleCanModify(access.role) || (!!versionContext.ownerId && access.userId === versionContext.ownerId));
+    const isReply = !!parent_comment_id;
+
+    if (!isReply) {
+      if (versionContext.status !== "in_review") {
+        return NextResponse.json(
+          { error: "New comments are closed for this version" },
+          { status: 403 }
+        );
+      }
+    } else {
+      const { data: parentComment, error: parentErr } = await supabaseAdmin
+        .from("comments")
+        .select("id, version_id, actor_id, parent_comment_id")
+        .eq("id", parent_comment_id)
+        .maybeSingle();
+
+      if (parentErr) {
+        return NextResponse.json(
+          { error: `Failed to load parent comment: ${parentErr.message}` },
+          { status: 500 }
+        );
+      }
+
+      if (!parentComment || parentComment.version_id !== version_id) {
+        return NextResponse.json(
+          { error: "Parent comment is invalid for this version" },
+          { status: 400 }
+        );
+      }
+
+      if (versionContext.status === "review_completed") {
+        const parentIsOwnerReply =
+          !!versionContext.ownerId &&
+          parentComment.actor_id === versionContext.ownerId &&
+          !!parentComment.parent_comment_id;
+
+        if (!isInternalReviewer && !parentIsOwnerReply) {
+          return NextResponse.json(
+            { error: "You can only reply to owner responses on this version" },
+            { status: 403 }
+          );
+        }
+      } else if (versionContext.status !== "in_review") {
+        return NextResponse.json(
+          { error: "Replies are closed for this version" },
+          { status: 403 }
+        );
+      }
     }
 
     // Determine author name and actor based on access source
@@ -248,6 +359,7 @@ export async function POST(req: NextRequest) {
         author: authorName || "User",
         actor_id: actorId,
         guest_session_id: guestSessionId,
+        parent_comment_id: parent_comment_id || null,
         text: text ? text.trim() : '',
         audio_url: audio_url || null,
       })
@@ -356,13 +468,24 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const isOwnerEditor = roleCanModify(access.role);
-    const isUserAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    const versionContext = await getVersionCommentContext(existing.version_id);
+    const isInternalUser =
+      access.source === 'user' &&
+      (roleCanModify(access.role) || (!!versionContext.ownerId && access.userId === versionContext.ownerId));
+    const activeUserId = access.source === 'user' ? access.userId : userId;
+    const isUserAuthor = existing.actor_id && activeUserId && existing.actor_id === activeUserId;
     const isGuestAuthor = access.source === 'guest' && existing.guest_session_id && access.guestSessionId === existing.guest_session_id;
-    if (!isOwnerEditor && !isUserAuthor && !isGuestAuthor) {
+    if (!isInternalUser && !isUserAuthor && !isGuestAuthor) {
       if (isDev) console.log('[PATCH /api/comments] User not authorized to edit comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to edit this comment' },
+        { status: 403 }
+      );
+    }
+
+    if (!isInternalUser && versionContext.status !== 'in_review') {
+      return NextResponse.json(
+        { error: 'Comments can no longer be edited on this version' },
         { status: 403 }
       );
     }
@@ -460,13 +583,24 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const isOwnerEditor = roleCanModify(access.role);
-    const isUserAuthor = existing.actor_id && userId && existing.actor_id === userId;
+    const versionContext = await getVersionCommentContext(existing.version_id);
+    const isInternalUser =
+      access.source === 'user' &&
+      (roleCanModify(access.role) || (!!versionContext.ownerId && access.userId === versionContext.ownerId));
+    const activeUserId = access.source === 'user' ? access.userId : userId;
+    const isUserAuthor = existing.actor_id && activeUserId && existing.actor_id === activeUserId;
     const isGuestAuthor = access.source === 'guest' && existing.guest_session_id && access.guestSessionId === existing.guest_session_id;
-    if (!isOwnerEditor && !isUserAuthor && !isGuestAuthor) {
+    if (!isInternalUser && !isUserAuthor && !isGuestAuthor) {
       if (isDev) console.log('[DELETE /api/comments] User not authorized to delete comment');
       return NextResponse.json(
         { error: 'Forbidden - you do not have permission to delete this comment' },
+        { status: 403 }
+      );
+    }
+
+    if (!isInternalUser && versionContext.status !== 'in_review') {
+      return NextResponse.json(
+        { error: 'Comments can no longer be deleted on this version' },
         { status: 403 }
       );
     }
