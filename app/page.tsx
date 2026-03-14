@@ -876,7 +876,7 @@ export default function Page() {
       <Script src="/flow-auth.js?v=10" strategy="afterInteractive" />
       <Script src="/share-handler.js?v=9" strategy="afterInteractive" />
       <Script
-        src="/flow.js?v=15"
+        src="/flow.js?v=16"
         strategy="afterInteractive"
         onLoad={() => {
           const boot = async () => {

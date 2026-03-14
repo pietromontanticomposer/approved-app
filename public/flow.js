@@ -6088,6 +6088,7 @@ function renderProjectDataOnly() {
   renderNotesPanel();
   updateProjectNotesButton();
   maybeShowOnboarding();
+  updateDebugBar();
 }
 
 function primeProjectNotesCache(projectId, notes, cueNotes) {
@@ -6245,6 +6246,7 @@ async function loadProjectCues(projectId, options = {}) {
       console.warn('[Flow] Failed to lazy-load notes', err);
     });
     console.log("[Flow] Project cues loaded successfully via /api/projects/full");
+    updateDebugBar();
     return;
   } catch (err) {
     setProjectDiagnostics(projectId, {
@@ -6258,6 +6260,7 @@ async function loadProjectCues(projectId, options = {}) {
   if (!skipRender) {
     renderProjectDataOnly();
   }
+  updateDebugBar();
 }
 
 async function loadProjectCuesLegacy(projectId, headers) {
@@ -10479,9 +10482,38 @@ function renderAll() {
   refreshSharedWithPanel(false);
   updateProjectNotesButton();
   maybeShowOnboarding();
+  updateDebugBar();
 }
 
 function maybeShowOnboarding() {}
+
+// ====== TEMPORARY DEBUG BAR — remove once content issue is resolved ======
+let _debugBarEl = null;
+function updateDebugBar() {
+  if (!_debugBarEl) {
+    _debugBarEl = document.createElement('div');
+    _debugBarEl.id = 'flow-debug-bar';
+    _debugBarEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#1a1a2e;color:#0f0;font:11px/1.4 monospace;padding:6px 12px;white-space:pre-wrap;max-height:120px;overflow:auto;border-top:2px solid #e94560;';
+    document.body.appendChild(_debugBarEl);
+  }
+  const p = getActiveProject();
+  const ce = document.querySelector('.content');
+  const cl = document.getElementById('cueList');
+  const authH = getBestAuthHeaders();
+  const hasAuth = !!authH.Authorization;
+  const hasActor = !!authH['x-actor-id'];
+  const flowAuthSession = window.flowAuth && window.flowAuth.getSession ? window.flowAuth.getSession() : null;
+  const bootSess = typeof getBootSession === 'function' ? getBootSession() : null;
+
+  const lines = [
+    `[DEBUG] Projects: ${state.projects.length} | ActiveID: ${state.activeProjectId || 'NULL'}`,
+    `Project obj: ${p ? p.name + ' (cues:' + (p.cues ? p.cues.length : '?') + ', is_shared:' + p.is_shared + ', role:' + p.project_role + ')' : 'NULL'}`,
+    `.content display: ${ce ? ce.style.display || getComputedStyle(ce).display : 'ELEMENT NOT FOUND'} | cueList children: ${cl ? cl.children.length : 'NOT FOUND'}`,
+    `Auth: token=${hasAuth ? 'YES' : 'NO'} actor=${hasActor ? 'YES' : 'NO'} | flowAuth.session=${flowAuthSession ? 'YES' : 'NO'} | bootSession=${bootSess ? 'YES' : 'NO'}`,
+    `contentEl ref: ${contentEl ? 'OK' : 'NULL'} | cueListEl ref: ${cueListEl ? 'OK' : 'NULL'} | rightColEl ref: ${rightColEl ? 'OK' : 'NULL'}`,
+  ];
+  _debugBarEl.textContent = lines.join('\n');
+}
 
 // Export for page.tsx to call after auth
 window.initializeFromSupabase = initializeFromSupabase;
