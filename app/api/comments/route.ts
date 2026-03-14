@@ -551,10 +551,10 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    // SECURITY: Fetch comment and check ownership
+    // SECURITY: Fetch comment with version status and project owner in a single query
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from('comments')
-      .select('id, actor_id, guest_session_id, version_id, versions(cue_id, cues(project_id))')
+      .select('id, actor_id, guest_session_id, version_id, versions(status, cue_id, cues(project_id, projects(owner_id)))')
       .eq('id', id)
       .maybeSingle();
 
@@ -573,20 +573,23 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const projectId = (existing as any)?.versions?.cues?.project_id || null;
+    const versionData = (existing as any)?.versions;
+    const projectId = versionData?.cues?.project_id || null;
     if (!projectId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+
+    const ownerId = versionData?.cues?.projects?.owner_id || null;
+    const versionStatus = normalizeVersionStatus(versionData?.status);
 
     const access = await resolveAccessContext(req, projectId);
     if (!access) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const versionContext = await getVersionCommentContext(existing.version_id);
     const isInternalUser =
       access.source === 'user' &&
-      (roleCanModify(access.role) || (!!versionContext.ownerId && access.userId === versionContext.ownerId));
+      (roleCanModify(access.role) || (!!ownerId && access.userId === ownerId));
     const activeUserId = access.source === 'user' ? access.userId : userId;
     const isUserAuthor = existing.actor_id && activeUserId && existing.actor_id === activeUserId;
     const isGuestAuthor = access.source === 'guest' && existing.guest_session_id && access.guestSessionId === existing.guest_session_id;
@@ -598,7 +601,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    if (!isInternalUser && versionContext.status !== 'in_review') {
+    if (!isInternalUser && versionStatus !== 'in_review') {
       return NextResponse.json(
         { error: 'Comments can no longer be deleted on this version' },
         { status: 403 }

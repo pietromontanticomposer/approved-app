@@ -5686,6 +5686,7 @@ function renderComments() {
     const c = node.comment;
     const li = document.createElement("li");
     li.className = "comment-item";
+    li.dataset.commentId = c.id;
     li.style.position = "relative";
     if (c.parentCommentId) li.classList.add("comment-item-reply");
     if (activeCommentReplyId && c.id === activeCommentReplyId) {
@@ -5949,8 +5950,21 @@ function renderComments() {
                 await showAlert(tr('comments.deleteError', { error: (j.error || r.statusText) }));
                 return;
               }
+              // Collect IDs to remove before mutating state
+              const idsToRemove = collectDescendantCommentIds(getVersionComments(version), c.id);
               removeCommentThreadLocally(version, c.id);
-              renderComments();
+              // Remove deleted comment elements from DOM directly
+              idsToRemove.forEach(cid => {
+                const el = document.querySelector(`[data-comment-id="${cid}"]`);
+                if (el) el.remove();
+              });
+              // Update comment count text
+              const remaining = getVersionComments(version);
+              if (commentsSummaryEl) {
+                commentsSummaryEl.textContent = remaining.length
+                  ? tr("comments.count", { n: remaining.length })
+                  : tr("comments.noComments");
+              }
             } catch (err) {
               console.error('Error deleting comment', err);
               showAlert(biText('Eccezione durante cancellazione commento', 'Exception while deleting comment'));
