@@ -212,6 +212,19 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const liteParam = (url.searchParams.get('lite') || '').toLowerCase();
     const lite = liteParam === '1' || liteParam === 'true' || liteParam === 'yes';
+    const debugParam = (url.searchParams.get('debug') || '').toLowerCase();
+    const debug = isDev && (debugParam === '1' || debugParam === 'true' || debugParam === 'yes');
+    const debugInfo: any = debug
+      ? {
+          request: {
+            lite,
+            hasAuthorization: !!req.headers.get('authorization'),
+            hasActorId: !!req.headers.get('x-actor-id'),
+            hasShareId: !!req.headers.get('x-share-id'),
+            hasShareToken: !!req.headers.get('x-share-token')
+          }
+        }
+      : null;
 
     // Allow share-link access without authentication (returns a single shared project)
     const shareContext = await getShareLinkContext(req);
@@ -229,21 +242,49 @@ export async function GET(req: NextRequest) {
       const enriched = lite
         ? [{ ...sharedProject, team_members: [] }]
         : await hydrateProjectsWithTeamMembers([sharedProject]);
+      if (debugInfo) {
+        debugInfo.mode = 'share-link';
+        debugInfo.share = {
+          projectId: shareContext.projectId,
+          role: shareContext.role
+        };
+        debugInfo.auth = {
+          authenticated: false,
+          userId: null,
+          isUuidUserId: null
+        };
+        debugInfo.result = {
+          myProjectCount: 0,
+          sharedProjectCount: enriched.length,
+          totalProjectCount: enriched.length
+        };
+      }
       return NextResponse.json({
         my_projects: [],
         shared_with_me: enriched.map(p => ({ ...p, is_shared: true, share_role: shareContext.role, project_role: shareContext.role })),
         projects: enriched.map(p => ({ ...p, is_shared: true, share_role: shareContext.role, project_role: shareContext.role })),
         public: true,
-        share: { role: shareContext.role }
+        share: { role: shareContext.role },
+        ...(debugInfo ? { _debug: debugInfo } : {})
       }, { status: 200 });
     }
 
     // SECURITY: Verify authentication
     const auth = await verifyAuth(req);
+    if (debugInfo) {
+      debugInfo.auth = {
+        authenticated: !!auth,
+        userId: auth?.userId || null,
+        isUuidUserId: auth?.userId ? isUuid(auth.userId) : null
+      };
+    }
     if (!auth) {
       if (isDev) console.log('[GET /api/projects] Unauthorized request');
       return NextResponse.json(
-        { error: 'Unauthorized - authentication required' },
+        {
+          error: 'Unauthorized - authentication required',
+          ...(debugInfo ? { _debug: { ...debugInfo, mode: 'unauthorized' } } : {})
+        },
         { status: 401 }
       );
     }
@@ -257,6 +298,7 @@ export async function GET(req: NextRequest) {
         shared_with_me: [],
         projects: [],
         public: true,
+        ...(debugInfo ? { _debug: { ...debugInfo, mode: 'non-uuid-user' } } : {})
       }, { status: 200 });
     }
 
@@ -318,10 +360,24 @@ export async function GET(req: NextRequest) {
     const sharedProjectsWithRole = sharedProjectsHydrated.map(attachRole);
     const allProjectsWithRole = [...myProjectsWithRole, ...sharedProjectsWithRole];
 
+    if (debugInfo) {
+      debugInfo.mode = 'authenticated';
+      debugInfo.result = {
+        myProjectCount: myProjectsWithRole.length,
+        sharedProjectCount: sharedProjectsWithRole.length,
+        totalProjectCount: allProjectsWithRole.length
+      };
+      debugInfo.memberships = {
+        directProjectMembershipCount: (membershipRows || []).length,
+        teamCount: teamIds.length
+      };
+    }
+
     return NextResponse.json({
         my_projects: myProjectsWithRole,
         shared_with_me: sharedProjectsWithRole,
         projects: allProjectsWithRole, // Backward compatibility
+        ...(debugInfo ? { _debug: debugInfo } : {})
     }, { status: 200 });
 
   } catch (err: any) {

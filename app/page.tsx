@@ -2,7 +2,7 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import ShareModal from "./components/ShareModal";
 import DisplayNamePrompt from "./components/DisplayNamePrompt";
 import { LandingContent } from "./landing/page";
@@ -27,6 +27,11 @@ function readCachedBrowserSession() {
     return null;
   }
 }
+
+const LegacyAppShell = memo(function LegacyAppShell({ html }: { html: string }) {
+  // flow.js mutates this DOM imperatively; React must not recreate it on unrelated state updates.
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+});
 
 export default function Page() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -844,7 +849,7 @@ export default function Page() {
           `,
         }}
       />
-      <div dangerouslySetInnerHTML={{ __html: html }} />
+      <LegacyAppShell html={html} />
       
       {/* Share Modal */}
       {shareData && (

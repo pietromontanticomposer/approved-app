@@ -6,7 +6,11 @@ const state = {
   activeProjectId: null,
   autoRename: false,
   namingMode: "media", // "media" | "cinema"
-  playerMode: "review" // "review" | "refs"
+  playerMode: "review", // "review" | "refs"
+  diagnostics: {
+    projectList: null,
+    projects: {}
+  }
 };
 
 let mainWave = null;
@@ -512,6 +516,243 @@ function clonePlain(value) {
   } catch (err) {
     return value;
   }
+}
+
+function shouldShowProjectDiagnostics() {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.__forceProjectDiagnostics === true) return true;
+    const params = new URLSearchParams(window.location.search || "");
+    if (params.get("diag") === "1" || params.get("debugProjects") === "1") {
+      return true;
+    }
+    const host = window.location.hostname || "";
+    return host === "localhost" || host === "127.0.0.1" || host.endsWith(".local");
+  } catch (err) {
+    return false;
+  }
+}
+
+function withProjectDiagnosticsUrl(rawUrl) {
+  if (!rawUrl || !shouldShowProjectDiagnostics()) return rawUrl;
+  try {
+    const url = new URL(rawUrl, window.location.origin);
+    url.searchParams.set("debug", "1");
+    return `${url.pathname}${url.search}`;
+  } catch (err) {
+    return `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}debug=1`;
+  }
+}
+
+function syncProjectDiagnosticsWindow() {
+  if (typeof window === "undefined") return;
+  try {
+    window.__approvedProjectDiagnostics = clonePlain(state.diagnostics);
+  } catch (err) {}
+}
+
+function setProjectListDiagnostics(update) {
+  state.diagnostics.projectList = {
+    ...(state.diagnostics.projectList || {}),
+    ...(clonePlain(update) || {}),
+    updatedAt: new Date().toISOString()
+  };
+  syncProjectDiagnosticsWindow();
+  if (shouldShowProjectDiagnostics()) {
+    console.log("[FlowDiag] Project list diagnostics", state.diagnostics.projectList);
+  }
+}
+
+function setProjectDiagnostics(projectId, update) {
+  if (!projectId) return;
+  const current = state.diagnostics.projects[projectId] || {};
+  state.diagnostics.projects[projectId] = {
+    ...current,
+    ...(clonePlain(update) || {}),
+    updatedAt: new Date().toISOString()
+  };
+  syncProjectDiagnosticsWindow();
+  if (shouldShowProjectDiagnostics()) {
+    console.log("[FlowDiag] Project diagnostics", projectId, state.diagnostics.projects[projectId]);
+  }
+}
+
+function getProjectDiagnostics(projectId) {
+  if (!projectId) return null;
+  return state.diagnostics.projects[projectId] || null;
+}
+
+function formatProjectDiagnosticValue(value) {
+  if (value === null || value === undefined || value === "") return "n/a";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "object") {
+    try {
+      const json = JSON.stringify(value);
+      return json.length > 220 ? `${json.slice(0, 217)}...` : json;
+    } catch (err) {
+      return "[object]";
+    }
+  }
+  return String(value);
+}
+
+function buildProjectListDiagnosticLines() {
+  const diag = state.diagnostics.projectList;
+  if (!diag) return "";
+  const server = diag.server || {};
+  const auth = server.auth || {};
+  return [
+    `status: ${formatProjectDiagnosticValue(diag.status)}`,
+    `response ok: ${formatProjectDiagnosticValue(diag.ok)}`,
+    `public response: ${formatProjectDiagnosticValue(diag.public)}`,
+    `my projects: ${formatProjectDiagnosticValue(diag.myProjectCount)}`,
+    `shared projects: ${formatProjectDiagnosticValue(diag.sharedProjectCount)}`,
+    `total projects: ${formatProjectDiagnosticValue(diag.projectCount)}`,
+    `auth header: ${formatProjectDiagnosticValue(diag.auth && diag.auth.hasAuthorization)}`,
+    `actor header: ${formatProjectDiagnosticValue(diag.auth && diag.auth.hasActorId)}`,
+    `server user: ${formatProjectDiagnosticValue(auth.userId)}`,
+    `user UUID: ${formatProjectDiagnosticValue(auth.isUuidUserId)}`,
+    `mode: ${formatProjectDiagnosticValue(server.mode)}`,
+    `error: ${formatProjectDiagnosticValue(diag.error)}`,
+    `updated: ${formatProjectDiagnosticValue(diag.updatedAt)}`,
+    `console: window.__approvedProjectDiagnostics`
+  ].join("\n");
+}
+
+function createProjectListDiagnosticsItem() {
+  if (!shouldShowProjectDiagnostics()) return null;
+  const diag = state.diagnostics.projectList;
+  if (!diag) return null;
+
+  const item = document.createElement("li");
+  item.className = "project-item empty";
+  item.style.whiteSpace = "normal";
+  item.style.padding = "10px";
+  item.style.border = "1px solid rgba(255,255,255,0.08)";
+  item.style.borderRadius = "10px";
+  item.style.background = "rgba(15,23,42,0.55)";
+
+  const title = document.createElement("div");
+  title.textContent = "Diagnostica lista progetti";
+  title.style.fontWeight = "600";
+  title.style.marginBottom = "8px";
+  title.style.color = "#e5e7eb";
+
+  const pre = document.createElement("pre");
+  pre.textContent = buildProjectListDiagnosticLines();
+  pre.style.margin = "0";
+  pre.style.whiteSpace = "pre-wrap";
+  pre.style.fontSize = "11px";
+  pre.style.lineHeight = "1.5";
+  pre.style.color = "#cbd5e1";
+
+  const retryBtn = document.createElement("button");
+  retryBtn.type = "button";
+  retryBtn.textContent = "Ricarica lista";
+  retryBtn.style.marginTop = "10px";
+  retryBtn.style.padding = "6px 10px";
+  retryBtn.style.borderRadius = "8px";
+  retryBtn.style.border = "1px solid rgba(148,163,184,0.4)";
+  retryBtn.style.background = "transparent";
+  retryBtn.style.color = "#e5e7eb";
+  retryBtn.style.cursor = "pointer";
+  retryBtn.addEventListener("click", async () => {
+    retryBtn.disabled = true;
+    try {
+      if (typeof window.initializeFromSupabase === "function") {
+        await window.initializeFromSupabase();
+      }
+    } finally {
+      retryBtn.disabled = false;
+    }
+  });
+
+  item.appendChild(title);
+  item.appendChild(pre);
+  item.appendChild(retryBtn);
+  return item;
+}
+
+function buildProjectDiagnosticLines(project) {
+  const diag = getProjectDiagnostics(project && project.id);
+  if (!diag) return "";
+  const server = diag.server || {};
+  const auth = server.auth || {};
+  const access = server.access || {};
+  const result = server.result || {};
+  return [
+    `projectId: ${formatProjectDiagnosticValue(project && project.id)}`,
+    `list status: ${formatProjectDiagnosticValue(state.diagnostics.projectList && state.diagnostics.projectList.status)}`,
+    `full status: ${formatProjectDiagnosticValue(diag.status)}`,
+    `response ok: ${formatProjectDiagnosticValue(diag.ok)}`,
+    `project in response: ${formatProjectDiagnosticValue(diag.projectFound)}`,
+    `client cues: ${formatProjectDiagnosticValue(project && project.cues && project.cues.length)}`,
+    `server cues: ${formatProjectDiagnosticValue(diag.projectCueCount)}`,
+    `server refs: ${formatProjectDiagnosticValue(diag.projectReferenceCount)}`,
+    `server notes: ${formatProjectDiagnosticValue(diag.projectNoteCount)}`,
+    `auth header: ${formatProjectDiagnosticValue(diag.auth && diag.auth.hasAuthorization)}`,
+    `actor header: ${formatProjectDiagnosticValue(diag.auth && diag.auth.hasActorId)}`,
+    `server user: ${formatProjectDiagnosticValue(auth.userId)}`,
+    `user UUID: ${formatProjectDiagnosticValue(auth.isUuidUserId)}`,
+    `access path: ${formatProjectDiagnosticValue(access.accessPath)}`,
+    `base projects: ${formatProjectDiagnosticValue(result.baseProjectCount)}`,
+    `elapsed ms: ${formatProjectDiagnosticValue(diag.meta && diag.meta.elapsed_ms)}`,
+    `error: ${formatProjectDiagnosticValue(diag.error)}`,
+    `updated: ${formatProjectDiagnosticValue(diag.updatedAt)}`,
+    `console: window.__approvedProjectDiagnostics`
+  ].join("\n");
+}
+
+function createProjectDiagnosticsPanel(project) {
+  if (!project || !shouldShowProjectDiagnostics()) return null;
+  const diag = getProjectDiagnostics(project.id);
+  if (!diag) return null;
+
+  const details = document.createElement("details");
+  details.open = true;
+  details.style.marginTop = "12px";
+  details.style.padding = "10px 12px";
+  details.style.border = "1px solid rgba(255,255,255,0.08)";
+  details.style.borderRadius = "12px";
+  details.style.background = "rgba(15,23,42,0.62)";
+
+  const summary = document.createElement("summary");
+  summary.textContent = "Diagnostica caricamento progetto";
+  summary.style.cursor = "pointer";
+  summary.style.fontWeight = "600";
+  summary.style.color = "#e5e7eb";
+
+  const pre = document.createElement("pre");
+  pre.textContent = buildProjectDiagnosticLines(project);
+  pre.style.margin = "10px 0 0";
+  pre.style.whiteSpace = "pre-wrap";
+  pre.style.fontSize = "11px";
+  pre.style.lineHeight = "1.5";
+  pre.style.color = "#cbd5e1";
+
+  const retryBtn = document.createElement("button");
+  retryBtn.type = "button";
+  retryBtn.textContent = "Ricarica progetto";
+  retryBtn.style.marginTop = "10px";
+  retryBtn.style.padding = "6px 10px";
+  retryBtn.style.borderRadius = "8px";
+  retryBtn.style.border = "1px solid rgba(148,163,184,0.4)";
+  retryBtn.style.background = "transparent";
+  retryBtn.style.color = "#e5e7eb";
+  retryBtn.style.cursor = "pointer";
+  retryBtn.addEventListener("click", async () => {
+    retryBtn.disabled = true;
+    try {
+      await loadProjectCues(project.id, { useCacheFirst: false });
+    } finally {
+      retryBtn.disabled = false;
+    }
+  });
+
+  details.appendChild(summary);
+  details.appendChild(pre);
+  details.appendChild(retryBtn);
+  return details;
 }
 
 function createProjectShell(raw) {
@@ -5866,7 +6107,7 @@ async function loadProjectCues(projectId, options = {}) {
   const skipRender = options && options.skipRender === true;
   const useCacheFirst = !options || options.useCacheFirst !== false;
 
-  const headers = getBestAuthHeaders();
+  let requestHeaders = getBestAuthHeaders();
 
   if (useCacheFirst) {
     const cachedSnapshot = getCachedProjectSnapshot(projectId);
@@ -5884,8 +6125,19 @@ async function loadProjectCues(projectId, options = {}) {
 
   try {
     console.log("[Flow] Loading cues for project via aggregated endpoint:", projectId);
-    const fetchUrl = `/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0&includeApprovals=0&includeDeliveries=0`;
-    let response = await fetch(fetchUrl, { headers, cache: 'no-store' });
+    const fetchUrl = withProjectDiagnosticsUrl(`/api/projects/full?projectId=${encodeURIComponent(projectId)}&includeComments=0&includeReferences=0&includeNotes=0&includeCueSheet=0&includeWaveforms=0&includeApprovals=0&includeDeliveries=0`);
+    setProjectDiagnostics(projectId, {
+      ok: null,
+      status: "pending",
+      requestUrl: fetchUrl,
+      auth: {
+        hasAuthorization: !!requestHeaders.Authorization,
+        hasActorId: !!requestHeaders["x-actor-id"]
+      },
+      legacyFallback: false,
+      error: null
+    });
+    let response = await fetch(fetchUrl, { headers: requestHeaders, cache: 'no-store' });
 
     // 401 retry: wait for auth refresh then try once more
     if (response.status === 401) {
@@ -5893,16 +6145,52 @@ async function loadProjectCues(projectId, options = {}) {
       for (let i = 0; i < 40; i++) {
         await new Promise(r => setTimeout(r, 100));
         const s = getBootSession();
-        if (s && s.access_token && s.access_token !== (headers['Authorization'] || '').replace('Bearer ', '')) break;
+        if (s && s.access_token && s.access_token !== (requestHeaders['Authorization'] || '').replace('Bearer ', '')) break;
       }
-      const freshHeaders = getBestAuthHeaders();
-      response = await fetch(fetchUrl, { headers: freshHeaders, cache: 'no-store' });
+      requestHeaders = getBestAuthHeaders();
+      setProjectDiagnostics(projectId, {
+        auth: {
+          hasAuthorization: !!requestHeaders.Authorization,
+          hasActorId: !!requestHeaders["x-actor-id"]
+        }
+      });
+      response = await fetch(fetchUrl, { headers: requestHeaders, cache: 'no-store' });
     }
 
-    if (!response.ok) throw new Error(response.statusText || 'Failed to load aggregated data');
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      setProjectDiagnostics(projectId, {
+        ok: false,
+        status: response.status,
+        statusText: response.statusText,
+        auth: {
+          hasAuthorization: !!requestHeaders.Authorization,
+          hasActorId: !!requestHeaders["x-actor-id"]
+        },
+        meta: errorPayload && errorPayload._meta ? errorPayload._meta : null,
+        server: errorPayload && errorPayload._debug ? errorPayload._debug : null,
+        error: (errorPayload && errorPayload.error) || response.statusText || 'Failed to load aggregated data'
+      });
+      throw new Error((errorPayload && errorPayload.error) || response.statusText || 'Failed to load aggregated data');
+    }
 
     const payload = await response.json();
     const projectData = (payload.projects || []).find(p => p.id === projectId);
+    setProjectDiagnostics(projectId, {
+      ok: true,
+      status: response.status,
+      auth: {
+        hasAuthorization: !!requestHeaders.Authorization,
+        hasActorId: !!requestHeaders["x-actor-id"]
+      },
+      meta: payload._meta || null,
+      server: payload._debug || null,
+      projectFound: !!projectData,
+      projectCueCount: projectData && Array.isArray(projectData.cues) ? projectData.cues.length : 0,
+      projectReferenceCount: projectData && Array.isArray(projectData.references) ? projectData.references.length : 0,
+      projectNoteCount: projectData && Array.isArray(projectData.notes) ? projectData.notes.length : 0,
+      error: projectData ? null : 'Project missing in aggregated response'
+    });
     if (!projectData) throw new Error('Project missing in aggregated response');
 
     const snapshot = {
@@ -5950,7 +6238,7 @@ async function loadProjectCues(projectId, options = {}) {
     if (!skipRender) {
       renderProjectDataOnly();
     }
-    loadProjectReferencesLegacy(projectId, headers, { skipRender: !!skipRender }).catch(err => {
+    loadProjectReferencesLegacy(projectId, requestHeaders, { skipRender: !!skipRender }).catch(err => {
       console.warn('[Flow] Failed to lazy-load references', err);
     });
     loadProjectNotes(projectId).catch(err => {
@@ -5959,10 +6247,14 @@ async function loadProjectCues(projectId, options = {}) {
     console.log("[Flow] Project cues loaded successfully via /api/projects/full");
     return;
   } catch (err) {
+    setProjectDiagnostics(projectId, {
+      legacyFallback: true,
+      error: err && err.message ? err.message : String(err)
+    });
     console.warn("[Flow] Aggregated project load failed, falling back to legacy N+1 loader:", err);
   }
 
-  await loadProjectCuesLegacy(projectId, headers);
+  await loadProjectCuesLegacy(projectId, requestHeaders);
   if (!skipRender) {
     renderProjectDataOnly();
   }
@@ -5971,12 +6263,21 @@ async function loadProjectCues(projectId, options = {}) {
 async function loadProjectCuesLegacy(projectId, headers) {
   const project = getProjectById(projectId);
   if (!project) return;
+  setProjectDiagnostics(projectId, {
+    legacyFallback: true,
+    legacyStatus: "pending"
+  });
 
   try {
     console.log("[Flow] Legacy cue loader running for project:", projectId);
     const response = await fetch(`/api/cues?projectId=${encodeURIComponent(projectId)}`, { headers });
     if (!response.ok) {
       console.error("[Flow] Legacy loader failed to fetch cues:", response.statusText);
+      setProjectDiagnostics(projectId, {
+        legacyOk: false,
+        legacyStatus: response.status,
+        error: `Legacy cues load failed: ${response.statusText || response.status}`
+      });
       return;
     }
 
@@ -6053,12 +6354,22 @@ async function loadProjectCuesLegacy(projectId, headers) {
     persistFastBootCache();
     refreshAllNames();
     renderAll();
+    setProjectDiagnostics(projectId, {
+      legacyOk: true,
+      legacyStatus: 200,
+      legacyCueCount: project.cues.length,
+      legacyVersionCount: project.cues.reduce((sum, cue) => sum + ((cue.versions && cue.versions.length) || 0), 0)
+    });
     loadProjectNotes(projectId).catch(err => {
       console.warn('[Flow] Failed to preload notes (legacy path)', err);
     });
     console.log("[Flow] Project cues loaded via legacy path");
   } catch (err) {
     console.error("[Flow] Legacy cue loader failed:", err);
+    setProjectDiagnostics(projectId, {
+      legacyOk: false,
+      error: err && err.message ? err.message : String(err)
+    });
   }
 }
 
@@ -6599,6 +6910,10 @@ function renderCueList(options = {}) {
     cueListEl.innerHTML = t2('cues.noCues');
     setSectionSubtitle(cueListSubtitleEl, cuesSubtitleKey, cuesSubtitleFallback);
     cueListEl.classList.add("cue-list-empty");
+    const diagnosticsPanel = createProjectDiagnosticsPanel(project);
+    if (diagnosticsPanel) {
+      cueListEl.appendChild(diagnosticsPanel);
+    }
     const hasRefs = project.references && project.references.length;
     if (!hasRefs && rightColEl) rightColEl.style.display = "none";
     return;
@@ -8942,6 +9257,13 @@ function renderProjectList() {
     });
   }
 
+  if (myProjects.length === 0 && sharedProjects.length === 0) {
+    const diagnosticsItem = createProjectListDiagnosticsItem();
+    if (diagnosticsItem) {
+      myListEl.appendChild(diagnosticsItem);
+    }
+  }
+
   if (!hasAutoSelectedProject && myProjects.length === 0 && sharedProjects.length === 1) {
     const sharedId = sharedProjects[0].id;
     const activeInShared = state.activeProjectId === sharedId;
@@ -9876,8 +10198,20 @@ async function initializeFromSupabase() {
 
     console.log("[Flow] Fetching project list via /api/projects...");
     const listStartTime = Date.now();
+    const listUrl = withProjectDiagnosticsUrl("/api/projects?lite=1");
+    setProjectListDiagnostics({
+      ok: null,
+      status: "pending",
+      requestUrl: listUrl,
+      auth: {
+        hasAuthorization: !!fetchHeaders.Authorization,
+        hasActorId: !!fetchHeaders["x-actor-id"]
+      },
+      didRetry: false,
+      error: null
+    });
 
-    let response = await fetch("/api/projects?lite=1", { headers: fetchHeaders, cache: "no-store" });
+    let response = await fetch(listUrl, { headers: fetchHeaders, cache: "no-store" });
     let didRetry = false;
 
     // If we got a 401, the cached token was likely expired.
@@ -9902,13 +10236,33 @@ async function initializeFromSupabase() {
         if (freshSession.user && freshSession.user.id) {
           retryHeaders['x-actor-id'] = freshSession.user.id;
         }
+        setProjectListDiagnostics({
+          auth: {
+            hasAuthorization: !!retryHeaders.Authorization,
+            hasActorId: !!retryHeaders["x-actor-id"]
+          }
+        });
         console.log("[Flow] Retrying /api/projects with refreshed token");
-        response = await fetch("/api/projects?lite=1", { headers: retryHeaders, cache: "no-store" });
+        response = await fetch(listUrl, { headers: retryHeaders, cache: "no-store" });
         fetchHeaders = retryHeaders;
       }
     }
 
     if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      setProjectListDiagnostics({
+        ok: false,
+        status: response.status,
+        statusText: response.statusText,
+        auth: {
+          hasAuthorization: !!fetchHeaders.Authorization,
+          hasActorId: !!fetchHeaders["x-actor-id"]
+        },
+        didRetry,
+        error: (errorPayload && errorPayload.error) || response.statusText,
+        server: errorPayload && errorPayload._debug ? errorPayload._debug : null,
+        meta: errorPayload && errorPayload._meta ? errorPayload._meta : null
+      });
       console.error("[Flow] Failed to fetch projects:", response.status, response.statusText);
       renderAll(); // Fallback to empty UI
       return;
@@ -9951,9 +10305,10 @@ async function initializeFromSupabase() {
         }
 
         if (newHeaders.Authorization || newHeaders['x-actor-id']) {
-          response = await fetch('/api/projects?lite=1', { headers: newHeaders, cache: "no-store" });
+          response = await fetch(listUrl, { headers: newHeaders, cache: "no-store" });
           data = await response.json();
           didRetry = true;
+          fetchHeaders = newHeaders;
           console.log('[Flow] Retried /api/projects with cached session');
         }
       }
@@ -9971,6 +10326,22 @@ async function initializeFromSupabase() {
     }
 
     console.log("[Flow] Loaded projects:", projects.length);
+    setProjectListDiagnostics({
+      ok: true,
+      status: response.status,
+      auth: {
+        hasAuthorization: !!fetchHeaders.Authorization,
+        hasActorId: !!fetchHeaders["x-actor-id"]
+      },
+      didRetry,
+      public: !!data.public,
+      myProjectCount: myProjects.length,
+      sharedProjectCount: sharedProjects.length,
+      projectCount: projects.length,
+      server: data._debug || null,
+      meta: data._meta || null,
+      error: null
+    });
 
     const sharedIds = new Set(sharedProjects.map(p => p.id));
     if (sharedIds.size === 0 && projects.some(p => p.is_shared)) {
@@ -10082,6 +10453,11 @@ async function initializeFromSupabase() {
     }
 
   } catch (err) {
+    setProjectListDiagnostics({
+      ok: false,
+      status: "exception",
+      error: err && err.message ? err.message : String(err)
+    });
     console.error("[Flow] initializeFromSupabase error:", err);
     renderAll(); // Fallback to empty UI
   }

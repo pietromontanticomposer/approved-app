@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     const { data: members, error: membersErr } = await supabaseAdmin
       .from("project_members")
-      .select("member_id, role, added_by, created_at")
+      .select("member_id, role, added_by, added_at")
       .eq("project_id", projectId);
 
     if (membersErr) {
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
         member_id: m.member_id,
         role: m.role || "viewer",
         added_by: m.added_by || null,
-        created_at: m.created_at || null,
+        created_at: m.added_at || null,
         email: user.email || null,
         display_name: displayName,
       };

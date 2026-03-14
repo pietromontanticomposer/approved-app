@@ -32,6 +32,8 @@ export async function GET(req: NextRequest) {
     if (isDev) console.log('[GET /api/projects/full] Fast aggregated load started');
     const startTime = Date.now();
     const url = new URL(req.url);
+    const debugParam = (url.searchParams.get('debug') || '').toLowerCase();
+    const debug = isDev && (debugParam === '1' || debugParam === 'true' || debugParam === 'yes');
     const projectIdFilter = url.searchParams.get('projectId') || null;
     const includeCommentsParam = (url.searchParams.get('includeComments') || '').toLowerCase();
     const includeComments = includeCommentsParam
@@ -61,14 +63,47 @@ export async function GET(req: NextRequest) {
     const includeDeliveries = includeDeliveriesParam
       ? (includeDeliveriesParam === '1' || includeDeliveriesParam === 'true' || includeDeliveriesParam === 'yes')
       : true;
+    const debugInfo: any = debug
+      ? {
+          request: {
+            projectIdFilter,
+            includeComments,
+            includeReferences,
+            includeNotes,
+            includeCueSheet,
+            includeWaveforms,
+            includeApprovals,
+            includeDeliveries,
+            hasAuthorization: !!req.headers.get('authorization'),
+            hasActorId: !!req.headers.get('x-actor-id'),
+            hasShareId: !!req.headers.get('x-share-id'),
+            hasShareToken: !!req.headers.get('x-share-token')
+          }
+        }
+      : null;
 
     const shareContext = await getShareLinkContext(req, projectIdFilter || undefined);
+    if (debugInfo) {
+      debugInfo.share = shareContext
+        ? { projectId: shareContext.projectId, role: shareContext.role }
+        : null;
+    }
 
     // SECURITY: Verify authentication (share links can bypass auth)
     const auth = await verifyAuth(req);
+    if (debugInfo) {
+      debugInfo.auth = {
+        authenticated: !!auth,
+        userId: auth?.userId || null,
+        isUuidUserId: auth?.userId ? isUuid(auth.userId) : null
+      };
+    }
     if (!auth && !shareContext) {
       return jsonNoStore(
-        { error: 'Unauthorized - authentication required' },
+        {
+          error: 'Unauthorized - authentication required',
+          ...(debugInfo ? { _debug: { ...debugInfo, mode: 'unauthorized' } } : {})
+        },
         401
       );
     }
@@ -86,13 +121,41 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
 
       if (singleError || !singleProject) {
-        return jsonNoStore({ error: 'Project not found' }, 404);
+        return jsonNoStore({
+          error: 'Project not found',
+          ...(debugInfo ? {
+            _debug: {
+              ...debugInfo,
+              mode: 'single-project',
+              access: {
+                requestedProjectId: projectIdFilter,
+                hasAccess: false,
+                accessPath: 'missing-project'
+              }
+            }
+          } : {})
+        }, 404);
       }
 
       let hasAccess = !!(userId && singleProject.owner_id === userId);
+      const accessDebug: any = debugInfo
+        ? {
+            requestedProjectId: projectIdFilter,
+            hasAccess: false,
+            accessPath: hasAccess ? 'owner' : null,
+            owner: !!(userId && singleProject.owner_id === userId),
+            shareLink: false,
+            projectMembership: false,
+            teamMembership: false
+          }
+        : null;
 
       if (!hasAccess && shareContext && shareContext.projectId === singleProject.id) {
         hasAccess = true;
+        if (accessDebug) {
+          accessDebug.shareLink = true;
+          accessDebug.accessPath = 'share-link';
+        }
       }
 
       if (!hasAccess) {
@@ -104,7 +167,13 @@ export async function GET(req: NextRequest) {
             .eq('project_id', singleProject.id)
             .eq('member_id', userId)
             .maybeSingle();
-          if (membership) hasAccess = true;
+          if (membership) {
+            hasAccess = true;
+            if (accessDebug) {
+              accessDebug.projectMembership = true;
+              accessDebug.accessPath = 'project-membership';
+            }
+          }
         }
       }
 
@@ -116,14 +185,37 @@ export async function GET(req: NextRequest) {
           .eq('team_id', singleProject.team_id)
           .eq('user_id', userId)
           .maybeSingle();
-        if (teamMembership) hasAccess = true;
+        if (teamMembership) {
+          hasAccess = true;
+          if (accessDebug) {
+            accessDebug.teamMembership = true;
+            accessDebug.accessPath = 'team-membership';
+          }
+        }
       }
 
       if (!hasAccess) {
         if (isDev) console.log(`[GET /api/projects/full] User ${userId} denied for project ${projectIdFilter}`);
-        return jsonNoStore({ error: 'Project not found' }, 404);
+        return jsonNoStore({
+          error: 'Project not found',
+          ...(debugInfo ? {
+            _debug: {
+              ...debugInfo,
+              mode: 'single-project',
+              access: {
+                ...(accessDebug || {}),
+                hasAccess: false,
+                accessPath: accessDebug?.accessPath || 'denied'
+              }
+            }
+          } : {})
+        }, 404);
       }
 
+      if (accessDebug) {
+        accessDebug.hasAccess = true;
+        debugInfo.access = accessDebug;
+      }
       baseProjects = [singleProject];
     } else {
       if (shareContext && !userId) {
@@ -190,7 +282,18 @@ export async function GET(req: NextRequest) {
     const projectIds = baseProjects.map(p => p.id);
     if (projectIds.length === 0) {
       if (isDev) console.log(`[GET /api/projects/full] No projects found (${Date.now() - startTime}ms)`);
-      return jsonNoStore({ projects: [] }, 200);
+      return jsonNoStore({
+        projects: [],
+        ...(debugInfo ? {
+          _debug: {
+            ...debugInfo,
+            mode: projectIdFilter ? 'single-project-empty' : 'multi-project-empty',
+            result: {
+              baseProjectCount: 0
+            }
+          }
+        } : {})
+      }, 200);
     }
 
     // Step 2: Load ALL data in PARALLEL for maximum speed
@@ -693,6 +796,27 @@ export async function GET(req: NextRequest) {
       console.log(`  - Total cue notes: ${totalCueNotes}`);
     }
 
+    if (debugInfo) {
+      debugInfo.mode = projectIdFilter ? 'single-project' : 'multi-project';
+      debugInfo.result = {
+        baseProjectCount: baseProjects.length,
+        projectIds,
+        cueRowCount: allCues?.length || 0,
+        versionRowCount: allVersions.length,
+        commentRowCount: allComments.length,
+        referenceRowCount: allReferences.length,
+        projectNoteRowCount: projectNotes?.length || 0,
+        cueNoteRowCount: totalCueNotes,
+        projectSummaries: enrichedProjects.map(project => ({
+          id: project.id,
+          cueCount: Array.isArray(project.cues) ? project.cues.length : 0,
+          referenceCount: Array.isArray(project.references) ? project.references.length : 0,
+          noteCount: Array.isArray(project.notes) ? project.notes.length : 0,
+          projectRole: project.project_role || null
+        }))
+      };
+    }
+
     return jsonNoStore({
       projects: enrichedProjects,
       _meta: {
@@ -709,7 +833,8 @@ export async function GET(req: NextRequest) {
         include_waveforms: includeWaveforms,
         include_approvals: includeApprovals,
         include_deliveries: includeDeliveries
-      }
+      },
+      ...(debugInfo ? { _debug: debugInfo } : {})
     }, 200);
 
   } catch (err: any) {
