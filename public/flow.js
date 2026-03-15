@@ -3322,6 +3322,7 @@ async function createCueFromFile(file) {
         cue: {
           id: cue.id,
           name: cue.name,
+          originalName: cue.originalName,
           index: cue.index,
           status: cue.status,
           max_revisions: cue.maxRevisions
@@ -7777,6 +7778,7 @@ function renderCueList(options = {}) {
         c.index_in_project = idx;
       });
 
+      refreshAllNames();
       renderCueList();
       persistCueOrder(projectNow).catch(err => {
         console.warn('[CueOrder] Persist failed', err);
@@ -9710,10 +9712,12 @@ function openFilePicker({ accept, multiple = true, onFiles }) {
   input.click();
 }
 
-function handleCueFiles(files) {
+async function handleCueFiles(files) {
   const project = getActiveProject();
   if (!project) return;
-  files.forEach(file => createCueFromFile(file));
+  for (const file of files) {
+    await createCueFromFile(file);
+  }
 }
 
 function handleReferenceFiles(files) {
