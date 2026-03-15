@@ -350,6 +350,14 @@ export default function Page() {
               </div>
             </div>
           </div>
+          <div class="preset-group video-quality-group">
+            <span class="level-label" data-i18n="upload.videoQuality">Qualità video:</span>
+            <div class="preset-pills">
+              <button type="button" class="scheme-btn active" data-video-quality="original" data-i18n="upload.qualityOriginal">Originale</button>
+              <button type="button" class="scheme-btn" data-video-quality="720p" data-i18n="upload.quality720">720p</button>
+              <button type="button" class="scheme-btn" data-video-quality="480p" data-i18n="upload.quality480">480p</button>
+            </div>
+          </div>
         </div>
 
           <!-- PROJECT REFERENCES -->

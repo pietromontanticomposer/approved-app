@@ -34,6 +34,11 @@
       'upload.scheme': 'Scheme:',
       'upload.media': 'Media',
       'upload.cinema': 'Cinema',
+      'upload.videoQuality': 'Video quality:',
+      'upload.qualityOriginal': 'Original',
+      'upload.quality720': '720p',
+      'upload.quality480': '480p',
+      'upload.compressing': 'Compressing video…',
 
       // References
       'refs.title': 'Project references',
@@ -294,6 +299,11 @@
       'upload.scheme': 'Schema:',
       'upload.media': 'Media',
       'upload.cinema': 'Cinema',
+      'upload.videoQuality': 'Qualità video:',
+      'upload.qualityOriginal': 'Originale',
+      'upload.quality720': '720p',
+      'upload.quality480': '480p',
+      'upload.compressing': 'Compressione video…',
 
       // References
       'refs.title': 'Riferimenti progetto',

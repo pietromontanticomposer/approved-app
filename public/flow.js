@@ -6,6 +6,7 @@ const state = {
   activeProjectId: null,
   autoRename: false,
   namingMode: "media", // "media" | "cinema"
+  videoQuality: "original", // "original" | "720p" | "480p"
   playerMode: "review", // "review" | "refs"
   diagnostics: {
     projectList: null,
@@ -3572,11 +3573,208 @@ function removeUploadJob(jobId, delay = 1000) {
   }, delay);
 }
 
-async function uploadFileToSupabase(file, projectId, cueId, versionId, options = {}) {
+// =======================
+// VIDEO COMPRESSION
+// =======================
+const VIDEO_QUALITY_PRESETS = {
+  "720p": { maxHeight: 720, videoBitrate: 2_500_000 },
+  "480p": { maxHeight: 480, videoBitrate: 1_000_000 }
+};
+
+async function compressVideo(file, quality, onProgress) {
+  const config = VIDEO_QUALITY_PRESETS[quality];
+  if (!config) return file;
+
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.muted = false;
+    video.playsInline = true;
+    video.preload = "auto";
+
+    const blobUrl = URL.createObjectURL(file);
+    video.src = blobUrl;
+
+    let cleaned = false;
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      URL.revokeObjectURL(blobUrl);
+    }
+
+    video.addEventListener("error", () => {
+      console.error("[Compress] Video load error");
+      cleanup();
+      resolve(file);
+    });
+
+    video.addEventListener("loadedmetadata", () => {
+      const origW = video.videoWidth;
+      const origH = video.videoHeight;
+
+      // Skip if already at or below target resolution
+      if (origH <= config.maxHeight) {
+        console.log("[Compress] Video already at or below target resolution, skipping");
+        cleanup();
+        onProgress(100, "");
+        resolve(file);
+        return;
+      }
+
+      // Compute target dimensions maintaining aspect ratio (even numbers for codecs)
+      const scale = config.maxHeight / origH;
+      const targetW = Math.round((origW * scale) / 2) * 2;
+      const targetH = config.maxHeight;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+
+      // Capture canvas stream with manual frame control
+      const canvasStream = canvas.captureStream(0);
+
+      // Capture audio from video element (full quality, no re-encoding)
+      let combinedStream;
+      let audioCtx;
+      try {
+        audioCtx = new AudioContext();
+        const source = audioCtx.createMediaElementSource(video);
+        const destination = audioCtx.createMediaStreamDestination();
+        source.connect(destination);
+        // Do NOT connect to audioCtx.destination — avoid playback through speakers
+
+        const audioTrack = destination.stream.getAudioTracks()[0];
+        if (audioTrack) {
+          combinedStream = new MediaStream([
+            ...canvasStream.getVideoTracks(),
+            audioTrack
+          ]);
+        } else {
+          combinedStream = canvasStream;
+        }
+      } catch (e) {
+        console.warn("[Compress] Could not capture audio track, video-only:", e);
+        combinedStream = canvasStream;
+      }
+
+      // Choose best supported codec
+      let mimeType = "video/webm";
+      if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
+        mimeType = "video/webm;codecs=vp9,opus";
+      } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
+        mimeType = "video/webm;codecs=vp8,opus";
+      } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+        mimeType = "video/mp4"; // Safari fallback
+      }
+
+      let recorder;
+      try {
+        recorder = new MediaRecorder(combinedStream, {
+          mimeType,
+          videoBitsPerSecond: config.videoBitrate
+        });
+      } catch (e) {
+        console.error("[Compress] MediaRecorder init failed:", e);
+        cleanup();
+        if (audioCtx) audioCtx.close().catch(() => {});
+        resolve(file);
+        return;
+      }
+
+      const chunks = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        cleanup();
+        if (audioCtx) audioCtx.close().catch(() => {});
+        const outputMime = mimeType.split(";")[0];
+        const ext = outputMime.includes("mp4") ? ".mp4" : ".webm";
+        const blob = new Blob(chunks, { type: outputMime });
+        const baseName = file.name.replace(/\.[^.]+$/, "");
+        const compressedFile = new File([blob], baseName + ext, {
+          type: outputMime,
+          lastModified: Date.now()
+        });
+        console.log("[Compress] Done:", file.size, "→", compressedFile.size,
+          "(" + Math.round((1 - compressedFile.size / file.size) * 100) + "% smaller)");
+        onProgress(100, "");
+        resolve(compressedFile);
+      };
+
+      recorder.onerror = (e) => {
+        console.error("[Compress] MediaRecorder error:", e);
+        cleanup();
+        if (audioCtx) audioCtx.close().catch(() => {});
+        resolve(file);
+      };
+
+      recorder.start(1000); // collect chunks every second
+
+      const duration = video.duration;
+
+      // Use setInterval (survives background tabs, unlike requestAnimationFrame)
+      const drawInterval = setInterval(() => {
+        if (video.paused || video.ended) return;
+        ctx.drawImage(video, 0, 0, targetW, targetH);
+        const track = canvasStream.getVideoTracks()[0];
+        if (track && track.requestFrame) track.requestFrame();
+        if (duration && isFinite(duration)) {
+          const pct = Math.min(99, Math.round((video.currentTime / duration) * 100));
+          onProgress(pct, tr("upload.compressing"));
+        }
+      }, 1000 / 30); // ~30fps
+
+      video.addEventListener("ended", () => {
+        clearInterval(drawInterval);
+        ctx.drawImage(video, 0, 0, targetW, targetH);
+        const track = canvasStream.getVideoTracks()[0];
+        if (track && track.requestFrame) track.requestFrame();
+        setTimeout(() => recorder.stop(), 200);
+      });
+
+      video.play().catch(err => {
+        console.error("[Compress] Cannot play video:", err);
+        clearInterval(drawInterval);
+        cleanup();
+        if (audioCtx) audioCtx.close().catch(() => {});
+        resolve(file);
+      });
+    });
+  });
+}
+
+async function uploadFileToSupabase(originalFile, projectId, cueId, versionId, options = {}) {
+  let file = originalFile;
   const jobId = options.jobId || options.deliverableId || versionId;
   activeUploads++;
   registerUploadJob(jobId, file.name, file.size);
   updateUploadJob(jobId, 0, tr("upload.preparing"));
+
+  // Compress video if quality setting is not "original"
+  const fileType = detectRawType(file.name);
+  if (fileType === "video" && state.videoQuality !== "original") {
+    updateUploadJob(jobId, 0, tr("upload.compressing"));
+    try {
+      file = await compressVideo(file, state.videoQuality, (pct, statusText) => {
+        updateUploadJob(jobId, Math.round(pct * 0.15), statusText || tr("upload.compressing"));
+      });
+      // Update displayed size after compression
+      const job = uploadJobRows.get(jobId);
+      if (job) {
+        const sizeEl = job.row.querySelector(".upload-progress-size");
+        if (sizeEl) sizeEl.textContent = formatFileSize(file.size);
+      }
+    } catch (err) {
+      console.warn("[Compress] Failed, uploading original:", err);
+      file = originalFile;
+    }
+    updateUploadJob(jobId, 16, tr("upload.preparing"));
+  }
 
   try {
     if (file.size > MAX_UPLOAD_SIZE) {
@@ -9827,6 +10025,36 @@ if (namingSchemeButtons && namingSchemeButtons.length) {
 }
 
 updateNamingModeButtons();
+
+// =======================
+// VIDEO QUALITY CONTROLS
+// =======================
+const videoQualityButtons = document.querySelectorAll("[data-video-quality]");
+const allowedVideoQualities = ["original", "720p", "480p"];
+
+const savedVideoQuality = localStorage.getItem("video-quality");
+if (savedVideoQuality && allowedVideoQualities.includes(savedVideoQuality)) {
+  state.videoQuality = savedVideoQuality;
+}
+
+if (videoQualityButtons && videoQualityButtons.length) {
+  videoQualityButtons.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.videoQuality === state.videoQuality);
+  });
+
+  videoQualityButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const quality = btn.dataset.videoQuality;
+      if (!quality || quality === state.videoQuality || !allowedVideoQualities.includes(quality)) return;
+      state.videoQuality = quality;
+      localStorage.setItem("video-quality", quality);
+      videoQualityButtons.forEach(b => {
+        b.classList.toggle("active", b.dataset.videoQuality === quality);
+      });
+      console.log("[VideoQuality] Set:", quality);
+    });
+  });
+}
 
 // =======================
 // LAYOUT RESIZERS
