@@ -3027,6 +3027,32 @@ body.resizing {
   justify-content: center;
 }
 
+/* Video quality dialog option buttons */
+.video-quality-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--surface-3);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 13px;
+  text-align: left;
+}
+
+.video-quality-option:hover {
+  border-color: var(--accent);
+}
+
+.video-quality-option.active {
+  border-color: var(--accent-strong);
+  background: rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.2);
+}
+
 /* Review actions layout - Collaborator view */
 .review-actions,
 .decision-actions {

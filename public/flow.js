@@ -3748,6 +3748,146 @@ async function compressVideo(file, quality, onProgress) {
   });
 }
 
+/**
+ * Show a dialog asking the user which video quality to upload.
+ * Returns the chosen quality string ("original" | "720p" | "480p") or null if cancelled.
+ */
+function showVideoQualityDialog() {
+  const saved = state.videoQuality || "original";
+
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "confirm-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.style.maxWidth = "380px";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "confirm-title";
+    titleEl.textContent = tr("upload.videoQualityTitle", {}, biText("Qualità video", "Video quality"));
+
+    const hintEl = document.createElement("div");
+    hintEl.className = "confirm-message";
+    hintEl.style.marginBottom = "16px";
+    hintEl.style.fontSize = "12px";
+    hintEl.style.opacity = "0.7";
+    hintEl.textContent = tr("upload.videoQualityHint", {},
+      biText(
+        "Per una revisione più veloce, consigliamo una qualità video più bassa. L'audio resta alla qualità originale.",
+        "For faster review, we recommend lower video quality. Audio stays at original quality."
+      ));
+
+    const optionsEl = document.createElement("div");
+    optionsEl.style.display = "flex";
+    optionsEl.style.flexDirection = "column";
+    optionsEl.style.gap = "8px";
+    optionsEl.style.marginBottom = "16px";
+
+    const qualities = [
+      { value: "original", label: tr("upload.qualityOriginal", {}, "Originale"), desc: biText("Nessuna compressione", "No compression") },
+      { value: "720p", label: "720p", desc: biText("Consigliato per revisione", "Recommended for review") },
+      { value: "480p", label: "480p", desc: biText("Upload più veloce", "Fastest upload") }
+    ];
+
+    let selectedQuality = saved;
+
+    qualities.forEach(q => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "video-quality-option" + (q.value === saved ? " active" : "");
+      btn.dataset.quality = q.value;
+      btn.innerHTML = `<strong>${q.label}</strong><span style="opacity:0.6;font-size:12px;margin-left:8px">${q.desc}</span>`;
+      btn.addEventListener("click", () => {
+        selectedQuality = q.value;
+        optionsEl.querySelectorAll(".video-quality-option").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+      optionsEl.appendChild(btn);
+    });
+
+    const rememberEl = document.createElement("label");
+    rememberEl.style.display = "flex";
+    rememberEl.style.alignItems = "center";
+    rememberEl.style.gap = "8px";
+    rememberEl.style.fontSize = "12px";
+    rememberEl.style.opacity = "0.7";
+    rememberEl.style.marginBottom = "16px";
+    rememberEl.style.cursor = "pointer";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.style.accentColor = "var(--accent)";
+    rememberEl.appendChild(checkbox);
+    rememberEl.appendChild(document.createTextNode(
+      tr("upload.rememberChoice", {}, biText("Ricorda la mia scelta", "Remember my choice"))
+    ));
+
+    const actionsEl = document.createElement("div");
+    actionsEl.className = "confirm-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost-btn tiny confirm-cancel";
+    cancelBtn.textContent = tr("action.cancel", {}, biText("Annulla", "Cancel"));
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "accent-btn tiny confirm-confirm";
+    confirmBtn.textContent = tr("upload.uploadBtn", {}, biText("Carica", "Upload"));
+
+    actionsEl.appendChild(cancelBtn);
+    actionsEl.appendChild(confirmBtn);
+
+    dialog.appendChild(titleEl);
+    dialog.appendChild(hintEl);
+    dialog.appendChild(optionsEl);
+    dialog.appendChild(rememberEl);
+    dialog.appendChild(actionsEl);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const previousActive = document.activeElement;
+    const cleanup = (result) => {
+      overlay.classList.remove("visible");
+      const remove = () => overlay.remove();
+      overlay.addEventListener("transitionend", remove, { once: true });
+      setTimeout(remove, 200);
+      document.removeEventListener("keydown", handleKey);
+      if (previousActive && typeof previousActive.focus === "function") {
+        try { previousActive.focus(); } catch (_) {}
+      }
+      resolve(result);
+    };
+
+    function saveAndResolve() {
+      if (checkbox.checked) {
+        state.videoQuality = selectedQuality;
+        localStorage.setItem("video-quality", selectedQuality);
+        if (typeof updateVideoQualitySettingUI === "function") updateVideoQualitySettingUI();
+      }
+      cleanup(selectedQuality);
+    }
+
+    const handleKey = e => {
+      if (e.key === "Escape") { e.preventDefault(); cleanup(null); }
+      if (e.key === "Enter") { e.preventDefault(); saveAndResolve(); }
+    };
+    document.addEventListener("keydown", handleKey);
+
+    cancelBtn.addEventListener("click", e => { e.preventDefault(); cleanup(null); });
+    confirmBtn.addEventListener("click", e => { e.preventDefault(); saveAndResolve(); });
+    overlay.addEventListener("click", e => { if (e.target === overlay) cleanup(null); });
+
+    requestAnimationFrame(() => {
+      overlay.classList.add("visible");
+      setTimeout(() => { try { confirmBtn.focus(); } catch (_) {} }, 30);
+    });
+  });
+}
+
 async function uploadFileToSupabase(originalFile, projectId, cueId, versionId, options = {}) {
   let file = originalFile;
   const jobId = options.jobId || options.deliverableId || versionId;
@@ -3755,25 +3895,35 @@ async function uploadFileToSupabase(originalFile, projectId, cueId, versionId, o
   registerUploadJob(jobId, file.name, file.size);
   updateUploadJob(jobId, 0, tr("upload.preparing"));
 
-  // Compress video if quality setting is not "original"
+  // Ask video quality if uploading a video
   const fileType = detectRawType(file.name);
-  if (fileType === "video" && state.videoQuality !== "original") {
-    updateUploadJob(jobId, 0, tr("upload.compressing"));
-    try {
-      file = await compressVideo(file, state.videoQuality, (pct, statusText) => {
-        updateUploadJob(jobId, Math.round(pct * 0.15), statusText || tr("upload.compressing"));
-      });
-      // Update displayed size after compression
-      const job = uploadJobRows.get(jobId);
-      if (job) {
-        const sizeEl = job.row.querySelector(".upload-progress-size");
-        if (sizeEl) sizeEl.textContent = formatFileSize(file.size);
-      }
-    } catch (err) {
-      console.warn("[Compress] Failed, uploading original:", err);
-      file = originalFile;
+  if (fileType === "video") {
+    // Use saved preference if available, otherwise show dialog
+    const hasSavedPref = !!localStorage.getItem("video-quality");
+    const quality = hasSavedPref ? state.videoQuality : await showVideoQualityDialog();
+    if (quality === null) {
+      // User cancelled
+      markUploadJobError(jobId, tr("action.cancel", {}, "Annullato"));
+      activeUploads = Math.max(0, activeUploads - 1);
+      return;
     }
-    updateUploadJob(jobId, 16, tr("upload.preparing"));
+    if (quality !== "original") {
+      updateUploadJob(jobId, 0, tr("upload.compressing"));
+      try {
+        file = await compressVideo(file, quality, (pct, statusText) => {
+          updateUploadJob(jobId, Math.round(pct * 0.15), statusText || tr("upload.compressing"));
+        });
+        const job = uploadJobRows.get(jobId);
+        if (job) {
+          const sizeEl = job.row.querySelector(".upload-progress-size");
+          if (sizeEl) sizeEl.textContent = formatFileSize(file.size);
+        }
+      } catch (err) {
+        console.warn("[Compress] Failed, uploading original:", err);
+        file = originalFile;
+      }
+      updateUploadJob(jobId, 16, tr("upload.preparing"));
+    }
   }
 
   try {
@@ -10027,32 +10177,36 @@ if (namingSchemeButtons && namingSchemeButtons.length) {
 updateNamingModeButtons();
 
 // =======================
-// VIDEO QUALITY CONTROLS
+// VIDEO QUALITY SETTINGS
 // =======================
-const videoQualityButtons = document.querySelectorAll("[data-video-quality]");
 const allowedVideoQualities = ["original", "720p", "480p"];
-
 const savedVideoQuality = localStorage.getItem("video-quality");
 if (savedVideoQuality && allowedVideoQualities.includes(savedVideoQuality)) {
   state.videoQuality = savedVideoQuality;
 }
 
-if (videoQualityButtons && videoQualityButtons.length) {
-  videoQualityButtons.forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.videoQuality === state.videoQuality);
-  });
+const videoQualitySettingGroup = document.getElementById("videoQualitySettingGroup");
+const videoQualityCurrentLabel = document.getElementById("videoQualityCurrentLabel");
+const videoQualityResetBtn = document.getElementById("videoQualityResetBtn");
 
-  videoQualityButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      const quality = btn.dataset.videoQuality;
-      if (!quality || quality === state.videoQuality || !allowedVideoQualities.includes(quality)) return;
-      state.videoQuality = quality;
-      localStorage.setItem("video-quality", quality);
-      videoQualityButtons.forEach(b => {
-        b.classList.toggle("active", b.dataset.videoQuality === quality);
-      });
-      console.log("[VideoQuality] Set:", quality);
-    });
+function updateVideoQualitySettingUI() {
+  const hasSaved = !!localStorage.getItem("video-quality");
+  if (videoQualitySettingGroup) {
+    videoQualitySettingGroup.style.display = hasSaved ? "flex" : "none";
+  }
+  if (videoQualityCurrentLabel && hasSaved) {
+    const labels = { original: tr("upload.qualityOriginal", {}, "Originale"), "720p": "720p", "480p": "480p" };
+    videoQualityCurrentLabel.textContent = labels[state.videoQuality] || state.videoQuality;
+  }
+}
+
+updateVideoQualitySettingUI();
+
+if (videoQualityResetBtn) {
+  videoQualityResetBtn.addEventListener("click", () => {
+    localStorage.removeItem("video-quality");
+    state.videoQuality = "original";
+    updateVideoQualitySettingUI();
   });
 }
 
