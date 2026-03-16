@@ -3574,178 +3574,152 @@ function removeUploadJob(jobId, delay = 1000) {
 }
 
 // =======================
-// VIDEO COMPRESSION
+// VIDEO COMPRESSION (FFmpeg.wasm)
 // =======================
 const VIDEO_QUALITY_PRESETS = {
-  "720p": { maxHeight: 720, videoBitrate: 2_500_000 },
-  "480p": { maxHeight: 480, videoBitrate: 1_000_000 }
+  "720p": { maxHeight: 720, videoBitrateK: 2500 },
+  "480p": { maxHeight: 480, videoBitrateK: 1000 }
 };
+
+let ffmpegInstance = null;
+let ffmpegLoading = false;
+
+async function toBlobURL(url, mimeType) {
+  const buf = await fetch(url).then(r => r.arrayBuffer());
+  const blob = new Blob([buf], { type: mimeType });
+  return URL.createObjectURL(blob);
+}
+
+async function loadFFmpeg(onStatus) {
+  if (ffmpegInstance) return ffmpegInstance;
+  if (ffmpegLoading) {
+    while (ffmpegLoading) await new Promise(r => setTimeout(r, 100));
+    if (ffmpegInstance) return ffmpegInstance;
+  }
+  ffmpegLoading = true;
+  try {
+    // Load FFmpeg UMD script from CDN
+    if (typeof FFmpegWASM === "undefined") {
+      if (onStatus) onStatus(biText("Caricamento compressore (solo la prima volta)…", "Loading compressor (first time only)…"));
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js";
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Failed to load FFmpeg script"));
+        document.head.appendChild(s);
+      });
+    }
+
+    const ff = new FFmpegWASM.FFmpeg();
+    if (onStatus) onStatus(biText("Scaricamento motore video (~31 MB, solo la prima volta)…", "Downloading video engine (~31 MB, first time only)…"));
+
+    const coreBase = "https://unpkg.com/@ffmpeg/core@0.12.3/dist/umd";
+    await ff.load({
+      coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, "application/wasm")
+    });
+
+    ffmpegInstance = ff;
+    console.log("[FFmpeg] Loaded successfully");
+    return ff;
+  } catch (err) {
+    console.error("[FFmpeg] Failed to load:", err);
+    return null;
+  } finally {
+    ffmpegLoading = false;
+  }
+}
 
 async function compressVideo(file, quality, onProgress) {
   const config = VIDEO_QUALITY_PRESETS[quality];
   if (!config) return file;
 
-  return new Promise((resolve) => {
+  // Check if video actually needs compression
+  const needsCompress = await new Promise(resolve => {
     const video = document.createElement("video");
-    video.muted = false;
-    video.playsInline = true;
-    video.preload = "auto";
-
-    const blobUrl = URL.createObjectURL(file);
-    video.src = blobUrl;
-
-    let cleaned = false;
-    function cleanup() {
-      if (cleaned) return;
-      cleaned = true;
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      URL.revokeObjectURL(blobUrl);
-    }
-
-    video.addEventListener("error", () => {
-      console.error("[Compress] Video load error");
-      cleanup();
-      resolve(file);
-    });
-
+    video.muted = true;
+    video.preload = "metadata";
+    const url = URL.createObjectURL(file);
+    video.src = url;
     video.addEventListener("loadedmetadata", () => {
-      const origW = video.videoWidth;
-      const origH = video.videoHeight;
-
-      // Skip if already at or below target resolution
-      if (origH <= config.maxHeight) {
+      const skip = video.videoHeight <= config.maxHeight;
+      URL.revokeObjectURL(url);
+      if (skip) {
         console.log("[Compress] Video already at or below target resolution, skipping");
-        cleanup();
         onProgress(100, "");
-        resolve(file);
-        return;
       }
-
-      // Compute target dimensions maintaining aspect ratio (even numbers for codecs)
-      const scale = config.maxHeight / origH;
-      const targetW = Math.round((origW * scale) / 2) * 2;
-      const targetH = config.maxHeight;
-
-      const canvas = document.createElement("canvas");
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext("2d");
-
-      // Capture canvas stream with manual frame control
-      const canvasStream = canvas.captureStream(0);
-
-      // Capture audio from video element (full quality, no re-encoding)
-      let combinedStream;
-      let audioCtx;
-      try {
-        audioCtx = new AudioContext();
-        const source = audioCtx.createMediaElementSource(video);
-        const destination = audioCtx.createMediaStreamDestination();
-        source.connect(destination);
-        // Do NOT connect to audioCtx.destination — avoid playback through speakers
-
-        const audioTrack = destination.stream.getAudioTracks()[0];
-        if (audioTrack) {
-          combinedStream = new MediaStream([
-            ...canvasStream.getVideoTracks(),
-            audioTrack
-          ]);
-        } else {
-          combinedStream = canvasStream;
-        }
-      } catch (e) {
-        console.warn("[Compress] Could not capture audio track, video-only:", e);
-        combinedStream = canvasStream;
-      }
-
-      // Choose best supported codec
-      let mimeType = "video/webm";
-      if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
-        mimeType = "video/webm;codecs=vp9,opus";
-      } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
-        mimeType = "video/webm;codecs=vp8,opus";
-      } else if (MediaRecorder.isTypeSupported("video/mp4")) {
-        mimeType = "video/mp4"; // Safari fallback
-      }
-
-      let recorder;
-      try {
-        recorder = new MediaRecorder(combinedStream, {
-          mimeType,
-          videoBitsPerSecond: config.videoBitrate
-        });
-      } catch (e) {
-        console.error("[Compress] MediaRecorder init failed:", e);
-        cleanup();
-        if (audioCtx) audioCtx.close().catch(() => {});
-        resolve(file);
-        return;
-      }
-
-      const chunks = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        cleanup();
-        if (audioCtx) audioCtx.close().catch(() => {});
-        const outputMime = mimeType.split(";")[0];
-        const ext = outputMime.includes("mp4") ? ".mp4" : ".webm";
-        const blob = new Blob(chunks, { type: outputMime });
-        const baseName = file.name.replace(/\.[^.]+$/, "");
-        const compressedFile = new File([blob], baseName + ext, {
-          type: outputMime,
-          lastModified: Date.now()
-        });
-        console.log("[Compress] Done:", file.size, "→", compressedFile.size,
-          "(" + Math.round((1 - compressedFile.size / file.size) * 100) + "% smaller)");
-        onProgress(100, "");
-        resolve(compressedFile);
-      };
-
-      recorder.onerror = (e) => {
-        console.error("[Compress] MediaRecorder error:", e);
-        cleanup();
-        if (audioCtx) audioCtx.close().catch(() => {});
-        resolve(file);
-      };
-
-      recorder.start(1000); // collect chunks every second
-
-      const duration = video.duration;
-
-      // Use setInterval (survives background tabs, unlike requestAnimationFrame)
-      const drawInterval = setInterval(() => {
-        if (video.paused || video.ended) return;
-        ctx.drawImage(video, 0, 0, targetW, targetH);
-        const track = canvasStream.getVideoTracks()[0];
-        if (track && track.requestFrame) track.requestFrame();
-        if (duration && isFinite(duration)) {
-          const pct = Math.min(99, Math.round((video.currentTime / duration) * 100));
-          onProgress(pct, tr("upload.compressing"));
-        }
-      }, 1000 / 30); // ~30fps
-
-      video.addEventListener("ended", () => {
-        clearInterval(drawInterval);
-        ctx.drawImage(video, 0, 0, targetW, targetH);
-        const track = canvasStream.getVideoTracks()[0];
-        if (track && track.requestFrame) track.requestFrame();
-        setTimeout(() => recorder.stop(), 200);
-      });
-
-      video.play().catch(err => {
-        console.error("[Compress] Cannot play video:", err);
-        clearInterval(drawInterval);
-        cleanup();
-        if (audioCtx) audioCtx.close().catch(() => {});
-        resolve(file);
-      });
+      resolve(!skip);
+    });
+    video.addEventListener("error", () => {
+      URL.revokeObjectURL(url);
+      resolve(false);
     });
   });
+  if (!needsCompress) return file;
+
+  onProgress(0, biText("Caricamento compressore…", "Loading compressor…"));
+
+  const ff = await loadFFmpeg((statusText) => {
+    onProgress(0, statusText);
+  });
+  if (!ff) {
+    console.warn("[Compress] FFmpeg not available, uploading original");
+    return file;
+  }
+
+  try {
+    const inputExt = file.name.match(/\.[^.]+$/)?.[0]?.toLowerCase() || ".mp4";
+    const inputName = "input" + inputExt;
+    const outputName = "output.mp4";
+
+    onProgress(5, biText("Preparazione file…", "Preparing file…"));
+    const fileData = new Uint8Array(await file.arrayBuffer());
+    await ff.writeFile(inputName, fileData);
+
+    // Progress callback from FFmpeg
+    ff.on("progress", ({ progress }) => {
+      const pct = Math.min(95, Math.max(10, Math.round(progress * 100)));
+      onProgress(pct, tr("upload.compressing"));
+    });
+
+    // FFmpeg command:
+    // -vf scale=-2:HEIGHT → resize keeping aspect ratio (even dimensions)
+    // -c:v libx264        → H.264 video codec
+    // -b:v BITRATE        → target video bitrate
+    // -preset ultrafast   → fastest encoding speed
+    // -c:a copy           → copy audio stream untouched (full quality)
+    // -movflags +faststart → optimize for web streaming
+    await ff.exec([
+      "-i", inputName,
+      "-vf", `scale=-2:${config.maxHeight}`,
+      "-c:v", "libx264",
+      "-b:v", `${config.videoBitrateK}k`,
+      "-preset", "ultrafast",
+      "-c:a", "copy",
+      "-movflags", "+faststart",
+      "-y", outputName
+    ]);
+
+    const outputData = await ff.readFile(outputName);
+
+    // Cleanup virtual filesystem
+    try { await ff.deleteFile(inputName); } catch (_) {}
+    try { await ff.deleteFile(outputName); } catch (_) {}
+
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    const compressedFile = new File([outputData.buffer], baseName + ".mp4", {
+      type: "video/mp4",
+      lastModified: Date.now()
+    });
+
+    console.log("[Compress] Done:", file.size, "→", compressedFile.size,
+      "(" + Math.round((1 - compressedFile.size / file.size) * 100) + "% smaller)");
+    onProgress(100, "");
+    return compressedFile;
+  } catch (err) {
+    console.error("[Compress] FFmpeg error, uploading original:", err);
+    return file;
+  }
 }
 
 /**
